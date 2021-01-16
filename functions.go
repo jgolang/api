@@ -9,17 +9,16 @@ import (
 )
 
 // PrintError doc...
-var PrintError func(...interface{}) = func(a ...interface{}) { fmt.Println(a) }
+var PrintError func(...interface{}) = log.Println
 
 // Print doc ...
-var Print func(...interface{}) = func(a ...interface{}) { fmt.Println(a) }
+var Print func(...interface{}) = log.Println
 
 // Fatal doc ...
-var Fatal func(...interface{}) = func(a ...interface{}) { panic(a) }
+var Fatal func(...interface{}) = log.Fatal
 
 // GetHeaderValueString doc ...
 func GetHeaderValueString(key string, r *http.Request) (string, Response) {
-	log.Fatal()
 	value, err := api.GetHeaderValueString(key, r)
 	if err != nil {
 		PrintError(err)
