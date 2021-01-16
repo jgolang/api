@@ -10,8 +10,7 @@ import (
 
 // GetRouteVarValueString ...
 func (api API) GetRouteVarValueString(urlVarName string, r *http.Request) (string, error) {
-	vars := api.Vars(r)
-	value := vars[urlVarName]
+	value := api.requestValidator.GetRouteVar(urlVarName, r)
 	if value == "" {
 		return value, fmt.Errorf("The route var %v has not been obtained", urlVarName)
 	}
@@ -20,8 +19,8 @@ func (api API) GetRouteVarValueString(urlVarName string, r *http.Request) (strin
 
 // GetRouteVarValueInt ...
 func (api API) GetRouteVarValueInt(urlVarName string, r *http.Request) (int, error) {
-	vars := api.Vars(r)
-	value, err := strconv.Atoi(vars[urlVarName])
+	s := api.requestValidator.GetRouteVar(urlVarName, r)
+	value, err := strconv.Atoi(s)
 	if err != nil {
 		return value, err
 	}
@@ -30,8 +29,8 @@ func (api API) GetRouteVarValueInt(urlVarName string, r *http.Request) (int, err
 
 // GetRouteVarValueInt64 ...
 func (api API) GetRouteVarValueInt64(urlVarName string, r *http.Request) (int64, error) {
-	vars := api.Vars(r)
-	value, err := strconv.ParseInt(vars[urlVarName], 10, 64)
+	s := api.requestValidator.GetRouteVar(urlVarName, r)
+	value, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return value, err
 	}
@@ -40,8 +39,8 @@ func (api API) GetRouteVarValueInt64(urlVarName string, r *http.Request) (int64,
 
 // GetRouteVarValueFloat64 ...
 func (api API) GetRouteVarValueFloat64(urlVarName string, r *http.Request) (float64, error) {
-	vars := api.Vars(r)
-	value, err := strconv.ParseFloat(vars[urlVarName], 64)
+	s := api.requestValidator.GetRouteVar(urlVarName, r)
+	value, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return value, err
 	}
@@ -50,26 +49,12 @@ func (api API) GetRouteVarValueFloat64(urlVarName string, r *http.Request) (floa
 
 // GetRouteVarValueBool ...
 func (api API) GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, error) {
-	vars := api.Vars(r)
-	value, err := strconv.ParseBool(vars[urlVarName])
+	s := api.requestValidator.GetRouteVar(urlVarName, r)
+	value, err := strconv.ParseBool(s)
 	if err != nil {
 		return false, err
 	}
 	return value, nil
-}
-
-type contextKey int
-
-const (
-	varsKey contextKey = iota
-)
-
-// Vars returns the route variables for the current request, if any.
-func (api API) Vars(r *http.Request) map[string]string {
-	if rv := r.Context().Value(varsKey); rv != nil {
-		return rv.(map[string]string)
-	}
-	return nil
 }
 
 // GetHeaderValueString doc ...

@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/jgolang/api/core"
-	"github.com/jgolang/log"
 )
 
 // Response interface
@@ -25,7 +24,7 @@ func (r ResponseWriter) Write(response *core.ResponseFormatted, w http.ResponseW
 	w.WriteHeader(response.StatusCode)
 	err := json.NewEncoder(w).Encode(response.Data)
 	if err != nil {
-		log.Fatal(err)
+		Fatal(err)
 	}
 	return
 }

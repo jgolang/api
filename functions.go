@@ -2,18 +2,27 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
-
-	"github.com/jgolang/log"
 )
+
+// PrintError doc...
+var PrintError func(...interface{}) = func(a ...interface{}) { fmt.Println(a) }
+
+// Print doc ...
+var Print func(...interface{}) = func(a ...interface{}) { fmt.Println(a) }
+
+// Fatal doc ...
+var Fatal func(...interface{}) = func(a ...interface{}) { panic(a) }
 
 // GetHeaderValueString doc ...
 func GetHeaderValueString(key string, r *http.Request) (string, Response) {
+	log.Fatal()
 	value, err := api.GetHeaderValueString(key, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting header value!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -26,7 +35,7 @@ func GetHeaderValueString(key string, r *http.Request) (string, Response) {
 func GetHeaderValueInt(key string, r *http.Request) (int, Response) {
 	value, err := api.GetHeaderValueInt(key, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting header value type Int!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -39,7 +48,7 @@ func GetHeaderValueInt(key string, r *http.Request) (int, Response) {
 func GetHeaderValueInt64(key string, r *http.Request) (int64, Response) {
 	value, err := api.GetHeaderValueInt64(key, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting header value type Int64!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -52,7 +61,7 @@ func GetHeaderValueInt64(key string, r *http.Request) (int64, Response) {
 func GetHeaderValueFloat64(key string, r *http.Request) (float64, Response) {
 	value, err := api.GetHeaderValueFloat64(key, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting header value type Float64!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -65,7 +74,7 @@ func GetHeaderValueFloat64(key string, r *http.Request) (float64, Response) {
 func GetHeaderValueBool(key string, r *http.Request) (bool, Response) {
 	value, err := api.GetHeaderValueBool(key, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting header value type Bool!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -78,7 +87,7 @@ func GetHeaderValueBool(key string, r *http.Request) (bool, Response) {
 func GetRouteVarValueString(urlVarName string, r *http.Request) (string, Response) {
 	value, err := api.GetRouteVarValueString(urlVarName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting route var!",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -91,7 +100,7 @@ func GetRouteVarValueString(urlVarName string, r *http.Request) (string, Respons
 func GetRouteVarValueInt(urlVarName string, r *http.Request) (int, Response) {
 	value, err := api.GetRouteVarValueInt(urlVarName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return 0, Error{
 			Title:   "Error getting route var type Int",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -104,7 +113,7 @@ func GetRouteVarValueInt(urlVarName string, r *http.Request) (int, Response) {
 func GetRouteVarValueInt64(urlVarName string, r *http.Request) (int64, Response) {
 	value, err := api.GetRouteVarValueInt64(urlVarName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting route var type Int64",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -117,7 +126,7 @@ func GetRouteVarValueInt64(urlVarName string, r *http.Request) (int64, Response)
 func GetRouteVarValueFloat64(urlVarName string, r *http.Request) (float64, Response) {
 	value, err := api.GetRouteVarValueFloat64(urlVarName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting route var type Float64",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -130,7 +139,7 @@ func GetRouteVarValueFloat64(urlVarName string, r *http.Request) (float64, Respo
 func GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, Response) {
 	value, err := api.GetRouteVarValueBool(urlVarName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting route var type Bool",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -143,7 +152,7 @@ func GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, Response) {
 func GetQueryParamValueString(queryParamName string, r *http.Request) (string, Response) {
 	value, err := api.GetQueryParamValueString(queryParamName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting query param!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -158,7 +167,7 @@ func GetQueryParamValueString(queryParamName string, r *http.Request) (string, R
 func GetQueryParamValueInt(queryParamName string, r *http.Request) (int, Response) {
 	value, err := api.GetQueryParamValueInt(queryParamName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting query param type Int!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -171,7 +180,7 @@ func GetQueryParamValueInt(queryParamName string, r *http.Request) (int, Respons
 func GetQueryParamValueInt64(queryParamName string, r *http.Request) (int64, Response) {
 	value, err := api.GetQueryParamValueInt64(queryParamName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting query param type Int64!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -184,7 +193,7 @@ func GetQueryParamValueInt64(queryParamName string, r *http.Request) (int64, Res
 func GetQueryParamValueFloat64(queryParamName string, r *http.Request) (float64, Response) {
 	value, err := api.GetQueryParamValueFloat64(queryParamName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting query param type Float64!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -197,7 +206,7 @@ func GetQueryParamValueFloat64(queryParamName string, r *http.Request) (float64,
 func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Response) {
 	value, err := api.GetQueryParamValueBool(queryParamName, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return value, Error{
 			Title:   "Error getting query param type Bool!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -210,7 +219,7 @@ func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Respo
 func UnmarshalBody(v interface{}, r *http.Request) Response {
 	err := api.UnmarshalBody(v, r)
 	if err != nil {
-		log.Error(err)
+		PrintError(err)
 		return Error{
 			Title:   "Not unmarshal JSON struct!",
 			Message: "Error when unmarshal JSON structure",
@@ -222,34 +231,34 @@ func UnmarshalBody(v interface{}, r *http.Request) Response {
 // LogRequest doc ...
 func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody []byte) {
 	if eventID != "" {
-		log.Infof("EVENT ID: %v", eventID)
+		Print("EVENT ID: %v", eventID)
 	}
-	log.Infof("REQUEST: [%v] %v\nREQUEST HEADERS: %v", method, uri, headers)
+	Print("REQUEST: [%v] %v\nREQUEST HEADERS: %v", method, uri, headers)
 	if form != "" && len(form) != 0 {
 		if len(form) > 2000 && os.Getenv("PRINT_FULL_EVENT") == "" {
-			log.Infof("REQUEST FORM:\n%v", form[:1000], "••• SKIPPED •••", form[:1000])
+			Print("REQUEST FORM:\n%v", form[:1000], "••• SKIPPED •••", form[:1000])
 		} else {
-			log.Infof("REQUEST FORM:\n%v", form)
+			Print("REQUEST FORM:\n%v", form)
 		}
 	}
 	if rawBody != nil && len(rawBody) != 0 {
 		if len(rawBody) > 2000 && os.Getenv("PRINT_FULL_EVENT") == "" {
-			log.Infof("REQUEST BODY:\n%v", string(rawBody[:1000]), " ••• SKIPPED ••• ", string(rawBody[len(rawBody)-1000:]))
+			Print("REQUEST BODY:\n%v", string(rawBody[:1000]), " ••• SKIPPED ••• ", string(rawBody[len(rawBody)-1000:]))
 		} else {
-			log.Infof("REQUEST BODY:\n%v", string(rawBody))
+			Print("REQUEST BODY:\n%v", string(rawBody))
 		}
 	}
 }
 
 // LogResponse doc ...
 func LogResponse(res *httptest.ResponseRecorder) {
-	log.Infof("STATUS CODE: %v %v\nRESPONSE HEADERS: %v", res.Code, http.StatusText(res.Code), res.Header())
+	Print("STATUS CODE: %v %v\nRESPONSE HEADERS: %v", res.Code, http.StatusText(res.Code), res.Header())
 	responseBody := res.Body.Bytes()
 	if responseBody != nil && len(responseBody) != 0 {
 		if len(responseBody) > 2000 && os.Getenv("PRINT_FULL_EVENT") == "" {
-			log.Infof("RESPONSE BODY:\n%v", string(responseBody[:1000]), " ••• SKIPPED ••• ", string(responseBody[len(responseBody)-1000:]))
+			Print("RESPONSE BODY:\n%v", string(responseBody[:1000]), " ••• SKIPPED ••• ", string(responseBody[len(responseBody)-1000:]))
 		} else {
-			log.Infof("RESPONSE BODY:\n%v", string(responseBody))
+			Print("RESPONSE BODY:\n%v", string(responseBody))
 		}
 	}
 }

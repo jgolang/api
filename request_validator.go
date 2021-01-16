@@ -9,7 +9,8 @@ import (
 )
 
 // RequestValidator implementation
-type RequestValidator struct{}
+type RequestValidator struct {
+}
 
 // ValidateRequest doc
 func (v RequestValidator) ValidateRequest(r *http.Request) (*core.RequestData, error) {
@@ -36,4 +37,16 @@ func (v RequestValidator) ValidateRequest(r *http.Request) (*core.RequestData, e
 		Data:        request.Content,
 	}
 	return &requestData, nil
+}
+
+// GetRouteVar returns the route variables for the current request, if any
+func (v RequestValidator) GetRouteVar(key string, r *http.Request) string {
+	return GetRouteVar(key, r)
+}
+
+// GetRouteVar returns the route variables for the current request, if any
+// define it as: api.GetRouteVar = myCustomGetRouteVarFunc
+var GetRouteVar func(string, *http.Request) string = func(string, *http.Request) string {
+	PrintError("Define a GetRouteVar function in this package")
+	return ""
 }

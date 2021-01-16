@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jgolang/api/core"
-	"github.com/jgolang/log"
 )
 
 var (
@@ -122,7 +121,7 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 			if api.ValidateMethods(keyListMethods, r.Method) {
 				requestData, err := api.ValidateRequest(r)
 				if err != nil {
-					log.Error(err)
+					PrintError(err)
 					Error{
 						Title:   "Invalid request content",
 						Message: "Request content empty json structure",
@@ -141,7 +140,7 @@ func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestData, err := api.ValidateRequest(r)
 		if err != nil {
-			log.Error(err)
+			PrintError(err)
 			Error{
 				Title:   "Invalid request content",
 				Message: "Request content empty json structure",
@@ -178,7 +177,7 @@ func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
 
 		b, valid := requestData.Data.(json.RawMessage)
 		if !valid {
-			log.Error("Invalid content...")
+			PrintError("Invalid content...")
 			Error{
 				Title:   "Invalid content",
 				Message: "Invalid content json structure",
