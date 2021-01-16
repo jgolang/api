@@ -7,7 +7,7 @@ type APIResponseFormatter interface {
 	Format(ResponseData) *ResponseFormatted
 }
 
-// APIWriter doc ...
-type APIWriter interface {
+// APIResponseWriter doc ...
+type APIResponseWriter interface {
 	Write(*ResponseFormatted, http.ResponseWriter)
 }

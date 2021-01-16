@@ -30,19 +30,19 @@ const MethodPatchKey = "patch"
 var api = core.New(
 	RequestValidator{},
 	ResponseFormatter{},
-	Responder{},
+	ResponseWriter{},
 	&Security{},
 	&mapMethods,
 )
 
-// RegisterNewAPIFormatter doc ...
-func RegisterNewAPIFormatter(f core.APIResponseFormatter) {
+// RegisterNewAPIResponseFormatter doc ...
+func RegisterNewAPIResponseFormatter(f core.APIResponseFormatter) {
 	api.RegisterNewAPIResponseFormatter(f)
 }
 
-// RegisterNewAPIResponder doc ...
-func RegisterNewAPIResponder(f core.APIWriter) {
-	api.RegisterNewAPIResponder(f)
+// RegisterNewAPIResponseWriter doc ...
+func RegisterNewAPIResponseWriter(f core.APIResponseWriter) {
+	api.RegisterNewAPIResponseWriter(f)
 }
 
 // RegisterNewAPIRequestValidator doc ...

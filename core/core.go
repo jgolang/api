@@ -6,7 +6,7 @@ import (
 )
 
 // New doc ...
-func New(v APIRequestValidator, f APIResponseFormatter, r APIWriter, s APISecurity, mapMethods *MapMethods) *API {
+func New(v APIRequestValidator, f APIResponseFormatter, r APIResponseWriter, s APISecurity, mapMethods *MapMethods) *API {
 	return &API{
 		requestValidator: v,
 		formatter:        f,
@@ -20,7 +20,7 @@ func New(v APIRequestValidator, f APIResponseFormatter, r APIWriter, s APISecuri
 type API struct {
 	requestValidator APIRequestValidator
 	formatter        APIResponseFormatter
-	responder        APIWriter
+	responder        APIResponseWriter
 	security         APISecurity
 	MapMethods       *MapMethods
 }
@@ -44,8 +44,8 @@ func (api *API) RegisterNewAPIResponseFormatter(f APIResponseFormatter) {
 	api.formatter = f
 }
 
-// RegisterNewAPIResponder doc ...
-func (api *API) RegisterNewAPIResponder(r APIWriter) {
+// RegisterNewAPIResponseWriter doc ...
+func (api *API) RegisterNewAPIResponseWriter(r APIResponseWriter) {
 	api.responder = r
 }
 
