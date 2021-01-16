@@ -4,5 +4,5 @@ import "net/http"
 
 // Response interface
 type Response interface {
-	Send(w http.ResponseWriter)
+	Write(w http.ResponseWriter)
 }

@@ -41,12 +41,12 @@ func RegisterNewAPIFormatter(f core.APIResponseFormatter) {
 }
 
 // RegisterNewAPIResponder doc ...
-func RegisterNewAPIResponder(f core.APIResponder) {
+func RegisterNewAPIResponder(f core.APIWriter) {
 	api.RegisterNewAPIResponder(f)
 }
 
 // RegisterNewAPIRequestValidator doc ...
-func RegisterNewAPIRequestValidator(v core.APIRequestValidater) {
+func RegisterNewAPIRequestValidator(v core.APIRequestValidator) {
 	api.RegisterNewAPIRequestValidator(v)
 }
 

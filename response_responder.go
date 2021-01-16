@@ -11,8 +11,8 @@ import (
 // Responder doc ...
 type Responder struct{}
 
-// Respond doc ...
-func (r Responder) Respond(response *core.ResponseFormatted, w http.ResponseWriter) {
+// Write doc ...
+func (r Responder) Write(response *core.ResponseFormatted, w http.ResponseWriter) {
 	for key := range response.Headers {
 		w.Header().Set(key, response.Headers[key])
 	}

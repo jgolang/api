@@ -18,8 +18,8 @@ var (
 // Error error response type the value is "error"
 type Error core.ResponseData
 
-// Send ...
-func (err Error) Send(w http.ResponseWriter) {
+// Write ...
+func (err Error) Write(w http.ResponseWriter) {
 	err.ResponseType = ErrorType
 	if err.Title == "" {
 		err.Title = DefaultErrorTitle
@@ -33,5 +33,5 @@ func (err Error) Send(w http.ResponseWriter) {
 	if err.ErrorCode == "" {
 		err.ErrorCode = "1"
 	}
-	api.Respond(core.ResponseData(err), w)
+	api.Write(core.ResponseData(err), w)
 }

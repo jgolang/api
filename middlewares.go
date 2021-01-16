@@ -42,7 +42,7 @@ func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 				Title:      DefaultUnauthorizedTitle,
 				Message:    DefaultInvalidAuthHeaderMsg,
 				StatusCode: http.StatusUnauthorized,
-			}.Send(w)
+			}.Write(w)
 			return
 		}
 		client, secret, tokenValid := api.ValidateBasicToken(auth[1])
@@ -51,7 +51,7 @@ func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 				Title:      DefaultUnauthorizedTitle,
 				Message:    DefaultBasicUnauthorizedMsg,
 				StatusCode: http.StatusUnauthorized,
-			}.Send(w)
+			}.Write(w)
 			return
 		}
 		r.Header.Set("Basic-Client", client)
@@ -69,7 +69,7 @@ func CustomToken(next http.HandlerFunc) http.HandlerFunc {
 				Title:      DefaultUnauthorizedTitle,
 				Message:    DefaultInvalidAuthHeaderMsg,
 				StatusCode: http.StatusUnauthorized,
-			}.Send(w)
+			}.Write(w)
 			return
 		}
 		tokenInfo, tokenValid := ValidateCustomToken(auth[1])
@@ -78,7 +78,7 @@ func CustomToken(next http.HandlerFunc) http.HandlerFunc {
 				Title:      DefaultUnauthorizedTitle,
 				Message:    DefaultBearerUnauthorizedMsg,
 				StatusCode: http.StatusUnauthorized,
-			}.Send(w)
+			}.Write(w)
 			return
 		}
 		buf, _ := tokenInfo.MarshalJSON()
@@ -92,11 +92,11 @@ func RequestHeaderJSON(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		contentType := r.Header.Get("Content-Type")
 		if len(contentType) == 0 {
-			Error{Message: "No content-type!"}.Send(w)
+			Error{Message: "No content-type!"}.Write(w)
 			return
 		}
 		if contentType != "application/json" {
-			Error{Message: "Content-Type not is JSON!"}.Send(w)
+			Error{Message: "Content-Type not is JSON!"}.Write(w)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -126,7 +126,7 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 					Error{
 						Title:   "Invalid request content",
 						Message: "Request content empty json structure",
-					}.Send(w)
+					}.Write(w)
 					return
 				}
 				r.Body = ioutil.NopCloser(bytes.NewBuffer(requestData.RawBody))
@@ -145,7 +145,7 @@ func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
 			Error{
 				Title:   "Invalid request content",
 				Message: "Request content empty json structure",
-			}.Send(w)
+			}.Write(w)
 			return
 		}
 
@@ -182,7 +182,7 @@ func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
 			Error{
 				Title:   "Invalid content",
 				Message: "Invalid content json structure",
-			}.Send(w)
+			}.Write(w)
 			return
 		}
 

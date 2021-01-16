@@ -18,8 +18,8 @@ var (
 // Warning warning response type the value is "warning"
 type Warning core.ResponseData
 
-// Send ...
-func (warning Warning) Send(w http.ResponseWriter) {
+// Write ...
+func (warning Warning) Write(w http.ResponseWriter) {
 	warning.ResponseType = WarningType
 	if warning.Title == "" {
 		warning.Title = DefaultWarningTitle
@@ -30,5 +30,5 @@ func (warning Warning) Send(w http.ResponseWriter) {
 	if warning.StatusCode == 0 {
 		warning.StatusCode = http.StatusOK
 	}
-	api.Respond(core.ResponseData(warning), w)
+	api.Write(core.ResponseData(warning), w)
 }

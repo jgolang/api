@@ -18,8 +18,8 @@ var (
 // Informative info response type the value is "info"
 type Informative core.ResponseData
 
-// Send ...
-func (info Informative) Send(w http.ResponseWriter) {
+// Write ...
+func (info Informative) Write(w http.ResponseWriter) {
 	info.ResponseType = InformativeType
 	if info.Title == "" {
 		info.Title = DefaultInfoTitle
@@ -30,5 +30,5 @@ func (info Informative) Send(w http.ResponseWriter) {
 	if info.StatusCode == 0 {
 		info.StatusCode = http.StatusOK
 	}
-	api.Respond(core.ResponseData(info), w)
+	api.Write(core.ResponseData(info), w)
 }

@@ -6,7 +6,7 @@ import (
 )
 
 // New doc ...
-func New(v APIRequestValidater, f APIResponseFormatter, r APIResponder, s APISecurity, mapMethods *MapMethods) *API {
+func New(v APIRequestValidator, f APIResponseFormatter, r APIWriter, s APISecurity, mapMethods *MapMethods) *API {
 	return &API{
 		requestValidator: v,
 		formatter:        f,
@@ -18,9 +18,9 @@ func New(v APIRequestValidater, f APIResponseFormatter, r APIResponder, s APISec
 
 // API doc ...
 type API struct {
-	requestValidator APIRequestValidater
+	requestValidator APIRequestValidator
 	formatter        APIResponseFormatter
-	responder        APIResponder
+	responder        APIWriter
 	security         APISecurity
 	MapMethods       *MapMethods
 }
@@ -28,10 +28,10 @@ type API struct {
 // MapMethods doc ...
 type MapMethods map[string][]string
 
-// Respond doc ...
-func (api *API) Respond(data ResponseData, w http.ResponseWriter) {
+// Write doc ...
+func (api *API) Write(data ResponseData, w http.ResponseWriter) {
 	responseFormatted := api.formatter.Format(data)
-	api.responder.Respond(responseFormatted, w)
+	api.responder.Write(responseFormatted, w)
 }
 
 // ValidateRequest doc ...
@@ -45,7 +45,7 @@ func (api *API) RegisterNewAPIResponseFormatter(f APIResponseFormatter) {
 }
 
 // RegisterNewAPIResponder doc ...
-func (api *API) RegisterNewAPIResponder(r APIResponder) {
+func (api *API) RegisterNewAPIResponder(r APIWriter) {
 	api.responder = r
 }
 
@@ -60,7 +60,7 @@ func (api *API) ValidateBasicToken(token string) (client, secret string, valid b
 }
 
 // RegisterNewAPIRequestValidator doc ...
-func (api *API) RegisterNewAPIRequestValidator(v APIRequestValidater) {
+func (api *API) RegisterNewAPIRequestValidator(v APIRequestValidator) {
 	api.requestValidator = v
 }
 

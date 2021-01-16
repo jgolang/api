@@ -2,7 +2,7 @@ package core
 
 import "net/http"
 
-// APIRequestValidater doc ...
-type APIRequestValidater interface {
+// APIRequestValidator doc ...
+type APIRequestValidator interface {
 	ValidateRequest(*http.Request) (*RequestData, error)
 }

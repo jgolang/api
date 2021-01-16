@@ -18,8 +18,8 @@ var (
 // Success success response type the value is "success"
 type Success core.ResponseData
 
-// Send ...
-func (success Success) Send(w http.ResponseWriter) {
+// Write ...
+func (success Success) Write(w http.ResponseWriter) {
 	success.ResponseType = SuccessType
 	if success.Title == "" {
 		success.Title = DefaultSuccessTitle
@@ -30,5 +30,5 @@ func (success Success) Send(w http.ResponseWriter) {
 	if success.StatusCode == 0 {
 		success.StatusCode = http.StatusOK
 	}
-	api.Respond(core.ResponseData(success), w)
+	api.Write(core.ResponseData(success), w)
 }
