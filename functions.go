@@ -9,10 +9,10 @@ import (
 )
 
 // PrintError doc...
-var PrintError func(...interface{}) = log.Println
+var PrintError func(...interface{}) = log.Print
 
 // Print doc ...
-var Print func(...interface{}) = log.Println
+var Print func(string, ...interface{}) = log.Printf
 
 // Fatal doc ...
 var Fatal func(...interface{}) = log.Fatal
