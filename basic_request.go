@@ -70,8 +70,8 @@ func (request *RequestBasic) UnmarshalBody() Response {
 	return nil
 }
 
-//GetRequestBsicInfo ..
-func (request *RequestBasic) GetRequestBsicInfo() Response {
+// GetRequestBasicInfo ..
+func (request *RequestBasic) GetRequestBasicInfo() Response {
 	resp := request.GetSessionID()
 	if resp != nil {
 		return resp
@@ -89,7 +89,7 @@ func (request *RequestBasic) GetRequestBsicInfo() Response {
 
 // GetRequestFullInfo ..
 func (request *RequestBasic) GetRequestFullInfo() Response {
-	resp := request.GetRequestBsicInfo()
+	resp := request.GetRequestBasicInfo()
 	if resp != nil {
 		return resp
 	}

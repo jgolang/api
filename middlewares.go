@@ -23,10 +23,10 @@ var (
 	DefaultBasicUnauthorizedMsg = "Invalid basic token"
 	// DefaultBearerUnauthorizedMsg doc ...
 	DefaultBearerUnauthorizedMsg = "Invalid bearer token"
-	// CutomTokenPrefix doc...
-	CutomTokenPrefix = "Bearer"
+	// CustomTokenPrefix doc...
+	CustomTokenPrefix = "Bearer"
 	// DefaultCustomUnauthorizedMsg doc ...
-	DefaultCustomUnauthorizedMsg = fmt.Sprintf("Invalid %v token", CutomTokenPrefix)
+	DefaultCustomUnauthorizedMsg = fmt.Sprintf("Invalid %v token", CustomTokenPrefix)
 )
 
 // MiddlewaresChain provides syntactic sugar to create a new middleware
@@ -64,7 +64,7 @@ func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 func CustomToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
-		if len(auth) != 2 || auth[0] != CutomTokenPrefix {
+		if len(auth) != 2 || auth[0] != CustomTokenPrefix {
 			Error{
 				Title:      DefaultUnauthorizedTitle,
 				Message:    DefaultInvalidAuthHeaderMsg,

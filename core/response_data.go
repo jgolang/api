@@ -1,6 +1,6 @@
 package core
 
-// ResponseType contains all the response types identiers
+// ResponseType contains all the response types identifers
 type ResponseType string
 
 // ResponseFormatted ...

@@ -53,7 +53,7 @@ type ValidateCredentials func(string, string) bool
 // CustomTokenValidatorFunc define custom function to validate custom token
 var CustomTokenValidatorFunc core.CustomTokenValidator
 
-// ValidateBasicAuthCredentialsFunc define custom function for validate basic authenteication credential
+// ValidateBasicAuthCredentialsFunc define custom function for validate basic authentication credential
 var ValidateBasicAuthCredentialsFunc ValidateCredentials = validateCredentials
 
 // ValidateBasicToken doc ...

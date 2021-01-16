@@ -177,12 +177,12 @@ func (api API) UnmarshalBody(v interface{}, r *http.Request) error {
 
 // ValidateMethods doc ...
 func (api *API) ValidateMethods(keyMapMethod, method string) bool {
-	methodAcepted := false
+	methodAccepted := false
 	mapMethods := *api.MapMethods
 	for _, mtd := range mapMethods[keyMapMethod] {
 		if mtd == method {
-			methodAcepted = true
+			methodAccepted = true
 		}
 	}
-	return methodAcepted
+	return methodAccepted
 }
