@@ -17,20 +17,18 @@ var ResponseCodes = struct {
 	RestrictResource     core.ResponseCode
 	InternalServerEerror core.ResponseCode
 	ServiceUnavailable   core.ResponseCode
-	AfterHours           core.ResponseCode
 }{
-	Success:              "success",
-	Informative:          "success",
-	Warning:              "warning",
-	DefaultError:         "error",
-	InvalidJSON:          "invalid_json",
-	InvalidRequestURL:    "invalid_request_url",
-	ValidationError:      "validation_error",
-	MissingVersionError:  "missing_version",
-	Unauthorized:         "unauthorized",
-	RestrictResource:     "restricted_resource",
-	ObjectNotFound:       "object_not_found",
-	InternalServerEerror: "internal_server_error",
-	ServiceUnavailable:   "service_unauvailable",
-	AfterHours:           "after_hours",
+	Success:              "000",
+	Informative:          "000",
+	Warning:              "000",
+	DefaultError:         "E001",
+	InvalidJSON:          "E002",
+	InvalidRequestURL:    "E003",
+	ValidationError:      "E004",
+	MissingVersionError:  "E005",
+	Unauthorized:         "S001",
+	RestrictResource:     "S002",
+	ObjectNotFound:       "E006",
+	InternalServerEerror: "I300",
+	ServiceUnavailable:   "I301",
 }

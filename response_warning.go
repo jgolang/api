@@ -17,7 +17,7 @@ var (
 	WarningType core.ResponseType = "warning"
 
 	// DefaultWarningCode default warning code.
-	DefaultWarningCode = "warning"
+	DefaultWarningCode = "000"
 )
 
 // Warning warning response type the value is "warning".
