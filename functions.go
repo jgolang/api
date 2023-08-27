@@ -8,13 +8,19 @@ import (
 	"os"
 )
 
-// PrintError doc...
+// PrintError defines a function to print the errors that occurred
+// in this package, this function can be redefined.
+// By default, this package implement the log.Print() function.
 var PrintError func(...interface{}) = log.Print
 
-// Print doc ...
-var Print func(string, ...interface{}) = log.Printf
+// Printf defines a function to print the messages that occurred
+// in this package, this function can be redefined.
+// By default, this package implement the log.Printf() function.
+var Printf func(string, ...interface{}) = log.Printf
 
-// Fatal doc ...
+// Fatal defines a function to print the fatal errors that occurred
+// in this package, this function can be redefined.
+// By default, this package implement the log.Fatal() function.
 var Fatal func(...interface{}) = log.Fatal
 
 // GetHeaderValueString doc ...
@@ -230,34 +236,34 @@ func UnmarshalBody(v interface{}, r *http.Request) Response {
 // LogRequest doc ...
 func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody []byte) {
 	if eventID != "" {
-		Print("EVENT ID: %v", eventID)
+		Printf("EVENT ID: %v", eventID)
 	}
-	Print("REQUEST: [%v] %v\nREQUEST HEADERS: %v", method, uri, headers)
+	Printf("REQUEST: [%v] %v\nREQUEST HEADERS: %v", method, uri, headers)
 	if form != "" && len(form) != 0 {
 		if len(form) > 2000 && os.Getenv("PRINT_FULL_EVENT") == "" {
-			Print("REQUEST FORM:\n%v", form[:1000], "••• SKIPPED •••", form[:1000])
+			Printf("REQUEST FORM:\n%v", form[:1000], "••• SKIPPED •••", form[:1000])
 		} else {
-			Print("REQUEST FORM:\n%v", form)
+			Printf("REQUEST FORM:\n%v", form)
 		}
 	}
 	if rawBody != nil && len(rawBody) != 0 {
 		if len(rawBody) > 2000 && os.Getenv("PRINT_FULL_EVENT") == "" {
-			Print("REQUEST BODY:\n%v", string(rawBody[:1000]), " ••• SKIPPED ••• ", string(rawBody[len(rawBody)-1000:]))
+			Printf("REQUEST BODY:\n%v", string(rawBody[:1000]), " ••• SKIPPED ••• ", string(rawBody[len(rawBody)-1000:]))
 		} else {
-			Print("REQUEST BODY:\n%v", string(rawBody))
+			Printf("REQUEST BODY:\n%v", string(rawBody))
 		}
 	}
 }
 
 // LogResponse doc ...
 func LogResponse(res *httptest.ResponseRecorder) {
-	Print("STATUS CODE: %v %v\nRESPONSE HEADERS: %v", res.Code, http.StatusText(res.Code), res.Header())
+	Printf("STATUS CODE: %v %v\nRESPONSE HEADERS: %v", res.Code, http.StatusText(res.Code), res.Header())
 	responseBody := res.Body.Bytes()
 	if responseBody != nil && len(responseBody) != 0 {
 		if len(responseBody) > 2000 && os.Getenv("PRINT_FULL_EVENT") == "" {
-			Print("RESPONSE BODY:\n%v", string(responseBody[:1000]), " ••• SKIPPED ••• ", string(responseBody[len(responseBody)-1000:]))
+			Printf("RESPONSE BODY:\n%v", string(responseBody[:1000]), " ••• SKIPPED ••• ", string(responseBody[len(responseBody)-1000:]))
 		} else {
-			Print("RESPONSE BODY:\n%v", string(responseBody))
+			Printf("RESPONSE BODY:\n%v", string(responseBody))
 		}
 	}
 }

@@ -15,9 +15,10 @@ type ResponseData struct {
 	Title          string
 	Message        string
 	StatusCode     int
-	ErrorCode      string
+	Code           string
 	Action         string
-	SessionID      string
+	Token          string
+	EventID        string
 	ResponseType   ResponseType
 	Headers        map[string]string
 	AdditionalInfo map[string]string

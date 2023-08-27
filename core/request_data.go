@@ -2,19 +2,22 @@ package core
 
 // RequestData doc ..
 type RequestData struct {
-	DeviceUUID     string
-	DeviceType     string
-	DeviceOS       string
-	OSVersion      string
-	OSTimezone     string
-	AppLanguage    string
-	AppVersion     string
-	AppName        string
-	SessionID      string
-	Headers        map[string]string
-	AdditionalInfo map[string]string
-	RawBody        []byte
-	Data           interface{}
+	UUID            string
+	DeviceType      string
+	DeviceBrand     string
+	DeviceModel     string
+	OS              string
+	OSVersion       string
+	Lang            string
+	Timezone        string
+	AppVersion      string
+	AppBuildVersion string
+	AppName         string
+	Token           string
+	Headers         map[string]string
+	AdditionalInfo  map[string]string
+	RawBody         []byte
+	Data            interface{}
 }
 
 // AddAdditionalInfo func ...

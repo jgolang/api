@@ -32,7 +32,7 @@ var (
 // which will be the result of chaining the ones received as parameters
 var MiddlewaresChain = core.MiddlewaresChain
 
-// BasicToken validate basic authentication token middleware ...
+// BasicToken validate basic authentication token middleware.
 func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
@@ -156,7 +156,7 @@ func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
 			proxiedIPAddress = r.RemoteAddr
 		}
 
-		prefixEventID := requestData.DeviceUUID
+		prefixEventID := requestData.UUID
 		if prefixEventID == "" {
 			prefixEventID = proxiedIPAddress
 		}
@@ -165,15 +165,18 @@ func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
 		LogRequest(r.Method, r.RequestURI, eventID, r.Form.Encode(), r.Header, requestData.RawBody)
 
 		r.Header.Set("EventID", eventID)
-		r.Header.Set("DeviceUUID", requestData.DeviceUUID)
+		r.Header.Set("UUID", requestData.UUID)
 		r.Header.Set("DeviceType", requestData.DeviceType)
-		r.Header.Set("DeviceOS", requestData.DeviceOS)
+		r.Header.Set("DeviceBrand", requestData.DeviceBrand)
+		r.Header.Set("DeviceModel", requestData.DeviceModel)
+		r.Header.Set("OS", requestData.OS)
 		r.Header.Set("OSVersion", requestData.OSVersion)
-		r.Header.Set("OSTimezone", requestData.OSTimezone)
-		r.Header.Set("AppLanguage", requestData.AppLanguage)
+		r.Header.Set("Lang", requestData.Lang)
+		r.Header.Set("Timezone", requestData.Timezone)
 		r.Header.Set("AppVersion", requestData.AppVersion)
+		r.Header.Set("AppBuildVersion", requestData.AppBuildVersion)
 		r.Header.Set("AppName", requestData.AppName)
-		r.Header.Set("SessionID", requestData.SessionID)
+		r.Header.Set("Token", requestData.Token)
 
 		b, valid := requestData.Data.(json.RawMessage)
 		if !valid {

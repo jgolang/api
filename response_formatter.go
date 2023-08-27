@@ -12,13 +12,14 @@ func (f ResponseFormatter) Format(data core.ResponseData) *core.ResponseFormatte
 		Headers:    data.Headers,
 		Data: JSONResponse{
 			Content: data.Data,
-			Info: JSONResponseInfo{
+			Header: JSONResponseInfo{
 				Title:          data.Title,
 				Message:        data.Message,
 				Type:           data.ResponseType,
 				Action:         data.Action,
-				SessionID:      data.SessionID,
-				ErrorCode:      data.ErrorCode,
+				Token:          data.Token,
+				Code:           data.Code,
+				EventID:        data.EventID,
 				AdditionalInfo: data.AdditionalInfo,
 			},
 		},

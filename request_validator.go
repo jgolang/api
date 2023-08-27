@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/jgolang/api/core"
@@ -15,7 +15,7 @@ type RequestValidator struct {
 // ValidateRequest doc
 func (v RequestValidator) ValidateRequest(r *http.Request) (*core.RequestData, error) {
 	var request JSONRequest
-	rawBody, err := ioutil.ReadAll(r.Body)
+	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -24,17 +24,20 @@ func (v RequestValidator) ValidateRequest(r *http.Request) (*core.RequestData, e
 		return nil, err
 	}
 	requestData := core.RequestData{
-		DeviceUUID:  request.Info.DeviceUUID,
-		DeviceType:  request.Info.DeviceType,
-		DeviceOS:    request.Info.DeviceOS,
-		OSVersion:   request.Info.OSVersion,
-		OSTimezone:  request.Info.OSTimezone,
-		AppLanguage: request.Info.AppLanguage,
-		AppVersion:  request.Info.AppVersion,
-		AppName:     request.Info.AppName,
-		SessionID:   request.Info.SessionID,
-		RawBody:     rawBody,
-		Data:        request.Content,
+		UUID:            request.Header.DeviceUUID,
+		DeviceType:      request.Header.DeviceType,
+		DeviceBrand:     request.Header.DeviceBrand,
+		DeviceModel:     request.Header.DeviceModel,
+		OS:              request.Header.OS,
+		OSVersion:       request.Header.OSVersion,
+		Lang:            request.Header.Lang,
+		Timezone:        request.Header.Timezone,
+		AppVersion:      request.Header.AppVersion,
+		AppBuildVersion: request.Header.AppBuildVersion,
+		AppName:         request.Header.AppName,
+		Token:           request.Header.Token,
+		RawBody:         rawBody,
+		Data:            request.Content,
 	}
 	return &requestData, nil
 }

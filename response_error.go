@@ -30,8 +30,8 @@ func (err Error) Write(w http.ResponseWriter) {
 	if err.StatusCode == 0 {
 		err.StatusCode = http.StatusBadRequest
 	}
-	if err.ErrorCode == "" {
-		err.ErrorCode = "1"
+	if err.Code == "" {
+		err.Code = "E001"
 	}
 	api.Write(core.ResponseData(err), w)
 }

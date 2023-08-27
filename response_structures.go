@@ -8,7 +8,7 @@ import (
 // contains the info section, with the response type and the messages for users
 // and the content section, with the required data for the request
 type JSONResponse struct {
-	Info    JSONResponseInfo `json:"info"`
+	Header  JSONResponseInfo `json:"info"`
 	Content interface{}      `json:"content,omitempty"`
 }
 
@@ -18,7 +18,8 @@ type JSONResponseInfo struct {
 	Title          string            `json:"title,omitempty"`
 	Message        string            `json:"message,omitempty"`
 	Action         string            `json:"action,omitempty"`
-	SessionID      string            `json:"session_id,omitempty"`
-	ErrorCode      string            `json:"code,omitempty"`
+	Token          string            `json:"session_id,omitempty"`
+	Code           string            `json:"code,omitempty"`
+	EventID        string            `json:"event_id,omitempty"`
 	AdditionalInfo map[string]string `json:"additional_info,omitempty"`
 }
