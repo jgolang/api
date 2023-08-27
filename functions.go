@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
+	"crypto/md5"
 	"fmt"
 	"log"
 	"net/http"
@@ -298,5 +298,5 @@ func LogResponse(eventID string, res *httptest.ResponseRecorder) {
 func generateEventID(prefix, uri string) string {
 	eventIDPayload := fmt.Sprintf("%v:%v:%v", prefix, time.Now().UnixNano(), uri)
 	buf := []byte(eventIDPayload)
-	return base64.StdEncoding.EncodeToString(buf)
+	return fmt.Sprintf("%x", md5.Sum(buf))
 }
