@@ -3,23 +3,23 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 )
 
-// GetRouteVarValueString ...
+// GetRouteVarValueString gets route variable value as string.
 func (api API) GetRouteVarValueString(urlVarName string, r *http.Request) (string, error) {
-	value := api.requestValidator.GetRouteVar(urlVarName, r)
+	value := api.receiver.GetRouteVar(urlVarName, r)
 	if value == "" {
 		return value, fmt.Errorf("The route var %v has not been obtained", urlVarName)
 	}
 	return value, nil
 }
 
-// GetRouteVarValueInt ...
+// GetRouteVarValueInt gets route variable value as integer.
 func (api API) GetRouteVarValueInt(urlVarName string, r *http.Request) (int, error) {
-	s := api.requestValidator.GetRouteVar(urlVarName, r)
+	s := api.receiver.GetRouteVar(urlVarName, r)
 	value, err := strconv.Atoi(s)
 	if err != nil {
 		return value, err
@@ -27,9 +27,9 @@ func (api API) GetRouteVarValueInt(urlVarName string, r *http.Request) (int, err
 	return value, nil
 }
 
-// GetRouteVarValueInt64 ...
+// GetRouteVarValueInt64 gets route variable value as integer 64.
 func (api API) GetRouteVarValueInt64(urlVarName string, r *http.Request) (int64, error) {
-	s := api.requestValidator.GetRouteVar(urlVarName, r)
+	s := api.receiver.GetRouteVar(urlVarName, r)
 	value, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return value, err
@@ -37,9 +37,9 @@ func (api API) GetRouteVarValueInt64(urlVarName string, r *http.Request) (int64,
 	return value, nil
 }
 
-// GetRouteVarValueFloat64 ...
+// GetRouteVarValueFloat64 gets route variable value as float 64.
 func (api API) GetRouteVarValueFloat64(urlVarName string, r *http.Request) (float64, error) {
-	s := api.requestValidator.GetRouteVar(urlVarName, r)
+	s := api.receiver.GetRouteVar(urlVarName, r)
 	value, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return value, err
@@ -47,9 +47,9 @@ func (api API) GetRouteVarValueFloat64(urlVarName string, r *http.Request) (floa
 	return value, nil
 }
 
-// GetRouteVarValueBool ...
+// GetRouteVarValueBool gets route variable value as bool.
 func (api API) GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, error) {
-	s := api.requestValidator.GetRouteVar(urlVarName, r)
+	s := api.receiver.GetRouteVar(urlVarName, r)
 	value, err := strconv.ParseBool(s)
 	if err != nil {
 		return false, err
@@ -57,7 +57,7 @@ func (api API) GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, e
 	return value, nil
 }
 
-// GetHeaderValueString doc ...
+// GetHeaderValueString gets header value as string.
 func (api API) GetHeaderValueString(key string, r *http.Request) (string, error) {
 	value := r.Header.Get(key)
 	if value == "" {
@@ -66,7 +66,7 @@ func (api API) GetHeaderValueString(key string, r *http.Request) (string, error)
 	return value, nil
 }
 
-// GetHeaderValueInt doc ...
+// GetHeaderValueInt gets header value as integer.
 func (api API) GetHeaderValueInt(key string, r *http.Request) (int, error) {
 	value, err := strconv.Atoi(r.Header.Get(key))
 	if err != nil {
@@ -75,7 +75,7 @@ func (api API) GetHeaderValueInt(key string, r *http.Request) (int, error) {
 	return value, nil
 }
 
-// GetHeaderValueInt64 doc ...
+// GetHeaderValueInt64 gets header value as integer 64.
 func (api API) GetHeaderValueInt64(key string, r *http.Request) (int64, error) {
 	value, err := strconv.ParseInt(r.Header.Get(key), 10, 64)
 	if err != nil {
@@ -84,7 +84,7 @@ func (api API) GetHeaderValueInt64(key string, r *http.Request) (int64, error) {
 	return value, nil
 }
 
-// GetHeaderValueFloat64 doc ...
+// GetHeaderValueFloat64 gets header value as float 64.
 func (api API) GetHeaderValueFloat64(key string, r *http.Request) (float64, error) {
 	value, err := strconv.ParseFloat(r.Header.Get(key), 64)
 	if err != nil {
@@ -93,7 +93,7 @@ func (api API) GetHeaderValueFloat64(key string, r *http.Request) (float64, erro
 	return value, nil
 }
 
-// GetHeaderValueBool doc ...
+// GetHeaderValueBool gets header values as bool.
 func (api API) GetHeaderValueBool(key string, r *http.Request) (bool, error) {
 	value, err := strconv.ParseBool(r.Header.Get(key))
 	if err != nil {
@@ -102,7 +102,7 @@ func (api API) GetHeaderValueBool(key string, r *http.Request) (bool, error) {
 	return value, nil
 }
 
-// GetQueryParamValueString ...
+// GetQueryParamValueString gets query param value as string.
 func (api API) GetQueryParamValueString(queryParamName string, r *http.Request) (string, error) {
 	value := r.URL.Query().Get(queryParamName)
 	if value == "" {
@@ -111,7 +111,7 @@ func (api API) GetQueryParamValueString(queryParamName string, r *http.Request) 
 	return value, nil
 }
 
-// GetQueryParamValueInt ...
+// GetQueryParamValueInt gets query param value as integer.
 func (api API) GetQueryParamValueInt(queryParamName string, r *http.Request) (int, error) {
 	value, err := strconv.Atoi(r.URL.Query().Get(queryParamName))
 	if err != nil {
@@ -120,7 +120,7 @@ func (api API) GetQueryParamValueInt(queryParamName string, r *http.Request) (in
 	return value, nil
 }
 
-// GetQueryParamValueInt64 ...
+// GetQueryParamValueInt64 gets query param value as integer 64.
 func (api API) GetQueryParamValueInt64(queryParamName string, r *http.Request) (int64, error) {
 	value, err := strconv.ParseInt(r.URL.Query().Get(queryParamName), 10, 64)
 	if err != nil {
@@ -129,7 +129,7 @@ func (api API) GetQueryParamValueInt64(queryParamName string, r *http.Request) (
 	return value, nil
 }
 
-// GetQueryParamValueFloat64 ...
+// GetQueryParamValueFloat64 gets query param value as float 64.
 func (api API) GetQueryParamValueFloat64(queryParamName string, r *http.Request) (float64, error) {
 	value, err := strconv.ParseFloat(r.URL.Query().Get(queryParamName), 64)
 	if err != nil {
@@ -138,7 +138,7 @@ func (api API) GetQueryParamValueFloat64(queryParamName string, r *http.Request)
 	return value, nil
 }
 
-// GetQueryParamValueBool ...
+// GetQueryParamValueBool gets param value as bool.
 func (api API) GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, error) {
 	value, err := strconv.ParseBool(r.URL.Query().Get(queryParamName))
 	if err != nil {
@@ -147,9 +147,9 @@ func (api API) GetQueryParamValueBool(queryParamName string, r *http.Request) (b
 	return value, nil
 }
 
-// UnmarshalBody doc ...
+// UnmarshalBody parses request body to a struct.
 func (api API) UnmarshalBody(v interface{}, r *http.Request) error {
-	bodyRequest, err := ioutil.ReadAll(r.Body)
+	bodyRequest, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func (api API) UnmarshalBody(v interface{}, r *http.Request) error {
 	return nil
 }
 
-// ValidateMethods doc ...
+// ValidateMethods validates if a method exist in a methods map.
 func (api *API) ValidateMethods(keyMapMethod, method string) bool {
 	methodAccepted := false
 	mapMethods := *api.MapMethods

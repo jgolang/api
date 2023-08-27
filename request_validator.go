@@ -8,12 +8,35 @@ import (
 	"github.com/jgolang/api/core"
 )
 
-// RequestValidator implementation
-type RequestValidator struct {
+// RequestContextKey type
+type RequestContextKey string
+
+// RequestDataContextKey request data context key to finds request context
+const RequestDataContextKey = RequestContextKey("requestData")
+
+// RequestReceiver implementation of core.APIRequestReceiver interface
+type RequestReceiver struct{}
+
+// ProcessEncryptedBody process API request encription information.
+func (receiver RequestReceiver) ProcessEncryptedBody(r *http.Request) (*core.RequestEncryptedData, error) {
+	var request JSONEncryptedBody
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(rawBody, &request)
+	if err != nil {
+		return nil, err
+	}
+	requestData := core.RequestEncryptedData{
+		Data:     request.Data,
+		Metadata: request.DeviceUUID,
+	}
+	return &requestData, nil
 }
 
-// ValidateRequest doc
-func (v RequestValidator) ValidateRequest(r *http.Request) (*core.RequestData, error) {
+// ProcessBody process API request body information.
+func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestData, error) {
 	var request JSONRequest
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -24,26 +47,26 @@ func (v RequestValidator) ValidateRequest(r *http.Request) (*core.RequestData, e
 		return nil, err
 	}
 	requestData := core.RequestData{
-		UUID:            request.Header.DeviceUUID,
-		DeviceType:      request.Header.DeviceType,
-		DeviceBrand:     request.Header.DeviceBrand,
-		DeviceModel:     request.Header.DeviceModel,
-		OS:              request.Header.OS,
-		OSVersion:       request.Header.OSVersion,
-		Lang:            request.Header.Lang,
-		Timezone:        request.Header.Timezone,
-		AppVersion:      request.Header.AppVersion,
-		AppBuildVersion: request.Header.AppBuildVersion,
-		AppName:         request.Header.AppName,
-		Token:           request.Header.Token,
-		RawBody:         rawBody,
-		Data:            request.Content,
+		UUID:          request.Header.UUID,
+		DeviceType:    request.Header.DeviceType,
+		DeviceBrand:   request.Header.DeviceBrand,
+		DeviceModel:   request.Header.DeviceModel,
+		DeviceOS:      request.Header.OS,
+		OSVersion:     request.Header.OSVersion,
+		OSTimezone:    request.Header.Timezone,
+		AppLanguage:   request.Header.Lang,
+		AppVersion:    request.Header.AppVersion,
+		AppBuildInfo:  request.Header.AppBuildVersion,
+		AppName:       request.Header.AppName,
+		SecurityToken: request.Header.SecurityToken,
+		RawBody:       rawBody,
+		Content:       core.JSONContent(request.Content),
 	}
 	return &requestData, nil
 }
 
 // GetRouteVar returns the route variables for the current request, if any
-func (v RequestValidator) GetRouteVar(key string, r *http.Request) string {
+func (receiver RequestReceiver) GetRouteVar(key string, r *http.Request) string {
 	return GetRouteVar(key, r)
 }
 

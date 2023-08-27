@@ -11,17 +11,19 @@ import (
 var (
 	// Username basic authentication
 	// Default: admin
-	Username = "admin"
+	// Change this, it's insecure.
+	Username = "default"
 	// Password basic authentication
 	// Default: admin
-	Password = "admin"
+	// Change this, it's insecure.
+	Password = "default"
 )
 
-// Security core interface implement
-type Security struct{}
+// SecurityGuaranter implementation of core.APISecurityGuaranter interface.
+type SecurityGuaranter struct{}
 
-// ValidateBasicToken doc ...
-func (s *Security) ValidateBasicToken(token string) (client, secret string, valid bool) {
+// ValidateBasicToken validate token with a basic auth token validation method.
+func (guaranter *SecurityGuaranter) ValidateBasicToken(token string) (client, secret string, valid bool) {
 	payload, _ := base64.StdEncoding.DecodeString(token)
 	pair := strings.SplitN(string(payload), ":", 2)
 	if len(pair) != 2 || !ValidateBasicAuthCredentialsFunc(pair[0], pair[1]) {
@@ -30,8 +32,8 @@ func (s *Security) ValidateBasicToken(token string) (client, secret string, vali
 	return pair[0], pair[1], true
 }
 
-// ValidateCustomToken doc ...
-func (s *Security) ValidateCustomToken(token string, validator core.CustomTokenValidator) (json.RawMessage, bool) {
+// ValidateCustomToken validate token with a custom method.
+func (guaranter *SecurityGuaranter) ValidateCustomToken(token string, validator core.CustomTokenValidator) (json.RawMessage, bool) {
 	return validator(token)
 }
 
@@ -42,21 +44,21 @@ func validateCredentials(username, password string) bool {
 	return false
 }
 
-// ValidateCustomToken doc ...
+// ValidateCustomToken validate token with a custom method.
 func ValidateCustomToken(token string) (json.RawMessage, bool) {
 	return api.ValidateCustomToken(token, CustomTokenValidatorFunc)
 }
 
-// ValidateCredentials func doc ...
+// ValidateCredentials func type.
 type ValidateCredentials func(string, string) bool
 
-// CustomTokenValidatorFunc define custom function to validate custom token
+// CustomTokenValidatorFunc define custom function to validate custom token.
 var CustomTokenValidatorFunc core.CustomTokenValidator
 
-// ValidateBasicAuthCredentialsFunc define custom function for validate basic authentication credential
+// ValidateBasicAuthCredentialsFunc define custom function for validate basic authentication credential.
 var ValidateBasicAuthCredentialsFunc ValidateCredentials = validateCredentials
 
-// ValidateBasicToken doc ...
+// ValidateBasicToken validate token with a basic auth token validation method.
 func ValidateBasicToken(token string) (client, secret string, valid bool) {
 	return api.ValidateBasicToken(token)
 }

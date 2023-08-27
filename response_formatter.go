@@ -2,25 +2,25 @@ package api
 
 import "github.com/jgolang/api/core"
 
-// ResponseFormatter doc ...
+// ResponseFormatter implementation of core.APIResponseFormatter interface.
 type ResponseFormatter struct{}
 
-// Format doc ...
-func (f ResponseFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
+// Format the response body information.
+func (formatter ResponseFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
 	return &core.ResponseFormatted{
-		StatusCode: data.StatusCode,
-		Headers:    data.Headers,
-		Data: JSONResponse{
-			Content: data.Data,
+		HTTPStatusCode: data.HTTPStatusCode,
+		Headers:        data.Headers,
+		Body: JSONResponse{
+			Content: data.Content,
 			Header: JSONResponseInfo{
-				Title:          data.Title,
-				Message:        data.Message,
-				Type:           data.ResponseType,
-				Action:         data.Action,
-				Token:          data.Token,
-				Code:           data.Code,
-				EventID:        data.EventID,
-				AdditionalInfo: data.AdditionalInfo,
+				Title:   data.Title,
+				Message: data.Message,
+				Type:    data.ResponseType,
+				Action:  data.Actions,
+				Token:   data.SecurityToken,
+				Code:    string(data.ResponseCode),
+				EventID: data.EventID,
+				Info:    data.Info,
 			},
 		},
 	}

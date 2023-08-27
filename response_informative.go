@@ -7,19 +7,25 @@ import (
 )
 
 var (
-	// DefaultInfoTitle doc ...
+	// DefaultInfoTitle default informative title.
 	DefaultInfoTitle = "Information!"
-	// DefaultInfoMessage doc ..
+
+	// DefaultInfoMessage  default informative message.
 	DefaultInfoMessage = "The request has been successful!"
-	// InformativeType info response type the value is "info"
+
+	// InformativeType info response type the value is "info".
 	InformativeType core.ResponseType = "info"
+
+	// DefaultInfoCode default informative code.
+	DefaultInfoCode = "success"
 )
 
-// Informative info response type the value is "info"
+// Informative info response type the value is "info".
 type Informative core.ResponseData
 
-// Write ...
-func (info Informative) Write(w http.ResponseWriter) {
+// Write informative message in screen.
+func (info Informative) Write(w http.ResponseWriter, r *http.Request) {
+	info.EventID = getEventID(r)
 	info.ResponseType = InformativeType
 	if info.Title == "" {
 		info.Title = DefaultInfoTitle
@@ -27,8 +33,14 @@ func (info Informative) Write(w http.ResponseWriter) {
 	if info.Message == "" {
 		info.Message = DefaultInfoMessage
 	}
-	if info.StatusCode == 0 {
-		info.StatusCode = http.StatusOK
+	if info.HTTPStatusCode == 0 {
+		info.HTTPStatusCode = http.StatusContinue
+	}
+	if info.ResponseCode == "" {
+		info.ResponseCode = ResponseCodes.Informative
+	}
+	if info.SecurityToken == "" {
+		info.SecurityToken = getSecurityToken(r)
 	}
 	api.Write(core.ResponseData(info), w)
 }

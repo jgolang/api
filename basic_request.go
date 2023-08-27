@@ -13,18 +13,18 @@ type RequestBasic struct {
 	HTTPReq    *http.Request
 }
 
-// SessionIDHeaderKey doc ...
-var SessionIDHeaderKey = "SessionID"
+// SecurityTokenHeaderKey session ID header key.
+var SecurityTokenHeaderKey = "SecurityToken"
 
-// UserIDHeaderKey doc ...
+// UserIDHeaderKey User ID header key.
 var UserIDHeaderKey = "UserID"
 
-// EventIDHeaderKey doc ..
+// EventIDHeaderKey event ID header key.
 var EventIDHeaderKey = "EventID"
 
-//GetSessionID get session from user
-func (request *RequestBasic) GetSessionID() Response {
-	sessionID, response := GetHeaderValueString(SessionIDHeaderKey, request.HTTPReq)
+// GetSecurityToken gets security token from user by header key layout.
+func (request *RequestBasic) GetSecurityToken() Response {
+	sessionID, response := GetHeaderValueString(SecurityTokenHeaderKey, request.HTTPReq)
 	if response != nil {
 		resp := response.(Error)
 		resp.Title = "Request info error!"
@@ -35,7 +35,7 @@ func (request *RequestBasic) GetSessionID() Response {
 	return nil
 }
 
-//GetUserID get id user session
+// GetUserID gets id user ID by header key layout.
 func (request *RequestBasic) GetUserID() Response {
 	userID, response := GetHeaderValueString(UserIDHeaderKey, request.HTTPReq)
 	if response != nil {
@@ -48,8 +48,8 @@ func (request *RequestBasic) GetUserID() Response {
 	return nil
 }
 
-//GetTraceID doc
-func (request *RequestBasic) GetTraceID() Response {
+// GetEventID gets event ID by header key layout.
+func (request *RequestBasic) GetEventID() Response {
 	eventID, response := GetHeaderValueString(EventIDHeaderKey, request.HTTPReq)
 	if response != nil {
 		resp := response.(Error)
@@ -61,7 +61,7 @@ func (request *RequestBasic) GetTraceID() Response {
 	return nil
 }
 
-// UnmarshalBody doc ...
+// UnmarshalBody parses request body to a struct.
 func (request *RequestBasic) UnmarshalBody() Response {
 	resp := UnmarshalBody(request.JSONStruct, request.HTTPReq)
 	if resp != nil {
@@ -70,9 +70,9 @@ func (request *RequestBasic) UnmarshalBody() Response {
 	return nil
 }
 
-// GetRequestBasicInfo ..
+// GetRequestBasicInfo gets session ID, user ID and event ID.
 func (request *RequestBasic) GetRequestBasicInfo() Response {
-	resp := request.GetSessionID()
+	resp := request.GetSecurityToken()
 	if resp != nil {
 		return resp
 	}
@@ -80,14 +80,14 @@ func (request *RequestBasic) GetRequestBasicInfo() Response {
 	if resp != nil {
 		return resp
 	}
-	resp = request.GetTraceID()
+	resp = request.GetEventID()
 	if resp != nil {
 		return resp
 	}
 	return nil
 }
 
-// GetRequestFullInfo ..
+// GetRequestFullInfo gets session ID, userID, event ID and unmarshal request body.
 func (request *RequestBasic) GetRequestFullInfo() Response {
 	resp := request.GetRequestBasicInfo()
 	if resp != nil {

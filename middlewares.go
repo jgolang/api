@@ -2,29 +2,29 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"time"
 
 	"github.com/jgolang/api/core"
 )
 
 var (
-	// DefaultInvalidAuthHeaderMsg doc ..
+	// DefaultInvalidAuthHeaderMsg default invalid authorization message.
 	DefaultInvalidAuthHeaderMsg = "Invalid Authorization header!"
-	// DefaultUnauthorizedTitle doc ...
-	DefaultUnauthorizedTitle = "Unauthorized!"
-	// DefaultBasicUnauthorizedMsg doc ..
+
+	// DefaultBasicUnauthorizedMsg default basic authetication method unauthorized message.
 	DefaultBasicUnauthorizedMsg = "Invalid basic token"
-	// DefaultBearerUnauthorizedMsg doc ...
+
+	// DefaultBearerUnauthorizedMsg default bearer authentication method unauthorized message.
 	DefaultBearerUnauthorizedMsg = "Invalid bearer token"
-	// CustomTokenPrefix doc...
+
+	// CustomTokenPrefix custom token authorization method prefix.
 	CustomTokenPrefix = "Bearer"
-	// DefaultCustomUnauthorizedMsg doc ...
+
+	// DefaultCustomUnauthorizedMsg default custom token authorization method unauthorized message.
 	DefaultCustomUnauthorizedMsg = fmt.Sprintf("Invalid %v token", CustomTokenPrefix)
 )
 
@@ -32,25 +32,21 @@ var (
 // which will be the result of chaining the ones received as parameters
 var MiddlewaresChain = core.MiddlewaresChain
 
-// BasicToken validate basic authentication token middleware.
+// BasicToken validates basic authentication token middleware.
 func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(auth) != 2 || auth[0] != "Basic" {
-			Error{
-				Title:      DefaultUnauthorizedTitle,
-				Message:    DefaultInvalidAuthHeaderMsg,
-				StatusCode: http.StatusUnauthorized,
-			}.Write(w)
+			response := Error500()
+			response.Message = DefaultInvalidAuthHeaderMsg
+			response.Write(w, r)
 			return
 		}
-		client, secret, tokenValid := api.ValidateBasicToken(auth[1])
+		client, secret, tokenValid := ValidateBasicToken(auth[1])
 		if !tokenValid {
-			Error{
-				Title:      DefaultUnauthorizedTitle,
-				Message:    DefaultBasicUnauthorizedMsg,
-				StatusCode: http.StatusUnauthorized,
-			}.Write(w)
+			response := Error401()
+			response.Message = DefaultBasicUnauthorizedMsg
+			response.Write(w, r)
 			return
 		}
 		r.Header.Set("Basic-Client", client)
@@ -59,25 +55,21 @@ func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// CustomToken middleware ...
+// CustomToken middleware to validates custom token authorization method.
 func CustomToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(auth) != 2 || auth[0] != CustomTokenPrefix {
-			Error{
-				Title:      DefaultUnauthorizedTitle,
-				Message:    DefaultInvalidAuthHeaderMsg,
-				StatusCode: http.StatusUnauthorized,
-			}.Write(w)
+			response := Error500()
+			response.Message = DefaultInvalidAuthHeaderMsg
+			response.Write(w, r)
 			return
 		}
 		tokenInfo, tokenValid := ValidateCustomToken(auth[1])
 		if !tokenValid {
-			Error{
-				Title:      DefaultUnauthorizedTitle,
-				Message:    DefaultBearerUnauthorizedMsg,
-				StatusCode: http.StatusUnauthorized,
-			}.Write(w)
+			response := Error401()
+			response.Message = DefaultBearerUnauthorizedMsg
+			response.Write(w, r)
 			return
 		}
 		buf, _ := tokenInfo.MarshalJSON()
@@ -91,60 +83,73 @@ func RequestHeaderJSON(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		contentType := r.Header.Get("Content-Type")
 		if len(contentType) == 0 {
-			Error{Message: "No content-type!"}.Write(w)
+			Error{
+				Message: "No content-type!",
+			}.Write(w, r)
 			return
 		}
 		if contentType != "application/json" {
-			Error{Message: "Content-Type not is JSON!"}.Write(w)
+			Error{
+				Message:      "Content-Type not is JSON!",
+				ResponseCode: ResponseCodes.InvalidJSON,
+			}.Write(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
 	}
 }
 
-// RequestHeaderSession doc ...
+// RequestHeaderSession validates that session ID is valid.
 func RequestHeaderSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		sessionID := r.Header.Get("SessionId")
-		w.Header().Set("SessionId", sessionID)
+		sessionID := r.Header.Get(SecurityTokenHeaderKey)
+		if sessionID == "" {
+			response := Error401()
+			response.Message = "Invalid session ID"
+			response.Write(w, r)
+			return
+		}
+		w.Header().Set(SecurityTokenHeaderKey, sessionID)
 		next.ServeHTTP(w, r)
 	}
 }
 
-// RequestBody doc ...
+// RequestBody wrapper middleware
 var RequestBody = NewRequestBodyMiddleware(PPPGMethodsKey)
 
 // NewRequestBodyMiddleware doc ...
 func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			if api.ValidateMethods(keyListMethods, r.Method) {
-				requestData, err := api.ValidateRequest(r)
+			if ValidateMethods(keyListMethods, r.Method) {
+				requestData, err := api.ProcessBody(r)
 				if err != nil {
 					PrintError(err)
 					Error{
-						Title:   "Invalid request content",
-						Message: "Request content empty json structure",
-					}.Write(w)
+						Title:        "Invalid request content",
+						Message:      "Request content empty json structure",
+						ResponseCode: ResponseCodes.InvalidJSON,
+					}.Write(w, r)
 					return
 				}
-				r.Body = ioutil.NopCloser(bytes.NewBuffer(requestData.RawBody))
+				r.Body = io.NopCloser(bytes.NewBuffer(requestData.RawBody))
 			}
 			next.ServeHTTP(w, r)
 		}
 	}
 }
 
-// ContentExtractor doc
-func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
+// ProcessRequest process request information.
+func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		requestData, err := api.ValidateRequest(r)
+		requestData, err := ProcessBody(r)
 		if err != nil {
 			PrintError(err)
 			Error{
-				Title:   "Invalid request content",
-				Message: "Request content empty json structure",
-			}.Write(w)
+				Title:        "Invalid request content",
+				Message:      "Request content empty json structure",
+				ResponseCode: ResponseCodes.InvalidJSON,
+			}.Write(w, r)
 			return
 		}
 
@@ -161,35 +166,42 @@ func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
 			prefixEventID = proxiedIPAddress
 		}
 
-		eventID := fmt.Sprintf("%v:%v:%v", prefixEventID, time.Now().UnixNano(), r.RequestURI)
-		LogRequest(r.Method, r.RequestURI, eventID, r.Form.Encode(), r.Header, requestData.RawBody)
+		requestData.EventID = generateEventID(prefixEventID, r.RequestURI)
+		requestData.AddInfo("proxiedIPAddress", proxiedIPAddress)
 
-		r.Header.Set("EventID", eventID)
+		LogRequest(r.Method, r.RequestURI, requestData.EventID, r.Form.Encode(), r.Header, requestData.RawBody)
+
+		r = UpdateRequestContext(requestData, r)
+
+		r.Header.Set(EventIDHeaderKey, requestData.EventID)
 		r.Header.Set("UUID", requestData.UUID)
 		r.Header.Set("DeviceType", requestData.DeviceType)
 		r.Header.Set("DeviceBrand", requestData.DeviceBrand)
 		r.Header.Set("DeviceModel", requestData.DeviceModel)
-		r.Header.Set("OS", requestData.OS)
+		r.Header.Set("DeviceOS", requestData.DeviceOS)
 		r.Header.Set("OSVersion", requestData.OSVersion)
-		r.Header.Set("Lang", requestData.Lang)
-		r.Header.Set("Timezone", requestData.Timezone)
+		r.Header.Set("OSTimezone", requestData.OSTimezone)
+		r.Header.Set("AppLanguage", requestData.AppLanguage)
 		r.Header.Set("AppVersion", requestData.AppVersion)
-		r.Header.Set("AppBuildVersion", requestData.AppBuildVersion)
+		r.Header.Set("AppBuildVersion", requestData.AppBuildInfo)
 		r.Header.Set("AppName", requestData.AppName)
-		r.Header.Set("Token", requestData.Token)
+		r.Header.Set(SecurityTokenHeaderKey, requestData.SecurityToken)
 
-		b, valid := requestData.Data.(json.RawMessage)
-		if !valid {
-			PrintError("Invalid content...")
-			Error{
-				Title:   "Invalid content",
-				Message: "Invalid content json structure",
-			}.Write(w)
-			return
-		}
-
-		r.Body = ioutil.NopCloser(bytes.NewBuffer(b)) // Set content data
+		r.Body = io.NopCloser(bytes.NewBuffer(requestData.Content))
 		rec := httptest.NewRecorder()
+
+		defer func() {
+			if recvr := recover(); recvr != nil {
+				err, ok := recvr.(error)
+				if ok {
+					PrintError(err)
+				} else {
+					PrintError("Not response: ", fmt.Sprintf("%v", r))
+				}
+				Error500().Write(w, r)
+				return
+			}
+		}()
 
 		next.ServeHTTP(rec, r)
 
@@ -198,6 +210,6 @@ func ContentExtractor(next http.HandlerFunc) http.HandlerFunc {
 		}
 		w.WriteHeader(rec.Code)
 		w.Write(rec.Body.Bytes())
-		go LogResponse(rec)
+		LogResponse(requestData.EventID, rec)
 	}
 }
