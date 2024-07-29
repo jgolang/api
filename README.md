@@ -171,3 +171,13 @@ func main() {
 ```
 
 In this example, the `handler` function creates a standard success response with a status code of 200 and some content. It then writes this response to the HTTP response writer. This ensures that all responses follow the same structure and include the necessary metadata.
+
+## Contributing
+
+If you have suggestions for how We could be improved, or want to report a bug, open an issue! We'd love all and any contributions.
+
+For more, check out the [Contributing Guide](CONTRIBUTING.md).
+
+## License
+
+This project is licensed under the [MIT License](https://github.com/new-horizons-tech-group/golang-project-tmpl/blob/main/LICENSE).
