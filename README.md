@@ -145,7 +145,7 @@ To implement a standard response using this library, follow these steps:
 
 Below is an example of how to use this library in a Golang project to create a standard success response.
 To use this library, you need to use the middleware function `api.ProcessRequest()`
-> See other helpful midlewares
+> See other helpful midlewares in the file `./middleware.go`
 
 ### Example Usage in an API Handler
 
