@@ -144,6 +144,8 @@ To implement a standard response using this library, follow these steps:
 ## Golang Implementation Example
 
 Below is an example of how to use this library in a Golang project to create a standard success response.
+To use this library, you need to use the middleware function `api.ProcessRequest()`
+> See other helpful midlewares
 
 ### Example Usage in an API Handler
 
@@ -165,7 +167,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/api/example", handler)
+    middlewaresChain := MiddlewaresChain(middleware.ProcessRequest)
+	http.HandleFunc("/api/example", middlewaresChain(handler))
 	http.ListenAndServe(":8080", nil)
 }
 ```
