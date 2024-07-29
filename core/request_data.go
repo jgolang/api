@@ -57,6 +57,12 @@ type RequestData struct {
 	// Client security token
 	SecurityToken string
 
+	// DeviceSerial device serial number
+	DeviceSerial string
+
+	// DeviceId device unique id
+	DeviceId string
+
 	// Request event ID
 	EventID string
 

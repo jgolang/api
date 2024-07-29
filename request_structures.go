@@ -24,6 +24,8 @@ type JSONRequestInfo struct {
 	AppBuildVersion string `json:"app_build_version,omitempty"`
 	AppName         string `json:"app_name,omitempty"`
 	SecurityToken   string `json:"token,omitempty"`
+	DeviceId        string `json:"device_id,omitempty"`
+	DeviceSerial    string `json:"device_serial,omitempty"`
 }
 
 // JSONEncryptedBody struct used to parse the encrypted request and

@@ -59,6 +59,8 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestData,
 		AppBuildInfo:  request.Header.AppBuildVersion,
 		AppName:       request.Header.AppName,
 		SecurityToken: request.Header.SecurityToken,
+		DeviceSerial:  request.Header.DeviceSerial,
+		DeviceId:      request.Header.DeviceId,
 		RawBody:       rawBody,
 		Content:       core.JSONContent(request.Content),
 	}
