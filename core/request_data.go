@@ -57,6 +57,18 @@ type RequestData struct {
 	// Client security token
 	SecurityToken string
 
+	// DeviceSerial device serial number
+	DeviceSerial string
+
+	// DeviceId device unique id
+	DeviceId string
+
+	// Latitude device latitude
+	Latitude string
+
+	// Longitude device longitude
+	Longitude string
+
 	// Request event ID
 	EventID string
 
