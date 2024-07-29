@@ -61,6 +61,8 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestData,
 		SecurityToken: request.Header.SecurityToken,
 		DeviceSerial:  request.Header.DeviceSerial,
 		DeviceId:      request.Header.DeviceId,
+		Latitude:      request.Header.Latitude,
+		Longitude:     request.Header.Longitude,
 		RawBody:       rawBody,
 		Content:       core.JSONContent(request.Content),
 	}

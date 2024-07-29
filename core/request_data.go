@@ -63,6 +63,12 @@ type RequestData struct {
 	// DeviceId device unique id
 	DeviceId string
 
+	// Latitude device latitude
+	Latitude string
+
+	// Longitude device longitude
+	Longitude string
+
 	// Request event ID
 	EventID string
 

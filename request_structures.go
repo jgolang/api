@@ -26,6 +26,8 @@ type JSONRequestInfo struct {
 	SecurityToken   string `json:"token,omitempty"`
 	DeviceId        string `json:"device_id,omitempty"`
 	DeviceSerial    string `json:"device_serial,omitempty"`
+	Latitude        string `json:"lat,omitempty"`
+	Longitude       string `json:"lon,omitempty"`
 }
 
 // JSONEncryptedBody struct used to parse the encrypted request and
