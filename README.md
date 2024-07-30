@@ -183,4 +183,12 @@ For more, check out the [Contributing Guide](CONTRIBUTING.md).
 
 ## License
 
-This project is licensed under the [MIT License](https://github.com/new-horizons-tech-group/golang-project-tmpl/blob/main/LICENSE).
+This project is licensed under the [MIT License](LICENSE).
+
+## Support
+
+If you find this repository helpful and would like to support its development, consider making a donation. Your contributions will help ensure the continued improvement and maintenance of this repository.
+
+Thank you for your support!
+
+[![ko-fi](https://www.ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/josuegiron)
