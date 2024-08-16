@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // PrintError wrapper function.
@@ -295,8 +297,22 @@ func LogResponse(eventID string, res *httptest.ResponseRecorder) {
 	Print("RESPONSE_EVENT_ID: %v \nSTATUS_CODE: %v %v \n%v", eventID, res.Code, http.StatusText(res.Code), responseBody)
 }
 
-func generateEventID(prefix, uri string) string {
+func generateEventID(ctx context.Context, prefix, uri string) string {
+	if traceID := getOtelTraceID(ctx); traceID != "" {
+		return traceID
+	}
 	eventIDPayload := fmt.Sprintf("%v:%v:%v", prefix, time.Now().UnixNano(), uri)
 	buf := []byte(eventIDPayload)
 	return fmt.Sprintf("%x", md5.Sum(buf))
+}
+
+// getTraceID retrieves the trace ID from the provided context
+func getOtelTraceID(ctx context.Context) string {
+	span := trace.SpanFromContext(ctx)
+	if span == nil {
+		return ""
+	}
+
+	traceID := span.SpanContext().TraceID().String()
+	return traceID
 }

@@ -166,7 +166,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 			prefixEventID = proxiedIPAddress
 		}
 
-		requestData.EventID = generateEventID(prefixEventID, r.RequestURI)
+		requestData.EventID = generateEventID(r.Context(), prefixEventID, r.RequestURI)
 		requestData.AddInfo("proxiedIPAddress", proxiedIPAddress)
 
 		LogRequest(r.Method, r.RequestURI, requestData.EventID, r.Form.Encode(), r.Header, requestData.RawBody)
