@@ -282,15 +282,19 @@ func RContext(r *http.Request) (*RequestContext, error) {
 	return GetRequestContext(r)
 }
 
-func Context(r *http.Request) *core.RequestDataContext {
+func Context(r *http.Request) *RequestContext {
 	ctx := r.Context()
 	if ctx == nil {
-		return &core.RequestDataContext{}
+		return &RequestContext{&core.RequestDataContext{
+			Context: context.Background(),
+		}}
 	}
-	rctx, ok := ctx.(*core.RequestDataContext)
+	rctx, ok := ctx.(*RequestContext)
 	if !ok {
-		return &core.RequestDataContext{
-			Context: ctx,
+		return &RequestContext{
+			RequestDataContext: &core.RequestDataContext{
+				Context: ctx,
+			},
 		}
 	}
 	return rctx

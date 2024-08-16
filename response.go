@@ -48,5 +48,4 @@ func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.Resp
 	if err != nil {
 		Fatal(err)
 	}
-	return
 }
