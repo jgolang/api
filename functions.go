@@ -252,12 +252,12 @@ func SetContextValue(key, value interface{}, r *http.Request) *http.Request {
 }
 
 // GetRequestContext gets request data from http request context.
-// This useful when you set Request type of core.RequestData in http request context
+// This useful when you set Request type of core.RequestDataContext in http request context
 // in a middleware implementation.
-// Returns a core.RequestData struct from api.RequestDataContextKey key.
-func GetRequestContext(r *http.Request) (*Request, error) {
-	value := r.Context().Value(RequestDataContextKey)
-	requestData, valid := value.(*Request)
+// Returns a core.RequestDataContext struct from api.RequestDataContextContextKey key.
+func GetRequestContext(r *http.Request) (*RequestContext, error) {
+	value := r.Context().Value(RequestDataContextContextKey)
+	requestData, valid := value.(*RequestContext)
 	if valid {
 		return requestData, nil
 	}
@@ -265,9 +265,9 @@ func GetRequestContext(r *http.Request) (*Request, error) {
 }
 
 // UpdateRequestContext update request context.
-func UpdateRequestContext(requestData *Request, r *http.Request) *http.Request {
+func UpdateRequestContext(requestData *RequestContext, r *http.Request) *http.Request {
 	return SetContextValue(
-		RequestDataContextKey,
+		RequestDataContextContextKey,
 		requestData,
 		r,
 	)
