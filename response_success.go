@@ -17,7 +17,7 @@ var (
 	SuccessType core.ResponseType = "success"
 
 	// DefaultSuccessCode default success code.
-	DefaultSuccessCode = "000"
+	DefaultSuccessCode = "0000"
 )
 
 // Success success response type the value is "success".

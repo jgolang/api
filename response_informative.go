@@ -17,7 +17,7 @@ var (
 	InformativeType core.ResponseType = "info"
 
 	// DefaultInfoCode default informative code.
-	DefaultInfoCode = "000"
+	DefaultInfoCode = "0000"
 )
 
 // Informative info response type the value is "info".
