@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/jgolang/api/core"
+	"github.com/jgolang/errors"
 )
 
 var (
@@ -54,15 +55,33 @@ func (err Error) Write(w http.ResponseWriter, r *http.Request) {
 	api.Write(core.ResponseData(err), w)
 }
 
+func getErrCode(errs ...error) (code core.ResponseCode, msg string) {
+	for _, e := range errs {
+		if e == nil {
+			return "", ""
+		}
+		if err, ok := e.(*errors.Error); ok {
+			return core.ResponseCode(err.Code.Str()), err.Code.Msg()
+		}
+	}
+	return "", ""
+}
+
 // Error400 returns a new HTTP Bad Request error code.
-func Error400() Error {
-	return Error{}
+func Error400(errs ...error) Error {
+	code, msg := getErrCode(errs...)
+	return Error{
+		Message:      msg,
+		ResponseCode: code,
+	}
 }
 
 // ErrorWithMsg return a new HTTP Bad Request with custom message.
-func ErrorWithMsg(msg string) Error {
+func ErrorWithMsg(msg string, errs ...error) Error {
+	code, _ := getErrCode(errs...)
 	return Error{
-		Message: msg,
+		Message:      msg,
+		ResponseCode: code,
 	}
 }
 
@@ -90,29 +109,43 @@ func Error403() Error {
 
 // Error500 returns a new HTTP Internal Server Error code.
 // and internal server error default title and default mesage.
-func Error500() Error {
+func Error500(errs ...error) Error {
+	code, msg := getErrCode(errs...)
+	if code == "" {
+		code = ResponseCodes.InternalServerEerror
+	}
+	if msg == "" {
+		msg = InternalServerMessage
+	}
 	return Error{
 		Title:          InternalServerTitle,
-		Message:        InternalServerMessage,
-		ResponseCode:   ResponseCodes.InternalServerEerror,
+		Message:        msg,
+		ResponseCode:   code,
 		HTTPStatusCode: http.StatusInternalServerError,
 	}
 }
 
 // Error501 returns a new HTTP Not Implement Error code.
 // and internal server error default title and default mesage.
-func Error501() Error {
+func Error501(errs ...error) Error {
+	code, msg := getErrCode(errs...)
+	if code == "" {
+		code = ResponseCodes.DefaultError
+	}
+	if msg == "" {
+		msg = InternalServerMessage
+	}
 	return Error{
 		Title:          InternalServerTitle,
-		Message:        InternalServerMessage,
-		ResponseCode:   ResponseCodes.DefaultError,
+		Message:        msg,
+		ResponseCode:   code,
 		HTTPStatusCode: http.StatusServiceUnavailable,
 	}
 }
 
 // Error500WithMsg returns a new HTTP internal server error code with custom message.
-func Error500WithMsg(msg string) Error {
-	err := Error500()
+func Error500WithMsg(msg string, errs ...error) Error {
+	err := Error500(errs...)
 	err.Message = msg
 	return err
 }
