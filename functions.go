@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"time"
 
 	"github.com/jgolang/api/core"
@@ -278,26 +279,53 @@ func UpdateRequestContext(requestData *RequestContext, r *http.Request) *http.Re
 // This useful when you set Request type of core.RequestDataContext in http request context
 // in a middleware implementation.
 // Returns a core.RequestDataContext struct from api.RequestDataContextContextKey key.
-func RContext(r *http.Request) (*RequestContext, error) {
-	return GetRequestContext(r)
+func RContext(ctx context.Context) (*RequestContext, error) {
+	value := ctx.Value(RequestDataContextContextKey)
+	requestData, valid := value.(*RequestContext)
+	if valid {
+		return requestData, nil
+	}
+	return nil, fmt.Errorf("context requestData not found")
 }
 
-func Context(r *http.Request) *RequestContext {
-	ctx := r.Context()
-	if ctx == nil {
-		return &RequestContext{&core.RequestDataContext{
-			Context: context.Background(),
-		}}
-	}
-	rctx, ok := ctx.(*RequestContext)
-	if !ok {
+func Context(ctx context.Context) *RequestContext {
+	switch v := ctx.(type) {
+	case nil:
 		return &RequestContext{
 			RequestDataContext: &core.RequestDataContext{
-				Context: ctx,
+				Context: context.Background(),
+			},
+		}
+	case *RequestContext:
+		return ctx.(*RequestContext)
+	case RequestContext:
+		rctx := ctx.(RequestContext)
+		return &rctx
+	case context.Context:
+		ctxType := reflect.TypeOf(ctx)
+		ctxValue := reflect.ValueOf(ctx)
+		if ctxType.Kind() == reflect.Ptr {
+			elem := ctxValue.Elem()
+			for i := 0; i < elem.NumField(); i++ {
+				field := elem.Field(i)
+				rctx, ok := field.Interface().(*RequestContext)
+				if ok {
+					return rctx
+				}
+			}
+		}
+		return &RequestContext{
+			RequestDataContext: &core.RequestDataContext{
+				Context: v,
+			},
+		}
+	default:
+		return &RequestContext{
+			RequestDataContext: &core.RequestDataContext{
+				Context: v,
 			},
 		}
 	}
-	return rctx
 }
 
 // PrintFullEvent set true value for allow print full event request

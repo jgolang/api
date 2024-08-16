@@ -181,3 +181,8 @@ func (content *JSONContent) UnmarshalJSON(data []byte) error {
 	*content = append((*content)[0:0], data...)
 	return nil
 }
+
+// DecodeContent decodes RequestDataContext.Content property from json to a struct.
+func (data *RequestDataContext) Body() JSONContent {
+	return data.Content
+}
