@@ -22,7 +22,8 @@ func shortID(traceID string) string {
 
 // TraceVisibility controls how trace information is included in the response message.
 // - 1: Includes both event ID and response code.
-// - 2: Includes only the event ID.
+// - 2: Includes only the Code.
+// - 3: Includes only the event ID.
 var TraceVisibility = 1
 
 // BlankSuccess contols if success include user feeback information
@@ -37,6 +38,9 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 		msg = fmt.Sprintf("%s (%s-%s)", data.Message, shortID(data.EventID), data.ResponseCode)
 	}
 	if TraceVisibility == 2 {
+		msg = fmt.Sprintf("%s (%s)", data.Message, data.ResponseCode)
+	}
+	if TraceVisibility == 3 {
 		msg = fmt.Sprintf("%s (%s)", data.Message, shortID(data.EventID))
 	}
 	if BlankSuccess {
