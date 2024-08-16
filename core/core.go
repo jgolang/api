@@ -6,13 +6,14 @@ import (
 )
 
 // New API core developer toolkit.
-func New(receiver APIRequestReceiver, formater APIResponseFormatter, writer APIResponseWriter, guarantor APISecurityGuarantor, mapMethods *MapMethods) *API {
+func New(receiver APIRequestReceiver, formater APIResponseFormatter, writer APIResponseWriter, guarantor APISecurityGuarantor, mapMethods *MapMethods, paramValidator ParamValidator) *API {
 	return &API{
-		receiver:   receiver,
-		formatter:  formater,
-		writer:     writer,
-		guarantor:  guarantor,
-		MapMethods: mapMethods,
+		receiver:       receiver,
+		formatter:      formater,
+		writer:         writer,
+		guarantor:      guarantor,
+		MapMethods:     mapMethods,
+		paramValidator: paramValidator,
 	}
 }
 
@@ -34,11 +35,16 @@ type API struct {
 
 	// MapMethods contain a array of HTTP methos for API validations.
 	MapMethods *MapMethods
+
+	paramValidator ParamValidator
 }
 
 // MapMethods you can to use this map to define your methods that allow or
 // block in your API module.
 type MapMethods map[string][]string
+
+// ParamValidator function, return msg and error when param is incorrect
+type ParamValidator func(any) (errMsg string, err error)
 
 // Write API response in JSON format in screen. You can to define response
 // JSON format implemented the APIResponseFormatter interface.
@@ -98,4 +104,9 @@ func (api *API) AddMapMethod(key string, methods []string) {
 	mapMethods := *api.MapMethods
 	mapMethods[key] = methods
 	api.MapMethods = &mapMethods
+}
+
+// RegisterParamValidator inject a new implementation in the Validator
+func (api *API) RegisterParamValidator(paramValidator func(any) (errMsg string, err error)) {
+	api.paramValidator = paramValidator
 }

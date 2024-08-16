@@ -217,7 +217,7 @@ func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Respo
 	return value, nil
 }
 
-// UnmarshalBody parses request body to a struct.
+// UnmarshalBody parses and validates request body to a struct
 func UnmarshalBody(v interface{}, r *http.Request) Response {
 	err := api.UnmarshalBody(v, r)
 	if err != nil {
@@ -225,6 +225,12 @@ func UnmarshalBody(v interface{}, r *http.Request) Response {
 		return Error{
 			Title:   "Not unmarshal JSON struct!",
 			Message: "Error when unmarshal JSON structure",
+		}
+	}
+	if errMsg, err := api.ValidateParams(v); err != nil {
+		return Error{
+			Message:      errMsg,
+			ResponseCode: ResponseCodes.InvalidParams,
 		}
 	}
 	return nil
@@ -315,4 +321,9 @@ func getOtelTraceID(ctx context.Context) string {
 
 	traceID := span.SpanContext().TraceID().String()
 	return traceID
+}
+
+func ParamValidatorV0(v any) (string, error) {
+	// not validate any param by default
+	return "", nil
 }

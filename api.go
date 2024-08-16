@@ -93,6 +93,11 @@ func AddNewMapMethod(key string, methods []string) {
 	api.AddMapMethod(key, methods)
 }
 
+// RegisterParamValidator inject a new implementation in the Validator
+func RegisterParamValidator(paramValidator func(any) (errMsg string, err error)) {
+	api.RegisterParamValidator(paramValidator)
+}
+
 var mapMethods core.MapMethods
 
 func init() {

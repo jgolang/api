@@ -160,6 +160,11 @@ func (api API) UnmarshalBody(v interface{}, r *http.Request) error {
 	return nil
 }
 
+// UnmarshalBody parses request body to a struct.
+func (api API) ValidateParams(v any) (errMsg string, err error) {
+	return api.paramValidator(v)
+}
+
 // ValidateMethods validates if a method exist in a methods map.
 func (api *API) ValidateMethods(keyMapMethod, method string) bool {
 	methodAccepted := false

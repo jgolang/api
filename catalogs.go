@@ -17,6 +17,7 @@ var ResponseCodes = struct {
 	RestrictResource     core.ResponseCode
 	InternalServerEerror core.ResponseCode
 	ServiceUnavailable   core.ResponseCode
+	InvalidParams        core.ResponseCode
 }{
 	Success:              "000",
 	Informative:          "000",
@@ -31,4 +32,5 @@ var ResponseCodes = struct {
 	ObjectNotFound:       "E006",
 	InternalServerEerror: "I300",
 	ServiceUnavailable:   "I301",
+	InvalidParams:        "A101",
 }
