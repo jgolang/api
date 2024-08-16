@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/jgolang/api/core"
 )
@@ -33,12 +34,13 @@ var BlankSuccess = true
 func (formatter ResponseFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
 	msg := data.Message
 	title := data.Title
+	code := strings.ToLower(string(data.ResponseCode))
 
 	if TraceVisibility == 1 {
-		msg = fmt.Sprintf("%s (%s-%s)", data.Message, shortID(data.EventID), data.ResponseCode)
+		msg = fmt.Sprintf("%s (%s-%s)", data.Message, shortID(data.EventID), code)
 	}
 	if TraceVisibility == 2 {
-		msg = fmt.Sprintf("%s (%s)", data.Message, data.ResponseCode)
+		msg = fmt.Sprintf("%s (%s)", data.Message, code)
 	}
 	if TraceVisibility == 3 {
 		msg = fmt.Sprintf("%s (%s)", data.Message, shortID(data.EventID))
@@ -59,7 +61,7 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 				Type:    data.ResponseType,
 				Action:  data.Actions,
 				Token:   data.SecurityToken,
-				Code:    string(data.ResponseCode),
+				Code:    code,
 				EventID: data.EventID,
 				Info:    data.Info,
 			},
