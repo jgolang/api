@@ -33,6 +33,7 @@ var api = core.New(
 	ResponseWriter{},
 	&SecurityGuaranter{},
 	&mapMethods,
+	ParamValidatorV0,
 )
 
 // Write API response in JSON format in screen. You can to define response
