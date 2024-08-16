@@ -287,13 +287,13 @@ func Context(r *http.Request) *core.RequestDataContext {
 	if ctx == nil {
 		return &core.RequestDataContext{}
 	}
-	rctx, ok := ctx.(core.RequestDataContext)
+	rctx, ok := ctx.(*core.RequestDataContext)
 	if !ok {
 		return &core.RequestDataContext{
 			Context: ctx,
 		}
 	}
-	return &rctx
+	return rctx
 }
 
 // PrintFullEvent set true value for allow print full event request
