@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/jgolang/api/core"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -261,7 +262,7 @@ func GetRequestContext(r *http.Request) (*RequestContext, error) {
 	if valid {
 		return requestData, nil
 	}
-	return nil, fmt.Errorf("Context requestData not found")
+	return nil, fmt.Errorf("context requestData not found")
 }
 
 // UpdateRequestContext update request context.
@@ -271,6 +272,28 @@ func UpdateRequestContext(requestData *RequestContext, r *http.Request) *http.Re
 		requestData,
 		r,
 	)
+}
+
+// RContext gets request data from http request context.
+// This useful when you set Request type of core.RequestDataContext in http request context
+// in a middleware implementation.
+// Returns a core.RequestDataContext struct from api.RequestDataContextContextKey key.
+func RContext(r *http.Request) (*RequestContext, error) {
+	return GetRequestContext(r)
+}
+
+func Context(r *http.Request) *core.RequestDataContext {
+	ctx := r.Context()
+	if ctx == nil {
+		return &core.RequestDataContext{}
+	}
+	rctx, ok := ctx.(core.RequestDataContext)
+	if !ok {
+		return &core.RequestDataContext{
+			Context: ctx,
+		}
+	}
+	return &rctx
 }
 
 // PrintFullEvent set true value for allow print full event request
