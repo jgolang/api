@@ -31,7 +31,7 @@ func (receiver RequestReceiverV2) ProcessEncryptedBody(r *http.Request) (*core.R
 }
 
 // ProcessBody API request body information.
-func (receiver RequestReceiverV2) ProcessBody(r *http.Request) (*core.RequestData, error) {
+func (receiver RequestReceiverV2) ProcessBody(r *http.Request) (*core.RequestDataContext, error) {
 	var request JSONRequest
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -41,7 +41,8 @@ func (receiver RequestReceiverV2) ProcessBody(r *http.Request) (*core.RequestDat
 	if err != nil {
 		return nil, err
 	}
-	requestData := core.RequestData{
+	requestData := core.RequestDataContext{
+		Context:       r.Context(),
 		UUID:          request.Header.UUID,
 		DeviceType:    request.Header.DeviceType,
 		DeviceBrand:   request.Header.DeviceBrand,

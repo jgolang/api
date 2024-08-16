@@ -6,7 +6,7 @@ import "net/http"
 // information.
 type APIRequestReceiver interface {
 	// ProcessBody API request body information
-	ProcessBody(*http.Request) (*RequestData, error)
+	ProcessBody(*http.Request) (*RequestDataContext, error)
 	// ProcessEncryptedBody API request url encode data
 	ProcessEncryptedBody(*http.Request) (*RequestEncryptedData, error)
 	// GetRouteVar returns the route var for the current request, if any.

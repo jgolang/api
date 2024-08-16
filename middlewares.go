@@ -142,7 +142,7 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 // ProcessRequest process request information.
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		requestData, err := ProcessBody(r)
+		rctx, err := ProcessBody(r)
 		if err != nil {
 			PrintError(err)
 			Error{
@@ -161,33 +161,34 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 			proxiedIPAddress = r.RemoteAddr
 		}
 
-		prefixEventID := requestData.UUID
+		prefixEventID := rctx.UUID
 		if prefixEventID == "" {
 			prefixEventID = proxiedIPAddress
 		}
 
-		requestData.EventID = generateEventID(r.Context(), prefixEventID, r.RequestURI)
-		requestData.AddInfo("proxiedIPAddress", proxiedIPAddress)
+		rctx.EventID = generateEventID(r.Context(), prefixEventID, r.RequestURI)
+		rctx.AddInfo("proxiedIPAddress", proxiedIPAddress)
 
-		LogRequest(r.Method, r.RequestURI, requestData.EventID, r.Form.Encode(), r.Header, requestData.RawBody)
+		LogRequest(r.Method, r.RequestURI, rctx.EventID, r.Form.Encode(), r.Header, rctx.RawBody)
 
-		r = UpdateRequestContext(requestData, r)
+		r = UpdateRequestContext(rctx, r)
+		r = r.WithContext(rctx)
 
-		r.Header.Set(EventIDHeaderKey, requestData.EventID)
-		r.Header.Set("UUID", requestData.UUID)
-		r.Header.Set("DeviceType", requestData.DeviceType)
-		r.Header.Set("DeviceBrand", requestData.DeviceBrand)
-		r.Header.Set("DeviceModel", requestData.DeviceModel)
-		r.Header.Set("DeviceOS", requestData.DeviceOS)
-		r.Header.Set("OSVersion", requestData.OSVersion)
-		r.Header.Set("OSTimezone", requestData.OSTimezone)
-		r.Header.Set("AppLanguage", requestData.AppLanguage)
-		r.Header.Set("AppVersion", requestData.AppVersion)
-		r.Header.Set("AppBuildVersion", requestData.AppBuildInfo)
-		r.Header.Set("AppName", requestData.AppName)
-		r.Header.Set(SecurityTokenHeaderKey, requestData.SecurityToken)
+		r.Header.Set(EventIDHeaderKey, rctx.EventID)
+		r.Header.Set("UUID", rctx.UUID)
+		r.Header.Set("DeviceType", rctx.DeviceType)
+		r.Header.Set("DeviceBrand", rctx.DeviceBrand)
+		r.Header.Set("DeviceModel", rctx.DeviceModel)
+		r.Header.Set("DeviceOS", rctx.DeviceOS)
+		r.Header.Set("OSVersion", rctx.OSVersion)
+		r.Header.Set("OSTimezone", rctx.OSTimezone)
+		r.Header.Set("AppLanguage", rctx.AppLanguage)
+		r.Header.Set("AppVersion", rctx.AppVersion)
+		r.Header.Set("AppBuildVersion", rctx.AppBuildInfo)
+		r.Header.Set("AppName", rctx.AppName)
+		r.Header.Set(SecurityTokenHeaderKey, rctx.SecurityToken)
 
-		r.Body = io.NopCloser(bytes.NewBuffer(requestData.Content))
+		r.Body = io.NopCloser(bytes.NewBuffer(rctx.Content))
 		rec := httptest.NewRecorder()
 
 		defer func() {
@@ -210,6 +211,6 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		}
 		w.WriteHeader(rec.Code)
 		w.Write(rec.Body.Bytes())
-		LogResponse(requestData.EventID, rec)
+		LogResponse(rctx.EventID, rec)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/jgolang/api/core"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -252,25 +253,51 @@ func SetContextValue(key, value interface{}, r *http.Request) *http.Request {
 }
 
 // GetRequestContext gets request data from http request context.
-// This useful when you set Request type of core.RequestData in http request context
+// This useful when you set Request type of core.RequestDataContext in http request context
 // in a middleware implementation.
-// Returns a core.RequestData struct from api.RequestDataContextKey key.
-func GetRequestContext(r *http.Request) (*Request, error) {
-	value := r.Context().Value(RequestDataContextKey)
-	requestData, valid := value.(*Request)
+// Returns a core.RequestDataContext struct from api.RequestDataContextContextKey key.
+func GetRequestContext(r *http.Request) (*RequestContext, error) {
+	value := r.Context().Value(RequestDataContextContextKey)
+	requestData, valid := value.(*RequestContext)
 	if valid {
 		return requestData, nil
 	}
-	return nil, fmt.Errorf("Context requestData not found")
+	return nil, fmt.Errorf("context requestData not found")
 }
 
 // UpdateRequestContext update request context.
-func UpdateRequestContext(requestData *Request, r *http.Request) *http.Request {
+func UpdateRequestContext(requestData *RequestContext, r *http.Request) *http.Request {
 	return SetContextValue(
-		RequestDataContextKey,
+		RequestDataContextContextKey,
 		requestData,
 		r,
 	)
+}
+
+// RContext gets request data from http request context.
+// This useful when you set Request type of core.RequestDataContext in http request context
+// in a middleware implementation.
+// Returns a core.RequestDataContext struct from api.RequestDataContextContextKey key.
+func RContext(r *http.Request) (*RequestContext, error) {
+	return GetRequestContext(r)
+}
+
+func Context(r *http.Request) *RequestContext {
+	ctx := r.Context()
+	if ctx == nil {
+		return &RequestContext{&core.RequestDataContext{
+			Context: context.Background(),
+		}}
+	}
+	rctx, ok := ctx.(*RequestContext)
+	if !ok {
+		return &RequestContext{
+			RequestDataContext: &core.RequestDataContext{
+				Context: ctx,
+			},
+		}
+	}
+	return rctx
 }
 
 // PrintFullEvent set true value for allow print full event request

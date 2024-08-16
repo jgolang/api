@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -9,6 +10,8 @@ import (
 
 // RequestEncryptedData contains all encryptions information to process the API request.
 type RequestEncryptedData struct {
+	context.Context
+
 	// Request Metadata
 	Metadata string
 
@@ -19,8 +22,10 @@ type RequestEncryptedData struct {
 	Info info.Info
 }
 
-// RequestData contains all information to process the API request.
-type RequestData struct {
+// RequestDataContext contains all information to process the API request.
+type RequestDataContext struct {
+	context.Context
+
 	// Client device UUID
 	UUID string
 
@@ -89,58 +94,58 @@ type RequestData struct {
 	Data interface{}
 }
 
-// DecodeContent decodes RequestData.Content property from json to a struct.
-func (data *RequestData) DecodeContent(v interface{}) error {
+// DecodeContent decodes RequestDataContext.Content property from json to a struct.
+func (data *RequestDataContext) DecodeContent(v interface{}) error {
 	return data.Content.Decode(v)
 }
 
 // AddInfo adds new item to AditionalInfo map.
-func (data *RequestData) AddInfo(key, value string) {
+func (data *RequestDataContext) AddInfo(key, value string) {
 	data.Info.Set(key, value)
 }
 
 // Set additional info value.
-func (data *RequestData) Set(key string, value interface{}) {
+func (data *RequestDataContext) Set(key string, value interface{}) {
 	data.Info.Set(key, value)
 }
 
 // Get additional info value.
-func (data *RequestData) Get(key string) (value interface{}) {
+func (data *RequestDataContext) Get(key string) (value interface{}) {
 	return data.Info.Get(key)
 }
 
 // GetString gets additional info value as string.
-func (data *RequestData) GetString(key string) string {
+func (data *RequestDataContext) GetString(key string) string {
 	return data.Info.GetString(key)
 }
 
 // GetInt gets additional info value as int.
-func (data *RequestData) GetInt(key string) int {
+func (data *RequestDataContext) GetInt(key string) int {
 	return data.Info.GetInt(key)
 }
 
 // GetInt64 gets additional info value as int64.
-func (data *RequestData) GetInt64(key string) int64 {
+func (data *RequestDataContext) GetInt64(key string) int64 {
 	return data.Info.GetInt64(key)
 }
 
 // GetFloat gets additional ifno value as float64.
-func (data *RequestData) GetFloat(key string) float64 {
+func (data *RequestDataContext) GetFloat(key string) float64 {
 	return data.Info.GetFloat(key)
 }
 
 // GetBool gets additional info value as bool.
-func (data *RequestData) GetBool(key string) bool {
+func (data *RequestDataContext) GetBool(key string) bool {
 	return data.Info.GetBool(key)
 }
 
 // GetStruct unmarhal a struct in additional info map.
-func (data *RequestData) GetStruct(key string, v interface{}) error {
+func (data *RequestDataContext) GetStruct(key string, v interface{}) error {
 	return data.Info.GetStruct(key, v)
 }
 
 // AddHeader adds new header to Headers map.
-func (data *RequestData) AddHeader(key, value string) {
+func (data *RequestDataContext) AddHeader(key, value string) {
 	if data.Headers == nil {
 		data.Headers = make(map[string]string)
 	}

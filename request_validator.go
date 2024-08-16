@@ -11,8 +11,8 @@ import (
 // RequestContextKey type
 type RequestContextKey string
 
-// RequestDataContextKey request data context key to finds request context
-const RequestDataContextKey = RequestContextKey("requestData")
+// RequestDataContextContextKey request data context key to finds request context
+const RequestDataContextContextKey = RequestContextKey("requestData")
 
 // RequestReceiver implementation of core.APIRequestReceiver interface
 type RequestReceiver struct{}
@@ -36,7 +36,7 @@ func (receiver RequestReceiver) ProcessEncryptedBody(r *http.Request) (*core.Req
 }
 
 // ProcessBody process API request body information.
-func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestData, error) {
+func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataContext, error) {
 	var request JSONRequest
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -46,7 +46,8 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestData,
 	if err != nil {
 		return nil, err
 	}
-	requestData := core.RequestData{
+	requestData := core.RequestDataContext{
+		Context:       r.Context(),
 		UUID:          request.Header.UUID,
 		DeviceType:    request.Header.DeviceType,
 		DeviceBrand:   request.Header.DeviceBrand,

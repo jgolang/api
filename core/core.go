@@ -61,7 +61,7 @@ func (api *API) ProcessEncryptedBody(r *http.Request) (*RequestEncryptedData, er
 
 // ProcessBody API request. You can to define request JSON format and how to
 // validate it implemented the APIRequestReciver interface.
-func (api *API) ProcessBody(r *http.Request) (*RequestData, error) {
+func (api *API) ProcessBody(r *http.Request) (*RequestDataContext, error) {
 	return api.receiver.ProcessBody(r)
 }
 
