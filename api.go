@@ -102,6 +102,7 @@ func RegisterParamValidator(paramValidator func(any) (errMsg string, err error))
 var mapMethods core.MapMethods
 
 func init() {
+	SkipPaths = make(map[SkipPath]bool)
 	mapMethods = make(core.MapMethods)
 	mapMethods[PPPGMethodsKey] = []string{
 		http.MethodPost,

@@ -139,9 +139,36 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 	}
 }
 
+type SkipPath string
+
+var SkipPaths map[SkipPath]bool
+
+func AddSkipPath(path SkipPath, skip bool) {
+	if SkipPaths == nil {
+		SkipPaths = make(map[SkipPath]bool)
+	}
+	SkipPaths[path] = skip
+}
+
+func DeleteSkipPath(path SkipPath) {
+	if SkipPaths == nil {
+		SkipPaths = make(map[SkipPath]bool)
+	}
+	delete(SkipPaths, path)
+}
+
+func GenSkipPath(method string, path string) SkipPath {
+	return SkipPath(fmt.Sprintf("%s:%s", method, path))
+}
+
 // ProcessRequest process request information.
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, exists := SkipPaths[GenSkipPath(r.Method, r.URL.Path)]; exists {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		rctx, err := ProcessBody(r)
 		if err != nil {
 			PrintError(err)
