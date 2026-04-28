@@ -10,6 +10,20 @@ type JSONRequest struct {
 	Content json.RawMessage `json:"content,omitempty"`
 }
 
+// JSONRequestOf documents a JSONRequest with a concrete content payload type.
+//
+// It is intended for OpenAPI schema generation only. Runtime requests keep using
+// JSONRequest for backward compatibility.
+type JSONRequestOf[T any] struct {
+	Header  JSONRequestInfo `json:"header,omitempty"`
+	Content T               `json:"content,omitempty"`
+}
+
+// RequestDoc returns a typed request wrapper for OpenAPI documentation.
+func RequestDoc[T any]() JSONRequestOf[T] {
+	return JSONRequestOf[T]{}
+}
+
 // JSONRequestInfo request info section fields for encrypted requests.
 type JSONRequestInfo struct {
 	UUID            string `json:"uuid,omitempty"`
