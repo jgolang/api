@@ -240,6 +240,10 @@ func main() {
 
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, and external adapter examples.
 
+## Trace IDs
+
+The package does not depend on a tracing vendor. Applications can provide trace IDs through `api.RegisterTraceIDProvider(...)`; see [docs/tracing.md](docs/tracing.md).
+
 ## Contributing
 
 If you have suggestions for how We could be improved, or want to report a bug, open an issue! We'd love all and any contributions.

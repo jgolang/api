@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jgolang/api/core"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // PrintError wrapper function.
@@ -359,23 +358,12 @@ func LogResponse(eventID string, res *httptest.ResponseRecorder) {
 }
 
 func generateEventID(ctx context.Context, prefix, uri string) string {
-	if traceID := getOtelTraceID(ctx); traceID != "" {
+	if traceID := getTraceID(ctx); traceID != "" {
 		return traceID
 	}
 	eventIDPayload := fmt.Sprintf("%v:%v:%v", prefix, time.Now().UnixNano(), uri)
 	buf := []byte(eventIDPayload)
 	return fmt.Sprintf("%x", md5.Sum(buf))
-}
-
-// getTraceID retrieves the trace ID from the provided context
-func getOtelTraceID(ctx context.Context) string {
-	span := trace.SpanFromContext(ctx)
-	if span == nil {
-		return ""
-	}
-
-	traceID := span.SpanContext().TraceID().String()
-	return traceID
 }
 
 func ParamValidatorV0(v any) (string, error) {
