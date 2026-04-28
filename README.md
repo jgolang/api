@@ -175,6 +175,71 @@ func main() {
 
 In this example, the `handler` function creates a standard success response with a status code of 200 and some content. It then writes this response to the HTTP response writer. This ensures that all responses follow the same structure and include the necessary metadata.
 
+## Router-agnostic OpenAPI documentation
+
+The package includes a router-agnostic registration layer for OpenAPI 3 and Swagger UI. The native adapter uses only Go's standard `net/http` package, while adapters for Gin, Echo, chi, gorilla/mux, or other routers should live in the application that chooses those routers.
+
+The philosophy is to keep `github.com/jgolang/api` small and predictable: prefer Go's standard library and `github.com/jgolang/...` dependencies, with any exception made explicitly.
+
+```go
+package main
+
+import (
+	"net/http"
+
+	"github.com/jgolang/api"
+	"github.com/jgolang/api/stdadapter"
+)
+
+type CreateTaskRequest struct {
+	Title string `json:"title"`
+}
+
+type TaskResponse struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+func createTask(w http.ResponseWriter, r *http.Request) {
+	api.Success201().Write(w, r)
+}
+
+func listTasks(w http.ResponseWriter, r *http.Request) {
+	api.Success200().Write(w, r)
+}
+
+func main() {
+	registry := api.NewRegistry(api.Info{
+		Title:   "Tasks API",
+		Version: "1.0.0",
+	})
+	registry.AddSecurityScheme("bearerAuth", api.BearerSecurity("JWT"))
+
+	router := stdadapter.New(http.NewServeMux(), registry)
+
+	api.Post(router, "/tasks", createTask,
+		api.Summary("Create task"),
+		api.Tags("tasks"),
+		api.Body(CreateTaskRequest{}),
+		api.Security("bearerAuth"),
+		api.Status(201, TaskResponse{}),
+	)
+
+	api.Get(router, "/tasks", listTasks,
+		api.Summary("List tasks"),
+		api.Tags("tasks"),
+		api.Status(200, []TaskResponse{}),
+	)
+
+	router.Handle("GET", "/openapi.json", api.OpenAPIHandler(registry))
+	router.Handle("GET", "/docs", api.SwaggerUIHandler("/openapi.json"))
+
+	http.ListenAndServe(":8080", router)
+}
+```
+
+See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, and external adapter examples.
+
 ## Contributing
 
 If you have suggestions for how We could be improved, or want to report a bug, open an issue! We'd love all and any contributions.
