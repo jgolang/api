@@ -14,6 +14,8 @@ type RequestContextKey string
 // RequestDataContextContextKey request data context key to finds request context
 const RequestDataContextContextKey = RequestContextKey("requestData")
 
+const routeVarsContextKey = RequestContextKey("routeVars")
+
 // RequestReceiver implementation of core.APIRequestReceiver interface
 type RequestReceiver struct{}
 
@@ -77,7 +79,19 @@ func (receiver RequestReceiver) GetRouteVar(key string, r *http.Request) string 
 
 // GetRouteVar returns the route variables for the current request, if any
 // define it as: api.GetRouteVar = myCustomGetRouteVarFunc
-var GetRouteVar func(string, *http.Request) string = func(string, *http.Request) string {
-	PrintError("Define a GetRouteVar function in this package")
-	return ""
+var GetRouteVar func(string, *http.Request) string = func(key string, r *http.Request) string {
+	return getRouteVarFromContext(key, r)
+}
+
+func getRouteVarFromContext(key string, r *http.Request) string {
+	vars, ok := r.Context().Value(routeVarsContextKey).(map[string]string)
+	if !ok {
+		return ""
+	}
+	return vars[key]
+}
+
+// SetRouteVars stores route variables in the request context.
+func SetRouteVars(vars map[string]string, r *http.Request) *http.Request {
+	return SetContextValue(routeVarsContextKey, vars, r)
 }
