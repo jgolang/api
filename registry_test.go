@@ -163,8 +163,9 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		Tags("users"),
 		Query("notify", Bool, false),
 		Security("apiKeyAuth"),
-		Body(createUserRequest{}),
-		ResponseStatus(http.StatusCreated, userResponse{}),
+		Body(JSONRequestOf[createUserRequest]{}),
+		ResponseStatus(http.StatusCreated, JSONResponseOf[userResponse]{}),
+		ResponseStatus(http.StatusBadRequest, JSONErrorResponse{}),
 	)
 
 	doc := GenerateOpenAPI(registry)
@@ -178,16 +179,27 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 	if len(operation.Parameters) != 1 || operation.Parameters[0].Name != "notify" || operation.Parameters[0].Schema.Type != "boolean" {
 		t.Fatalf("unexpected query parameter: %#v", operation.Parameters)
 	}
-	emailRequestSchema := operation.RequestBody.Content["application/json"].Schema.Properties["email"]
+	requestSchema := operation.RequestBody.Content["application/json"].Schema
+	if requestSchema.Properties["header"] == nil {
+		t.Fatalf("request wrapper header was not generated: %#v", requestSchema)
+	}
+	emailRequestSchema := requestSchema.Properties["content"].Properties["email"]
 	if emailRequestSchema.Format != "email" || emailRequestSchema.Example != "user@example.com" {
 		t.Fatalf("request schema tags were not generated: %#v", emailRequestSchema)
 	}
-	if !containsString(operation.RequestBody.Content["application/json"].Schema.Required, "email") {
-		t.Fatalf("required field was not generated: %#v", operation.RequestBody.Content["application/json"].Schema.Required)
+	if !containsString(requestSchema.Properties["content"].Required, "email") {
+		t.Fatalf("required field was not generated: %#v", requestSchema.Properties["content"].Required)
 	}
 	created := operation.Responses["201"]
-	if created.Description != "Created" || created.Content["application/json"].Schema.Properties["id"].Type != "integer" {
+	createdSchema := created.Content["application/json"].Schema
+	if created.Description != "Created" || createdSchema.Properties["header"] == nil {
 		t.Fatalf("unexpected response schema: %#v", created)
+	}
+	if createdSchema.Properties["content"].Properties["id"].Type != "integer" {
+		t.Fatalf("typed response content schema was not generated: %#v", createdSchema.Properties["content"])
+	}
+	if operation.Responses["400"].Content["application/json"].Schema.Properties["content"] != nil {
+		t.Fatalf("error response schema should not include content: %#v", operation.Responses["400"])
 	}
 	if operation.Security[0]["apiKeyAuth"] == nil {
 		t.Fatalf("operation security was not generated: %#v", operation.Security)

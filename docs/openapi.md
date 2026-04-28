@@ -47,15 +47,16 @@ func main() {
 	api.Post(router, "/tasks", createTask,
 		api.Summary("Create task"),
 		api.Tags("tasks"),
-		api.Body(CreateTaskRequest{}),
+		api.Body(api.RequestDoc[CreateTaskRequest]()),
 		api.Security("bearerAuth"),
-		api.Status(201, TaskResponse{}),
+		api.Status(201, api.SuccessDoc[TaskResponse]()),
+		api.Status(400, api.ErrorDoc()),
 	)
 
 	api.Get(router, "/tasks", listTasks,
 		api.Summary("List tasks"),
 		api.Tags("tasks"),
-		api.Status(200, []TaskResponse{}),
+		api.Status(200, api.SuccessDoc[[]TaskResponse]()),
 	)
 
 	router.Handle("GET", "/openapi.json", api.OpenAPIHandler(registry))
@@ -66,6 +67,32 @@ func main() {
 ```
 
 `api.Status`, `api.Responds`, and `api.ResponseStatus` document responses. The longer `ResponseStatus` name is kept because this package already has an exported `api.Response` interface.
+
+## Request and response wrappers
+
+Runtime requests use `api.JSONRequest`, whose `content` field is `json.RawMessage` for backward compatibility. For OpenAPI documentation, use typed wrappers so the generator can infer the payload schema:
+
+```go
+api.Body(api.JSONRequestOf[CreateTaskRequest]{})
+api.Body(api.RequestDoc[CreateTaskRequest]())
+```
+
+Runtime responses use `api.JSONResponse`, whose `content` field is `interface{}` for backward compatibility. For OpenAPI documentation, use typed wrappers so the generator can infer the payload schema:
+
+```go
+api.Status(http.StatusOK, api.JSONResponseOf[TaskResponse]{})
+api.Status(http.StatusOK, api.JSONResponseOf[[]TaskResponse]{})
+api.Status(http.StatusBadRequest, api.JSONErrorResponse{})
+```
+
+The helpers below are equivalent and often read better in route declarations:
+
+```go
+api.Status(http.StatusOK, api.SuccessDoc[TaskResponse]())
+api.Status(http.StatusBadRequest, api.ErrorDoc())
+```
+
+These types are for documentation only. They do not change the runtime request or response format.
 
 ## Route metadata options
 

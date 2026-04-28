@@ -69,6 +69,62 @@ func TestSchemaFromTypeAllowsManualSchema(t *testing.T) {
 	}
 }
 
+func TestSchemaFromTypeSupportsTypedJSONResponseContent(t *testing.T) {
+	schema := SchemaFromType(JSONResponseOf[taskResponse]{})
+
+	if schema.Properties["header"].Properties["type"].Type != "string" {
+		t.Fatalf("expected header schema, got %#v", schema.Properties["header"])
+	}
+	content := schema.Properties["content"]
+	if content.Type != "object" {
+		t.Fatalf("expected content object schema, got %#v", content)
+	}
+	if content.Properties["id"].Type != "integer" {
+		t.Fatalf("expected content id schema, got %#v", content.Properties["id"])
+	}
+	if content.Properties["title"].Type != "string" {
+		t.Fatalf("expected content title schema, got %#v", content.Properties["title"])
+	}
+}
+
+func TestSchemaFromTypeSupportsTypedJSONResponseSliceContent(t *testing.T) {
+	schema := SchemaFromType(JSONResponseOf[[]taskResponse]{})
+
+	content := schema.Properties["content"]
+	if content.Type != "array" {
+		t.Fatalf("expected content array schema, got %#v", content)
+	}
+	if content.Items.Properties["id"].Type != "integer" {
+		t.Fatalf("expected array item DTO schema, got %#v", content.Items)
+	}
+}
+
+func TestSchemaFromTypeSupportsJSONErrorResponse(t *testing.T) {
+	schema := SchemaFromType(JSONErrorResponse{})
+
+	if _, ok := schema.Properties["header"]; !ok {
+		t.Fatalf("expected header property in error response schema: %#v", schema)
+	}
+	if _, ok := schema.Properties["content"]; ok {
+		t.Fatalf("error response schema should not include content: %#v", schema)
+	}
+}
+
+func TestSchemaFromTypeSupportsTypedJSONRequestContent(t *testing.T) {
+	schema := SchemaFromType(JSONRequestOf[createTaskRequest]{})
+
+	if schema.Properties["header"].Properties["uuid"].Type != "string" {
+		t.Fatalf("expected request header schema, got %#v", schema.Properties["header"])
+	}
+	content := schema.Properties["content"]
+	if content.Type != "object" {
+		t.Fatalf("expected request content object schema, got %#v", content)
+	}
+	if content.Properties["title"].Type != "string" {
+		t.Fatalf("expected request content title schema, got %#v", content.Properties["title"])
+	}
+}
+
 func containsString(values []string, expected string) bool {
 	for _, value := range values {
 		if value == expected {
