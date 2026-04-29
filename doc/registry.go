@@ -2,6 +2,7 @@ package doc
 
 import (
 	"net/http"
+	"reflect"
 	"sync"
 )
 
@@ -234,5 +235,47 @@ func cloneSchema(schema *Schema) *Schema {
 }
 
 func cloneValue(value interface{}) interface{} {
-	return value
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		clone := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			clone[key] = cloneValue(item)
+		}
+		return clone
+	case []interface{}:
+		clone := make([]interface{}, len(typed))
+		for i, item := range typed {
+			clone[i] = cloneValue(item)
+		}
+		return clone
+	default:
+		return cloneReflectValue(value)
+	}
+}
+
+func cloneReflectValue(value interface{}) interface{} {
+	reflected := reflect.ValueOf(value)
+	if !reflected.IsValid() {
+		return value
+	}
+	switch reflected.Kind() {
+	case reflect.Map:
+		if reflected.Type().Key().Kind() != reflect.String {
+			return value
+		}
+		clone := reflect.MakeMapWithSize(reflected.Type(), reflected.Len())
+		iter := reflected.MapRange()
+		for iter.Next() {
+			clone.SetMapIndex(iter.Key(), reflect.ValueOf(cloneValue(iter.Value().Interface())))
+		}
+		return clone.Interface()
+	case reflect.Slice:
+		clone := reflect.MakeSlice(reflected.Type(), reflected.Len(), reflected.Len())
+		for i := 0; i < reflected.Len(); i++ {
+			clone.Index(i).Set(reflect.ValueOf(cloneValue(reflected.Index(i).Interface())))
+		}
+		return clone.Interface()
+	default:
+		return value
+	}
 }

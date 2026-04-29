@@ -141,15 +141,27 @@ func TestRegistryRoutesReturnsDefensiveCopy(t *testing.T) {
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
 	docs.Register(http.MethodGet, "/tasks",
 		doc.Tags("tasks"),
+		doc.BodyWithExample(testRequestOf[createTaskRequest]{}, map[string]any{
+			"content": map[string]any{
+				"title": "original",
+			},
+		}),
 		doc.StatusWithHeaders(http.StatusOK, taskResponse{}, doc.ResponseHeaderInfo{
 			Name:   "X-RateLimit-Remaining",
 			Schema: &doc.Schema{Type: "integer"},
+		}),
+		doc.StatusWithExample(http.StatusCreated, taskResponse{}, map[string]any{
+			"content": map[string]any{
+				"id": float64(1),
+			},
 		}),
 	)
 
 	routes := docs.Routes()
 	routes[0].Tags[0] = "mutated"
 	routes[0].Responses[0].Headers[0].Schema.Type = "string"
+	routes[0].BodyExample.(map[string]any)["content"].(map[string]any)["title"] = "mutated"
+	routes[0].Responses[1].Example.(map[string]any)["content"].(map[string]any)["id"] = float64(2)
 
 	fresh := docs.Routes()
 	if fresh[0].Tags[0] != "tasks" {
@@ -157,6 +169,12 @@ func TestRegistryRoutesReturnsDefensiveCopy(t *testing.T) {
 	}
 	if fresh[0].Responses[0].Headers[0].Schema.Type != "integer" {
 		t.Fatalf("response header schema was mutated through Routes snapshot: %#v", fresh[0].Responses[0].Headers[0].Schema)
+	}
+	if fresh[0].BodyExample.(map[string]any)["content"].(map[string]any)["title"] != "original" {
+		t.Fatalf("body example was mutated through Routes snapshot: %#v", fresh[0].BodyExample)
+	}
+	if fresh[0].Responses[1].Example.(map[string]any)["content"].(map[string]any)["id"] != float64(1) {
+		t.Fatalf("response example was mutated through Routes snapshot: %#v", fresh[0].Responses[1].Example)
 	}
 }
 
