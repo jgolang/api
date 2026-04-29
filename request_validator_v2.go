@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/jgolang/api/core"
+	"github.com/jgolang/api/envelope"
 )
 
 // RequestReceiverV2 implementation of core.APIRequestReceiver interface
@@ -32,7 +33,7 @@ func (receiver RequestReceiverV2) ProcessEncryptedBody(r *http.Request) (*core.R
 
 // ProcessBody API request body information.
 func (receiver RequestReceiverV2) ProcessBody(r *http.Request) (*core.RequestDataContext, error) {
-	var request JSONRequest
+	var request envelope.JSONRequest
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
