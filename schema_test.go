@@ -79,6 +79,9 @@ func TestSchemaFromTypeSupportsTypedJSONResponseContent(t *testing.T) {
 	if content.Type != "object" {
 		t.Fatalf("expected content object schema, got %#v", content)
 	}
+	if !content.Nullable {
+		t.Fatalf("expected optional response content to be nullable: %#v", content)
+	}
 	if content.Properties["id"].Type != "integer" {
 		t.Fatalf("expected content id schema, got %#v", content.Properties["id"])
 	}
@@ -93,6 +96,9 @@ func TestSchemaFromTypeSupportsTypedJSONResponseSliceContent(t *testing.T) {
 	content := schema.Properties["content"]
 	if content.Type != "array" {
 		t.Fatalf("expected content array schema, got %#v", content)
+	}
+	if !content.Nullable {
+		t.Fatalf("expected optional response content to be nullable: %#v", content)
 	}
 	if content.Items.Properties["id"].Type != "integer" {
 		t.Fatalf("expected array item DTO schema, got %#v", content.Items)
@@ -119,6 +125,9 @@ func TestSchemaFromTypeSupportsTypedJSONRequestContent(t *testing.T) {
 	content := schema.Properties["content"]
 	if content.Type != "object" {
 		t.Fatalf("expected request content object schema, got %#v", content)
+	}
+	if !content.Nullable {
+		t.Fatalf("expected optional request content to be nullable: %#v", content)
 	}
 	if content.Properties["title"].Type != "string" {
 		t.Fatalf("expected request content title schema, got %#v", content.Properties["title"])

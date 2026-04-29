@@ -16,7 +16,7 @@ type JSONRequest struct {
 // JSONRequest for backward compatibility.
 type JSONRequestOf[T any] struct {
 	Header  JSONRequestInfo `json:"header,omitempty"`
-	Content T               `json:"content,omitempty"`
+	Content *T              `json:"content,omitempty"`
 }
 
 // RequestDoc returns a typed request wrapper for OpenAPI documentation.

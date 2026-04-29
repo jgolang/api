@@ -16,7 +16,7 @@ type JSONResponse struct {
 // JSONResponse for backward compatibility.
 type JSONResponseOf[T any] struct {
 	Header  JSONResponseInfo `json:"header,omitempty"`
-	Content T                `json:"content,omitempty"`
+	Content *T               `json:"content,omitempty"`
 }
 
 // JSONErrorResponse documents an error response without a content payload.
