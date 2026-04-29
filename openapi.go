@@ -35,6 +35,7 @@ type SecurityScheme struct {
 
 // Operation is an OpenAPI operation object.
 type Operation struct {
+	OperationID string                    `json:"operationId,omitempty"`
 	Summary     string                    `json:"summary,omitempty"`
 	Description string                    `json:"description,omitempty"`
 	Tags        []string                  `json:"tags,omitempty"`
@@ -118,6 +119,7 @@ func GenerateOpenAPI(registry *Registry) OpenAPI {
 
 func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 	operation := Operation{
+		OperationID: route.OperationID,
 		Summary:     route.Summary,
 		Description: route.Description,
 		Tags:        route.Tags,

@@ -45,6 +45,7 @@ func main() {
 	router := stdadapter.New(http.NewServeMux(), registry)
 
 	api.Post(router, "/tasks", createTask,
+		api.OperationID("createTask"),
 		api.Summary("Create task"),
 		api.Tags("tasks"),
 		api.Body(api.RequestDoc[CreateTaskRequest]()),
@@ -106,6 +107,7 @@ operation.
 ## Route metadata options
 
 - `api.Summary("Create task")`
+- `api.OperationID("createTask")`
 - `api.Description("Creates a new task")`
 - `api.Tags("tasks")`
 - `api.Body(CreateTaskRequest{})`

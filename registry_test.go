@@ -54,6 +54,7 @@ func TestGenerateOpenAPI(t *testing.T) {
 	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
 	registry.AddSecurityScheme("bearerAuth", BearerSecurity("JWT"))
 	registry.Register(http.MethodGet, "/tasks/{id}",
+		OperationID("getTask"),
 		Summary("Get task"),
 		Tags("tasks"),
 		Path("id", Int, true),
@@ -72,6 +73,9 @@ func TestGenerateOpenAPI(t *testing.T) {
 	}
 	if operation.Summary != "Get task" {
 		t.Fatalf("unexpected summary: %s", operation.Summary)
+	}
+	if operation.OperationID != "getTask" {
+		t.Fatalf("unexpected operationId: %s", operation.OperationID)
 	}
 	if len(operation.Parameters) != 1 || operation.Parameters[0].Name != "id" {
 		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)

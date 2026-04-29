@@ -36,6 +36,7 @@ type Parameter struct {
 type Route struct {
 	Method      string
 	Path        string
+	OperationID string
 	Summary     string
 	Description string
 	Tags        []string
@@ -160,6 +161,13 @@ type RouteOption func(*Route)
 func Summary(summary string) RouteOption {
 	return func(route *Route) {
 		route.Summary = summary
+	}
+}
+
+// OperationID sets the OpenAPI operationId used by client generators.
+func OperationID(id string) RouteOption {
+	return func(route *Route) {
+		route.OperationID = id
 	}
 }
 
