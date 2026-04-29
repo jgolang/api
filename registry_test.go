@@ -228,7 +228,7 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 				"email": "user@example.com",
 			},
 		}),
-		doc.StatusWithExample(http.StatusCreated, testResponseOf[userResponse]{}, map[string]any{
+		doc.ResponseWithDescriptionAndExample(http.StatusCreated, "User created", testResponseOf[userResponse]{}, map[string]any{
 			"header": map[string]any{
 				"type": "success",
 			},
@@ -284,7 +284,7 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		t.Fatalf("response schema should use a component ref, got %#v", createdSchema)
 	}
 	createdSchema = resolveOpenAPISchema(openapiDoc, createdSchema)
-	if created.Description != "Created" || createdSchema.Properties["header"] == nil {
+	if created.Description != "User created" || createdSchema.Properties["header"] == nil {
 		t.Fatalf("unexpected response schema: %#v", created)
 	}
 	responseContentSchema := resolveOpenAPISchema(openapiDoc, createdSchema.Properties["content"])
