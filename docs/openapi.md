@@ -48,6 +48,7 @@ func main() {
 		api.OperationID("createTask"),
 		api.Summary("Create task"),
 		api.Tags("tasks"),
+		api.Header("X-Request-ID", api.String, false),
 		api.Body(api.RequestDoc[CreateTaskRequest]()),
 		api.Security("bearerAuth"),
 		api.Status(201, api.SuccessDoc[TaskResponse]()),
@@ -116,6 +117,7 @@ operation.
 - `api.ResponseStatus(200, TaskResponse{})`
 - `api.ResponseSchema(400, "Bad Request", &api.Schema{Type: "object"})`
 - `api.Query("page", api.Int, false)`
+- `api.Header("X-Request-ID", api.String, false)`
 - `api.Path("id", api.Int, true)`
 - `api.Security("bearerAuth")`
 

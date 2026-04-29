@@ -57,6 +57,7 @@ func TestGenerateOpenAPI(t *testing.T) {
 		OperationID("getTask"),
 		Summary("Get task"),
 		Tags("tasks"),
+		Header("X-Request-ID", String, false),
 		Path("id", Int, true),
 		Security("bearerAuth"),
 		ResponseStatus(http.StatusOK, taskResponse{}),
@@ -77,7 +78,13 @@ func TestGenerateOpenAPI(t *testing.T) {
 	if operation.OperationID != "getTask" {
 		t.Fatalf("unexpected operationId: %s", operation.OperationID)
 	}
-	if len(operation.Parameters) != 1 || operation.Parameters[0].Name != "id" {
+	if len(operation.Parameters) != 2 {
+		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)
+	}
+	if operation.Parameters[0].Name != "X-Request-ID" || operation.Parameters[0].In != "header" {
+		t.Fatalf("header parameter was not generated: %#v", operation.Parameters)
+	}
+	if operation.Parameters[1].Name != "id" || operation.Parameters[1].In != "path" {
 		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)
 	}
 	response := operation.Responses["200"]

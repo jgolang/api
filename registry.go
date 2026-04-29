@@ -244,6 +244,11 @@ func Query(name string, typ DataType, required bool) RouteOption {
 	return parameter("query", name, typ, required)
 }
 
+// Header adds a request header parameter.
+func Header(name string, typ DataType, required bool) RouteOption {
+	return parameter("header", name, typ, required)
+}
+
 // Path adds a path parameter.
 func Path(name string, typ DataType, required bool) RouteOption {
 	return parameter("path", name, typ, required)
