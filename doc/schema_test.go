@@ -1,4 +1,4 @@
-package api
+package doc
 
 import (
 	"testing"
@@ -7,6 +7,15 @@ import (
 
 type schemaAddress struct {
 	City string `json:"city"`
+}
+
+type createTaskRequest struct {
+	Title string `json:"title"`
+}
+
+type taskResponse struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
 }
 
 type schemaExample struct {
@@ -70,14 +79,20 @@ func TestSchemaFromTypeAllowsManualSchema(t *testing.T) {
 }
 
 func TestSchemaFromTypeSupportsTypedJSONResponseContent(t *testing.T) {
-	schema := SchemaFromType(JSONResponseOf[taskResponse]{})
+	schema := SchemaFromType(testResponseOf[taskResponse]{})
 
 	if schema.Properties["header"].Properties["type"].Type != "string" {
 		t.Fatalf("expected header schema, got %#v", schema.Properties["header"])
 	}
+	if schema.Properties["header"].Properties["type"].Example != "success" {
+		t.Fatalf("expected response header example, got %#v", schema.Properties["header"].Properties["type"])
+	}
 	content := schema.Properties["content"]
 	if content.Type != "object" {
 		t.Fatalf("expected content object schema, got %#v", content)
+	}
+	if !content.Nullable {
+		t.Fatalf("expected optional response content to be nullable: %#v", content)
 	}
 	if content.Properties["id"].Type != "integer" {
 		t.Fatalf("expected content id schema, got %#v", content.Properties["id"])
@@ -88,11 +103,14 @@ func TestSchemaFromTypeSupportsTypedJSONResponseContent(t *testing.T) {
 }
 
 func TestSchemaFromTypeSupportsTypedJSONResponseSliceContent(t *testing.T) {
-	schema := SchemaFromType(JSONResponseOf[[]taskResponse]{})
+	schema := SchemaFromType(testResponseOf[[]taskResponse]{})
 
 	content := schema.Properties["content"]
 	if content.Type != "array" {
 		t.Fatalf("expected content array schema, got %#v", content)
+	}
+	if !content.Nullable {
+		t.Fatalf("expected optional response content to be nullable: %#v", content)
 	}
 	if content.Items.Properties["id"].Type != "integer" {
 		t.Fatalf("expected array item DTO schema, got %#v", content.Items)
@@ -100,7 +118,7 @@ func TestSchemaFromTypeSupportsTypedJSONResponseSliceContent(t *testing.T) {
 }
 
 func TestSchemaFromTypeSupportsJSONErrorResponse(t *testing.T) {
-	schema := SchemaFromType(JSONErrorResponse{})
+	schema := SchemaFromType(testErrorResponse{})
 
 	if _, ok := schema.Properties["header"]; !ok {
 		t.Fatalf("expected header property in error response schema: %#v", schema)
@@ -111,14 +129,20 @@ func TestSchemaFromTypeSupportsJSONErrorResponse(t *testing.T) {
 }
 
 func TestSchemaFromTypeSupportsTypedJSONRequestContent(t *testing.T) {
-	schema := SchemaFromType(JSONRequestOf[createTaskRequest]{})
+	schema := SchemaFromType(testRequestOf[createTaskRequest]{})
 
 	if schema.Properties["header"].Properties["uuid"].Type != "string" {
 		t.Fatalf("expected request header schema, got %#v", schema.Properties["header"])
 	}
+	if schema.Properties["header"].Properties["uuid"].Example != "ADAD3-ADD33-AFSFK" {
+		t.Fatalf("expected request header example, got %#v", schema.Properties["header"].Properties["uuid"])
+	}
 	content := schema.Properties["content"]
 	if content.Type != "object" {
 		t.Fatalf("expected request content object schema, got %#v", content)
+	}
+	if !content.Nullable {
+		t.Fatalf("expected optional request content to be nullable: %#v", content)
 	}
 	if content.Properties["title"].Type != "string" {
 		t.Fatalf("expected request content title schema, got %#v", content.Properties["title"])

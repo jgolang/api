@@ -188,6 +188,8 @@ import (
 	"net/http"
 
 	"github.com/jgolang/api"
+	"github.com/jgolang/api/doc"
+	"github.com/jgolang/api/envelope"
 	"github.com/jgolang/api/stdadapter"
 )
 
@@ -209,30 +211,30 @@ func listTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	registry := api.NewRegistry(api.Info{
+	docs := doc.New(doc.API{
 		Title:   "Tasks API",
 		Version: "1.0.0",
 	})
-	registry.AddSecurityScheme("bearerAuth", api.BearerSecurity("JWT"))
+	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
 
-	router := stdadapter.New(http.NewServeMux(), registry)
+	router := stdadapter.New(http.NewServeMux(), docs)
 
 	api.Post(router, "/tasks", createTask,
-		api.Summary("Create task"),
-		api.Tags("tasks"),
-		api.Body(CreateTaskRequest{}),
-		api.Security("bearerAuth"),
-		api.Status(201, TaskResponse{}),
+		doc.Summary("Create task"),
+		doc.Tags("tasks"),
+		doc.Body(envelope.Request[CreateTaskRequest]()),
+		doc.Security("bearerAuth"),
+		doc.Status(201, envelope.Success[TaskResponse]()),
 	)
 
 	api.Get(router, "/tasks", listTasks,
-		api.Summary("List tasks"),
-		api.Tags("tasks"),
-		api.Status(200, []TaskResponse{}),
+		doc.Summary("List tasks"),
+		doc.Tags("tasks"),
+		doc.Status(200, envelope.Success[[]TaskResponse]()),
 	)
 
-	router.Handle("GET", "/openapi.json", api.OpenAPIHandler(registry))
-	router.Handle("GET", "/docs", api.SwaggerUIHandler("/openapi.json"))
+	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
+	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
 
 	http.ListenAndServe(":8080", router)
 }

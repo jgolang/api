@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -23,6 +24,13 @@ var traceIDProvider = struct {
 	provider: noopTraceIDProvider{},
 }
 
+var traceProviderRegistry = struct {
+	sync.RWMutex
+	providers map[string]TraceIDProvider
+}{
+	providers: make(map[string]TraceIDProvider),
+}
+
 // RegisterTraceIDProvider configures the provider used to derive event IDs from context.
 func RegisterTraceIDProvider(provider TraceIDProvider) {
 	traceIDProvider.Lock()
@@ -32,6 +40,27 @@ func RegisterTraceIDProvider(provider TraceIDProvider) {
 		return
 	}
 	traceIDProvider.provider = provider
+}
+
+// RegisterTraceProvider registers a named trace ID provider.
+func RegisterTraceProvider(name string, provider TraceIDProvider) {
+	if name == "" || provider == nil {
+		return
+	}
+	traceProviderRegistry.Lock()
+	defer traceProviderRegistry.Unlock()
+	traceProviderRegistry.providers[name] = provider
+}
+
+// TraceProviderByName returns a registered trace ID provider.
+func TraceProviderByName(name string) (TraceIDProvider, error) {
+	traceProviderRegistry.RLock()
+	provider, ok := traceProviderRegistry.providers[name]
+	traceProviderRegistry.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("api trace provider %q is not registered", name)
+	}
+	return provider, nil
 }
 
 func getTraceID(ctx context.Context) string {

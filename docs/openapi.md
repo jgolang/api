@@ -1,6 +1,6 @@
 # Router-agnostic OpenAPI documentation
 
-The package includes a small router-agnostic registration layer. Adapters implement the `api.Router` interface and store route metadata in an `api.Registry`, which can generate an OpenAPI 3 document and Swagger UI.
+The package includes a small router-agnostic documentation layer. Adapters implement the `api.Router` interface and store route metadata in `doc.Docs`, which can generate an OpenAPI 3 document and Swagger UI.
 
 This module intentionally avoids importing third-party routers. The native adapter uses only Go's standard `net/http` package. If an application uses Gin, Echo, chi, gorilla/mux, or another router, create the adapter in that application or in a separate module owned by the implementer. The philosophy is to keep `github.com/jgolang/api` small, predictable, and free of router-specific dependencies.
 
@@ -15,6 +15,8 @@ import (
 	"net/http"
 
 	"github.com/jgolang/api"
+	"github.com/jgolang/api/doc"
+	"github.com/jgolang/api/envelope"
 	"github.com/jgolang/api/stdadapter"
 )
 
@@ -36,86 +38,101 @@ func listTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	registry := api.NewRegistry(api.Info{
+	docs := doc.New(doc.API{
 		Title:   "Tasks API",
 		Version: "1.0.0",
 	})
-	registry.AddSecurityScheme("bearerAuth", api.BearerSecurity("JWT"))
+	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
 
-	router := stdadapter.New(http.NewServeMux(), registry)
+	router := stdadapter.New(http.NewServeMux(), docs)
 
 	api.Post(router, "/tasks", createTask,
-		api.Summary("Create task"),
-		api.Tags("tasks"),
-		api.Body(api.RequestDoc[CreateTaskRequest]()),
-		api.Security("bearerAuth"),
-		api.Status(201, api.SuccessDoc[TaskResponse]()),
-		api.Status(400, api.ErrorDoc()),
+		doc.OperationID("createTask"),
+		doc.Summary("Create task"),
+		doc.Tags("tasks"),
+		doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Trace request ID"),
+		doc.Body(envelope.Request[CreateTaskRequest]()),
+		doc.Security("bearerAuth"),
+		doc.StatusWithHeaders(201, envelope.Success[TaskResponse](),
+			doc.ResponseHeader("Location", doc.String, "Created task URL"),
+		),
+		doc.Status(400, envelope.Error()),
 	)
 
 	api.Get(router, "/tasks", listTasks,
-		api.Summary("List tasks"),
-		api.Tags("tasks"),
-		api.Status(200, api.SuccessDoc[[]TaskResponse]()),
+		doc.Summary("List tasks"),
+		doc.Tags("tasks"),
+		doc.Status(200, envelope.Success[[]TaskResponse]()),
 	)
 
-	router.Handle("GET", "/openapi.json", api.OpenAPIHandler(registry))
-	router.Handle("GET", "/docs", api.SwaggerUIHandler("/openapi.json"))
+	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
+	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
 
 	http.ListenAndServe(":8080", router)
 }
 ```
 
-`api.Status`, `api.Responds`, and `api.ResponseStatus` document responses. The longer `ResponseStatus` name is kept because this package already has an exported `api.Response` interface.
+The `doc` subpackage contains the OpenAPI metadata helpers, schema generation, reusable security schemes, and HTTP handlers for documentation.
 
 ## Request and response wrappers
 
 Runtime requests use `api.JSONRequest`, whose `content` field is `json.RawMessage` for backward compatibility. For OpenAPI documentation, use typed wrappers so the generator can infer the payload schema:
 
 ```go
-api.Body(api.JSONRequestOf[CreateTaskRequest]{})
-api.Body(api.RequestDoc[CreateTaskRequest]())
+doc.Body(envelope.Request[CreateTaskRequest]())
 ```
+
+The typed request wrapper documents `content` as optional, so endpoints that only
+receive `header` can still use the same JSON request envelope.
 
 Runtime responses use `api.JSONResponse`, whose `content` field is `interface{}` for backward compatibility. For OpenAPI documentation, use typed wrappers so the generator can infer the payload schema:
 
 ```go
-api.Status(http.StatusOK, api.JSONResponseOf[TaskResponse]{})
-api.Status(http.StatusOK, api.JSONResponseOf[[]TaskResponse]{})
-api.Status(http.StatusBadRequest, api.JSONErrorResponse{})
+doc.Status(http.StatusOK, envelope.Success[TaskResponse]())
+doc.Status(http.StatusOK, envelope.Success[[]TaskResponse]())
+doc.Status(http.StatusBadRequest, envelope.Error())
 ```
 
-The helpers below are equivalent and often read better in route declarations:
+The typed response wrapper also documents `content` as optional, so successful
+responses may use only `header` when there is no payload.
 
-```go
-api.Status(http.StatusOK, api.SuccessDoc[TaskResponse]())
-api.Status(http.StatusBadRequest, api.ErrorDoc())
-```
+Use `doc.BodyWithExample` and `doc.StatusWithExample` to add complete request or
+response examples to the generated OpenAPI media type.
 
 These types are for documentation only. They do not change the runtime request or response format.
+In generated OpenAPI documents, inferred Go types are emitted under
+`components.schemas` and referenced with `$ref` to avoid repeating schemas per
+operation.
 
 ## Route metadata options
 
-- `api.Summary("Create task")`
-- `api.Description("Creates a new task")`
-- `api.Tags("tasks")`
-- `api.Body(CreateTaskRequest{})`
-- `api.BodySchema(&api.Schema{Type: "object"})`
-- `api.Status(200, TaskResponse{})`
-- `api.ResponseStatus(200, TaskResponse{})`
-- `api.ResponseSchema(400, "Bad Request", &api.Schema{Type: "object"})`
-- `api.Query("page", api.Int, false)`
-- `api.Path("id", api.Int, true)`
-- `api.Security("bearerAuth")`
+- `doc.Summary("Create task")`
+- `doc.OperationID("createTask")`
+- `doc.Description("Creates a new task")`
+- `doc.Tags("tasks")`
+- `doc.Body(envelope.Request[CreateTaskRequest]())`
+- `doc.BodyWithExample(envelope.Request[CreateTaskRequest](), map[string]any{"content": map[string]any{"title": "Buy milk"}})`
+- `doc.BodySchema(&doc.Schema{Type: "object"})`
+- `doc.Status(200, envelope.Success[TaskResponse]())`
+- `doc.StatusWithExample(200, envelope.Success[TaskResponse](), map[string]any{"content": map[string]any{"id": 1}})`
+- `doc.StatusWithHeaders(201, envelope.Success[TaskResponse](), doc.ResponseHeader("Location", doc.String, "Created resource URL"))`
+- `doc.ResponseSchema(400, "Bad Request", &doc.Schema{Type: "object"})`
+- `doc.Query("page", doc.Int, false)`
+- `doc.QueryWithDescription("page", doc.Int, false, "Page number")`
+- `doc.Header("X-Request-ID", doc.String, false)`
+- `doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Trace request ID")`
+- `doc.Path("id", doc.Int, true)`
+- `doc.PathWithDescription("id", doc.Int, true, "Resource ID")`
+- `doc.Security("bearerAuth")`
 
 ## Security schemes
 
-Security requirements are declared per route with `api.Security("name")`. Reusable schemes are registered in the registry:
+Security requirements are declared per route with `doc.Security("name")`. Reusable schemes are registered in docs:
 
 ```go
-registry.AddSecurityScheme("bearerAuth", api.BearerSecurity("JWT"))
-registry.AddSecurityScheme("basicAuth", api.BasicSecurity())
-registry.AddSecurityScheme("apiKeyAuth", api.APIKeySecurity("X-API-Key", "header"))
+docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
+docs.AddSecurityScheme("basicAuth", doc.BasicSecurity())
+docs.AddSecurityScheme("apiKeyAuth", doc.APIKeySecurity("X-API-Key", "header"))
 ```
 
 If a route references a security name that was not registered, the OpenAPI generator assumes an HTTP bearer JWT scheme by default.
@@ -145,13 +162,13 @@ Adapters for third-party routers should live outside this module. A minimal adap
 
 ```go
 type RouterAdapter struct {
-	registry *api.Registry
+	docs *doc.Docs
 	// router *yourRouter
 }
 
-func (adapter *RouterAdapter) Handle(method string, path string, handler http.HandlerFunc, opts ...api.RouteOption) {
-	if adapter.registry != nil {
-		adapter.registry.Register(method, path, opts...)
+func (adapter *RouterAdapter) Handle(method string, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
+	if adapter.docs != nil {
+		adapter.docs.Register(method, path, opts...)
 	}
 
 	// Translate method, path, and handler to your router here.

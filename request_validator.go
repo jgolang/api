@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/jgolang/api/core"
+	"github.com/jgolang/api/envelope"
 )
 
 // RequestContextKey type
@@ -21,7 +22,7 @@ type RequestReceiver struct{}
 
 // ProcessEncryptedBody process API request encription information.
 func (receiver RequestReceiver) ProcessEncryptedBody(r *http.Request) (*core.RequestEncryptedData, error) {
-	var request JSONEncryptedBody
+	var request envelope.EncryptedBody
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -39,7 +40,7 @@ func (receiver RequestReceiver) ProcessEncryptedBody(r *http.Request) (*core.Req
 
 // ProcessBody process API request body information.
 func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataContext, error) {
-	var request JSONRequest
+	var request envelope.JSONRequest
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err

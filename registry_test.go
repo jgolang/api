@@ -1,10 +1,14 @@
-package api
+package api_test
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/jgolang/api"
+	"github.com/jgolang/api/doc"
 )
 
 type createTaskRequest struct {
@@ -16,21 +20,43 @@ type taskResponse struct {
 	Title string `json:"title"`
 }
 
-func TestRegistryRegistersRoutesWithMetadata(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	router := NewMetadataRouter(registry)
+type testRequestOf[T any] struct {
+	Header  testRequestInfo `json:"header,omitempty"`
+	Content *T              `json:"content,omitempty"`
+}
 
-	Post(router, "/tasks", func(w http.ResponseWriter, r *http.Request) {},
-		Summary("Create task"),
-		Description("Creates a new task"),
-		Tags("tasks"),
-		Body(createTaskRequest{}),
-		ResponseStatus(http.StatusCreated, taskResponse{}),
-		Query("dry_run", Bool, false),
-		Security("bearerAuth"),
+type testResponseOf[T any] struct {
+	Header  testResponseInfo `json:"header,omitempty"`
+	Content *T               `json:"content,omitempty"`
+}
+
+type testErrorResponse struct {
+	Header testResponseInfo `json:"header,omitempty"`
+}
+
+type testRequestInfo struct {
+	UUID string `json:"uuid,omitempty" example:"ADAD3-ADD33-AFSFK"`
+}
+
+type testResponseInfo struct {
+	Type string `json:"type" example:"success"`
+}
+
+func TestRegistryRegistersRoutesWithMetadata(t *testing.T) {
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	router := doc.NewRouter(docs)
+
+	api.Post(router, "/tasks", func(w http.ResponseWriter, r *http.Request) {},
+		doc.Summary("Create task"),
+		doc.Description("Creates a new task"),
+		doc.Tags("tasks"),
+		doc.Body(createTaskRequest{}),
+		doc.Status(http.StatusCreated, taskResponse{}),
+		doc.Query("dry_run", doc.Bool, false),
+		doc.Security("bearerAuth"),
 	)
 
-	routes := registry.Routes()
+	routes := docs.Routes()
 	if len(routes) != 1 {
 		t.Fatalf("expected 1 route, got %d", len(routes))
 	}
@@ -50,94 +76,125 @@ func TestRegistryRegistersRoutesWithMetadata(t *testing.T) {
 }
 
 func TestGenerateOpenAPI(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	registry.AddSecurityScheme("bearerAuth", BearerSecurity("JWT"))
-	registry.Register(http.MethodGet, "/tasks/{id}",
-		Summary("Get task"),
-		Tags("tasks"),
-		Path("id", Int, true),
-		Security("bearerAuth"),
-		ResponseStatus(http.StatusOK, taskResponse{}),
-		ResponseStatus(http.StatusBadRequest, ErrorResponse{}),
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
+	docs.Register(http.MethodGet, "/tasks/{id}",
+		doc.OperationID("getTask"),
+		doc.Summary("Get task"),
+		doc.Tags("tasks"),
+		doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Trace request ID"),
+		doc.PathWithDescription("id", doc.Int, false, "Task ID"),
+		doc.Security("bearerAuth"),
+		doc.Status(http.StatusOK, taskResponse{}),
+		doc.Status(http.StatusBadRequest, testErrorResponse{}),
 	)
 
-	doc := GenerateOpenAPI(registry)
-	if doc.OpenAPI != "3.0.3" {
-		t.Fatalf("unexpected OpenAPI version: %s", doc.OpenAPI)
+	openapiDoc := doc.GenerateOpenAPI(docs)
+	if openapiDoc.OpenAPI != "3.0.3" {
+		t.Fatalf("unexpected OpenAPI version: %s", openapiDoc.OpenAPI)
 	}
-	operation, ok := doc.Paths["/tasks/{id}"]["get"]
+	operation, ok := openapiDoc.Paths["/tasks/{id}"]["get"]
 	if !ok {
-		t.Fatalf("GET /tasks/{id} operation was not generated: %#v", doc.Paths)
+		t.Fatalf("GET /tasks/{id} operation was not generated: %#v", openapiDoc.Paths)
 	}
 	if operation.Summary != "Get task" {
 		t.Fatalf("unexpected summary: %s", operation.Summary)
 	}
-	if len(operation.Parameters) != 1 || operation.Parameters[0].Name != "id" {
+	if operation.OperationID != "getTask" {
+		t.Fatalf("unexpected operationId: %s", operation.OperationID)
+	}
+	if len(operation.Parameters) != 2 {
+		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)
+	}
+	if operation.Parameters[0].Name != "X-Request-ID" || operation.Parameters[0].In != "header" || operation.Parameters[0].Description != "Trace request ID" {
+		t.Fatalf("header parameter was not generated: %#v", operation.Parameters)
+	}
+	if operation.Parameters[1].Name != "id" || operation.Parameters[1].In != "path" || !operation.Parameters[1].Required || operation.Parameters[1].Description != "Task ID" {
 		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)
 	}
 	response := operation.Responses["200"]
-	if response.Content["application/json"].Schema.Properties["id"].Type != "integer" {
+	responseSchema := resolveOpenAPISchema(openapiDoc, response.Content["application/json"].Schema)
+	if responseSchema.Properties["id"].Type != "integer" {
 		t.Fatalf("response schema was not generated: %#v", response)
 	}
-	if doc.Components.SecuritySchemes["bearerAuth"].Scheme != "bearer" {
-		t.Fatalf("security scheme was not generated: %#v", doc.Components)
+	if response.Content["application/json"].Schema.Ref == "" {
+		t.Fatalf("response schema should use a component ref: %#v", response.Content["application/json"].Schema)
+	}
+	if openapiDoc.Components.SecuritySchemes["bearerAuth"].Scheme != "bearer" {
+		t.Fatalf("security scheme was not generated: %#v", openapiDoc.Components)
 	}
 }
 
 func TestGenerateOpenAPIUsesConfiguredSecurityScheme(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	registry.AddSecurityScheme("apiKeyAuth", APIKeySecurity("X-API-Key", "header"))
-	registry.Register(http.MethodGet, "/tasks", Security("apiKeyAuth"), ResponseStatus(http.StatusOK, taskResponse{}))
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	docs.AddSecurityScheme("apiKeyAuth", doc.APIKeySecurity("X-API-Key", "header"))
+	docs.Register(http.MethodGet, "/tasks", doc.Security("apiKeyAuth"), doc.Status(http.StatusOK, taskResponse{}))
 
-	doc := GenerateOpenAPI(registry)
-	scheme := doc.Components.SecuritySchemes["apiKeyAuth"]
+	openapiDoc := doc.GenerateOpenAPI(docs)
+	scheme := openapiDoc.Components.SecuritySchemes["apiKeyAuth"]
 	if scheme.Type != "apiKey" || scheme.Name != "X-API-Key" || scheme.In != "header" {
 		t.Fatalf("configured security scheme was not used: %#v", scheme)
 	}
 }
 
 func TestRegistryRoutesReturnsDefensiveCopy(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	registry.Register(http.MethodGet, "/tasks",
-		Tags("tasks"),
-		ResponseSchema(http.StatusOK, "OK", &Schema{
-			Type: "object",
-			Properties: map[string]*Schema{
-				"id": {Type: "integer"},
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	docs.Register(http.MethodGet, "/tasks",
+		doc.Tags("tasks"),
+		doc.BodyWithExample(testRequestOf[createTaskRequest]{}, map[string]any{
+			"content": map[string]any{
+				"title": "original",
+			},
+		}),
+		doc.StatusWithHeaders(http.StatusOK, taskResponse{}, doc.ResponseHeaderInfo{
+			Name:   "X-RateLimit-Remaining",
+			Schema: &doc.Schema{Type: "integer"},
+		}),
+		doc.StatusWithExample(http.StatusCreated, taskResponse{}, map[string]any{
+			"content": map[string]any{
+				"id": float64(1),
 			},
 		}),
 	)
 
-	routes := registry.Routes()
+	routes := docs.Routes()
 	routes[0].Tags[0] = "mutated"
-	routes[0].Responses[0].Schema.Properties["id"].Type = "string"
+	routes[0].Responses[0].Headers[0].Schema.Type = "string"
+	routes[0].BodyExample.(map[string]any)["content"].(map[string]any)["title"] = "mutated"
+	routes[0].Responses[1].Example.(map[string]any)["content"].(map[string]any)["id"] = float64(2)
 
-	fresh := registry.Routes()
+	fresh := docs.Routes()
 	if fresh[0].Tags[0] != "tasks" {
 		t.Fatalf("tags were mutated through Routes snapshot: %#v", fresh[0].Tags)
 	}
-	if fresh[0].Responses[0].Schema.Properties["id"].Type != "integer" {
-		t.Fatalf("schema was mutated through Routes snapshot: %#v", fresh[0].Responses[0].Schema)
+	if fresh[0].Responses[0].Headers[0].Schema.Type != "integer" {
+		t.Fatalf("response header schema was mutated through Routes snapshot: %#v", fresh[0].Responses[0].Headers[0].Schema)
+	}
+	if fresh[0].BodyExample.(map[string]any)["content"].(map[string]any)["title"] != "original" {
+		t.Fatalf("body example was mutated through Routes snapshot: %#v", fresh[0].BodyExample)
+	}
+	if fresh[0].Responses[1].Example.(map[string]any)["content"].(map[string]any)["id"] != float64(1) {
+		t.Fatalf("response example was mutated through Routes snapshot: %#v", fresh[0].Responses[1].Example)
 	}
 }
 
 func TestOpenAPIHandler(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	registry.Register(http.MethodGet, "/tasks", ResponseStatus(http.StatusOK, []taskResponse{}))
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	docs.Register(http.MethodGet, "/tasks", doc.Status(http.StatusOK, []taskResponse{}))
 
 	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
 	res := httptest.NewRecorder()
-	OpenAPIHandler(registry).ServeHTTP(res, req)
+	doc.OpenAPIHandler(docs).ServeHTTP(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", res.Code)
 	}
-	var doc OpenAPI
+	var doc doc.OpenAPI
 	if err := json.Unmarshal(res.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("handler returned invalid JSON: %v", err)
 	}
 	if doc.Info.Title != "Tasks API" {
-		t.Fatalf("unexpected info: %#v", doc.Info)
+		t.Fatalf("unexpected api metadata: %#v", doc.Info)
 	}
 }
 
@@ -151,61 +208,122 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		Email string `json:"email" format:"email"`
 	}
 
-	registry := NewRegistry(Info{
+	docs := doc.New(doc.API{
 		Title:       "Users API",
 		Version:     "1.0.0",
 		Description: "User management API",
 	})
-	registry.AddSecurityScheme("apiKeyAuth", APIKeySecurity("X-API-Key", "header"))
-	registry.Register(http.MethodPost, "/users",
-		Summary("Create user"),
-		Description("Creates a new user"),
-		Tags("users"),
-		Query("notify", Bool, false),
-		Security("apiKeyAuth"),
-		Body(JSONRequestOf[createUserRequest]{}),
-		ResponseStatus(http.StatusCreated, JSONResponseOf[userResponse]{}),
-		ResponseStatus(http.StatusBadRequest, JSONErrorResponse{}),
+	docs.AddSecurityScheme("apiKeyAuth", doc.APIKeySecurity("X-API-Key", "header"))
+	docs.Register(http.MethodPost, "/users",
+		doc.Summary("Create user"),
+		doc.Description("Creates a new user"),
+		doc.Tags("users"),
+		doc.QueryWithDescription("notify", doc.Bool, false, "Send notification email"),
+		doc.Security("apiKeyAuth"),
+		doc.BodyWithExample(testRequestOf[createUserRequest]{}, map[string]any{
+			"header": map[string]any{
+				"lang": "es",
+			},
+			"content": map[string]any{
+				"email": "user@example.com",
+			},
+		}),
+		doc.ResponseWithDescriptionAndExample(http.StatusCreated, "User created", testResponseOf[userResponse]{}, map[string]any{
+			"header": map[string]any{
+				"type": "success",
+			},
+			"content": map[string]any{
+				"id": float64(1),
+			},
+		}, doc.ResponseHeader("Location", doc.String, "Created user URL")),
+		doc.Status(http.StatusBadRequest, testErrorResponse{}),
 	)
 
-	doc := GenerateOpenAPI(registry)
-	if doc.OpenAPI != "3.0.3" || doc.Info.Title != "Users API" || doc.Info.Description == "" {
-		t.Fatalf("unexpected document metadata: %#v", doc)
+	openapiDoc := doc.GenerateOpenAPI(docs)
+	if openapiDoc.OpenAPI != "3.0.3" || openapiDoc.Info.Title != "Users API" || openapiDoc.Info.Description == "" {
+		t.Fatalf("unexpected document metadata: %#v", openapiDoc)
 	}
-	operation := doc.Paths["/users"]["post"]
+	operation := openapiDoc.Paths["/users"]["post"]
 	if operation.Summary != "Create user" || len(operation.Tags) != 1 || operation.Tags[0] != "users" {
 		t.Fatalf("unexpected operation metadata: %#v", operation)
 	}
-	if len(operation.Parameters) != 1 || operation.Parameters[0].Name != "notify" || operation.Parameters[0].Schema.Type != "boolean" {
+	if len(operation.Parameters) != 1 || operation.Parameters[0].Name != "notify" || operation.Parameters[0].Schema.Type != "boolean" || operation.Parameters[0].Description != "Send notification email" {
 		t.Fatalf("unexpected query parameter: %#v", operation.Parameters)
 	}
 	requestSchema := operation.RequestBody.Content["application/json"].Schema
+	requestExample := operation.RequestBody.Content["application/json"].Example.(map[string]any)
+	if requestExample["content"].(map[string]any)["email"] != "user@example.com" {
+		t.Fatalf("request example was not generated: %#v", requestExample)
+	}
+	if requestSchema.Ref == "" || !strings.Contains(requestSchema.Ref, "RequestOfCreateUserRequest") {
+		t.Fatalf("request schema should use a component ref, got %#v", requestSchema)
+	}
+	requestSchema = resolveOpenAPISchema(openapiDoc, requestSchema)
 	if requestSchema.Properties["header"] == nil {
 		t.Fatalf("request wrapper header was not generated: %#v", requestSchema)
 	}
-	emailRequestSchema := requestSchema.Properties["content"].Properties["email"]
+	requestContentSchema := resolveOpenAPISchema(openapiDoc, requestSchema.Properties["content"])
+	emailRequestSchema := requestContentSchema.Properties["email"]
 	if emailRequestSchema.Format != "email" || emailRequestSchema.Example != "user@example.com" {
 		t.Fatalf("request schema tags were not generated: %#v", emailRequestSchema)
 	}
-	if !containsString(requestSchema.Properties["content"].Required, "email") {
-		t.Fatalf("required field was not generated: %#v", requestSchema.Properties["content"].Required)
+	if !containsString(requestContentSchema.Required, "email") {
+		t.Fatalf("required field was not generated: %#v", requestContentSchema.Required)
 	}
 	created := operation.Responses["201"]
+	createdExample := created.Content["application/json"].Example.(map[string]any)
+	if createdExample["content"].(map[string]any)["id"] != float64(1) {
+		t.Fatalf("response example was not generated: %#v", createdExample)
+	}
+	location := created.Headers["Location"]
+	if location.Description != "Created user URL" || location.Schema.Type != "string" {
+		t.Fatalf("response header was not generated: %#v", created.Headers)
+	}
 	createdSchema := created.Content["application/json"].Schema
-	if created.Description != "Created" || createdSchema.Properties["header"] == nil {
+	if createdSchema.Ref == "" || !strings.Contains(createdSchema.Ref, "ResponseOfUserResponse") {
+		t.Fatalf("response schema should use a component ref, got %#v", createdSchema)
+	}
+	createdSchema = resolveOpenAPISchema(openapiDoc, createdSchema)
+	if created.Description != "User created" || createdSchema.Properties["header"] == nil {
 		t.Fatalf("unexpected response schema: %#v", created)
 	}
-	if createdSchema.Properties["content"].Properties["id"].Type != "integer" {
-		t.Fatalf("typed response content schema was not generated: %#v", createdSchema.Properties["content"])
+	responseContentSchema := resolveOpenAPISchema(openapiDoc, createdSchema.Properties["content"])
+	if responseContentSchema.Properties["id"].Type != "integer" {
+		t.Fatalf("typed response content schema was not generated: %#v", responseContentSchema)
 	}
-	if operation.Responses["400"].Content["application/json"].Schema.Properties["content"] != nil {
+	errorSchema := resolveOpenAPISchema(openapiDoc, operation.Responses["400"].Content["application/json"].Schema)
+	if errorSchema.Properties["content"] != nil {
 		t.Fatalf("error response schema should not include content: %#v", operation.Responses["400"])
 	}
 	if operation.Security[0]["apiKeyAuth"] == nil {
 		t.Fatalf("operation security was not generated: %#v", operation.Security)
 	}
-	scheme := doc.Components.SecuritySchemes["apiKeyAuth"]
+	scheme := openapiDoc.Components.SecuritySchemes["apiKeyAuth"]
 	if scheme.Type != "apiKey" || scheme.Name != "X-API-Key" || scheme.In != "header" {
 		t.Fatalf("security scheme was not generated: %#v", scheme)
 	}
+}
+
+func resolveOpenAPISchema(doc doc.OpenAPI, schema *doc.Schema) *doc.Schema {
+	if schema == nil || schema.Ref == "" {
+		return schema
+	}
+	const prefix = "#/components/schemas/"
+	if !strings.HasPrefix(schema.Ref, prefix) {
+		return schema
+	}
+	resolved := doc.Components.Schemas[strings.TrimPrefix(schema.Ref, prefix)]
+	if resolved == nil {
+		return schema
+	}
+	return resolved
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }

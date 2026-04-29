@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jgolang/api/core"
+	"github.com/jgolang/api/envelope"
 )
 
 // ResponseFormatter implementation of core.APIResponseFormatter interface.
@@ -53,9 +54,9 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 	return &core.ResponseFormatted{
 		HTTPStatusCode: data.HTTPStatusCode,
 		Headers:        data.Headers,
-		Body: JSONResponse{
+		Body: envelope.Response{
 			Content: data.Content,
-			Header: JSONResponseInfo{
+			Header: envelope.ResponseInfo{
 				Title:   title,
 				Message: msg,
 				Type:    data.ResponseType,
