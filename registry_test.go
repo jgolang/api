@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"encoding/json"
@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jgolang/api"
+	"github.com/jgolang/api/doc"
 )
 
 type createTaskRequest struct {
@@ -18,20 +21,20 @@ type taskResponse struct {
 }
 
 func TestRegistryRegistersRoutesWithMetadata(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	router := NewMetadataRouter(registry)
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	router := doc.NewRouter(docs)
 
-	Post(router, "/tasks", func(w http.ResponseWriter, r *http.Request) {},
-		Summary("Create task"),
-		Description("Creates a new task"),
-		Tags("tasks"),
-		Body(createTaskRequest{}),
-		ResponseStatus(http.StatusCreated, taskResponse{}),
-		Query("dry_run", Bool, false),
-		Security("bearerAuth"),
+	api.Post(router, "/tasks", func(w http.ResponseWriter, r *http.Request) {},
+		doc.Summary("Create task"),
+		doc.Description("Creates a new task"),
+		doc.Tags("tasks"),
+		doc.Body(createTaskRequest{}),
+		doc.Status(http.StatusCreated, taskResponse{}),
+		doc.Query("dry_run", doc.Bool, false),
+		doc.Security("bearerAuth"),
 	)
 
-	routes := registry.Routes()
+	routes := docs.Routes()
 	if len(routes) != 1 {
 		t.Fatalf("expected 1 route, got %d", len(routes))
 	}
@@ -51,26 +54,26 @@ func TestRegistryRegistersRoutesWithMetadata(t *testing.T) {
 }
 
 func TestGenerateOpenAPI(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	registry.AddSecurityScheme("bearerAuth", BearerSecurity("JWT"))
-	registry.Register(http.MethodGet, "/tasks/{id}",
-		OperationID("getTask"),
-		Summary("Get task"),
-		Tags("tasks"),
-		HeaderWithDescription("X-Request-ID", String, false, "Trace request ID"),
-		PathWithDescription("id", Int, false, "Task ID"),
-		Security("bearerAuth"),
-		ResponseStatus(http.StatusOK, taskResponse{}),
-		ResponseStatus(http.StatusBadRequest, ErrorResponse{}),
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
+	docs.Register(http.MethodGet, "/tasks/{id}",
+		doc.OperationID("getTask"),
+		doc.Summary("Get task"),
+		doc.Tags("tasks"),
+		doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Trace request ID"),
+		doc.PathWithDescription("id", doc.Int, false, "Task ID"),
+		doc.Security("bearerAuth"),
+		doc.Status(http.StatusOK, taskResponse{}),
+		doc.Status(http.StatusBadRequest, doc.Error()),
 	)
 
-	doc := GenerateOpenAPI(registry)
-	if doc.OpenAPI != "3.0.3" {
-		t.Fatalf("unexpected OpenAPI version: %s", doc.OpenAPI)
+	openapiDoc := doc.GenerateOpenAPI(docs)
+	if openapiDoc.OpenAPI != "3.0.3" {
+		t.Fatalf("unexpected OpenAPI version: %s", openapiDoc.OpenAPI)
 	}
-	operation, ok := doc.Paths["/tasks/{id}"]["get"]
+	operation, ok := openapiDoc.Paths["/tasks/{id}"]["get"]
 	if !ok {
-		t.Fatalf("GET /tasks/{id} operation was not generated: %#v", doc.Paths)
+		t.Fatalf("GET /tasks/{id} operation was not generated: %#v", openapiDoc.Paths)
 	}
 	if operation.Summary != "Get task" {
 		t.Fatalf("unexpected summary: %s", operation.Summary)
@@ -88,45 +91,45 @@ func TestGenerateOpenAPI(t *testing.T) {
 		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)
 	}
 	response := operation.Responses["200"]
-	responseSchema := resolveOpenAPISchema(doc, response.Content["application/json"].Schema)
+	responseSchema := resolveOpenAPISchema(openapiDoc, response.Content["application/json"].Schema)
 	if responseSchema.Properties["id"].Type != "integer" {
 		t.Fatalf("response schema was not generated: %#v", response)
 	}
 	if response.Content["application/json"].Schema.Ref == "" {
 		t.Fatalf("response schema should use a component ref: %#v", response.Content["application/json"].Schema)
 	}
-	if doc.Components.SecuritySchemes["bearerAuth"].Scheme != "bearer" {
-		t.Fatalf("security scheme was not generated: %#v", doc.Components)
+	if openapiDoc.Components.SecuritySchemes["bearerAuth"].Scheme != "bearer" {
+		t.Fatalf("security scheme was not generated: %#v", openapiDoc.Components)
 	}
 }
 
 func TestGenerateOpenAPIUsesConfiguredSecurityScheme(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	registry.AddSecurityScheme("apiKeyAuth", APIKeySecurity("X-API-Key", "header"))
-	registry.Register(http.MethodGet, "/tasks", Security("apiKeyAuth"), ResponseStatus(http.StatusOK, taskResponse{}))
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	docs.AddSecurityScheme("apiKeyAuth", doc.APIKeySecurity("X-API-Key", "header"))
+	docs.Register(http.MethodGet, "/tasks", doc.Security("apiKeyAuth"), doc.Status(http.StatusOK, taskResponse{}))
 
-	doc := GenerateOpenAPI(registry)
-	scheme := doc.Components.SecuritySchemes["apiKeyAuth"]
+	openapiDoc := doc.GenerateOpenAPI(docs)
+	scheme := openapiDoc.Components.SecuritySchemes["apiKeyAuth"]
 	if scheme.Type != "apiKey" || scheme.Name != "X-API-Key" || scheme.In != "header" {
 		t.Fatalf("configured security scheme was not used: %#v", scheme)
 	}
 }
 
 func TestRegistryRoutesReturnsDefensiveCopy(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	registry.Register(http.MethodGet, "/tasks",
-		Tags("tasks"),
-		StatusWithHeaders(http.StatusOK, taskResponse{}, ResponseHeaderInfo{
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	docs.Register(http.MethodGet, "/tasks",
+		doc.Tags("tasks"),
+		doc.StatusWithHeaders(http.StatusOK, taskResponse{}, doc.ResponseHeaderInfo{
 			Name:   "X-RateLimit-Remaining",
-			Schema: &Schema{Type: "integer"},
+			Schema: &doc.Schema{Type: "integer"},
 		}),
 	)
 
-	routes := registry.Routes()
+	routes := docs.Routes()
 	routes[0].Tags[0] = "mutated"
 	routes[0].Responses[0].Headers[0].Schema.Type = "string"
 
-	fresh := registry.Routes()
+	fresh := docs.Routes()
 	if fresh[0].Tags[0] != "tasks" {
 		t.Fatalf("tags were mutated through Routes snapshot: %#v", fresh[0].Tags)
 	}
@@ -136,22 +139,22 @@ func TestRegistryRoutesReturnsDefensiveCopy(t *testing.T) {
 }
 
 func TestOpenAPIHandler(t *testing.T) {
-	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
-	registry.Register(http.MethodGet, "/tasks", ResponseStatus(http.StatusOK, []taskResponse{}))
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	docs.Register(http.MethodGet, "/tasks", doc.Status(http.StatusOK, []taskResponse{}))
 
 	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
 	res := httptest.NewRecorder()
-	OpenAPIHandler(registry).ServeHTTP(res, req)
+	doc.OpenAPIHandler(docs).ServeHTTP(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", res.Code)
 	}
-	var doc OpenAPI
+	var doc doc.OpenAPI
 	if err := json.Unmarshal(res.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("handler returned invalid JSON: %v", err)
 	}
 	if doc.Info.Title != "Tasks API" {
-		t.Fatalf("unexpected info: %#v", doc.Info)
+		t.Fatalf("unexpected api metadata: %#v", doc.Info)
 	}
 }
 
@@ -165,30 +168,30 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		Email string `json:"email" format:"email"`
 	}
 
-	registry := NewRegistry(Info{
+	docs := doc.New(doc.API{
 		Title:       "Users API",
 		Version:     "1.0.0",
 		Description: "User management API",
 	})
-	registry.AddSecurityScheme("apiKeyAuth", APIKeySecurity("X-API-Key", "header"))
-	registry.Register(http.MethodPost, "/users",
-		Summary("Create user"),
-		Description("Creates a new user"),
-		Tags("users"),
-		QueryWithDescription("notify", Bool, false, "Send notification email"),
-		Security("apiKeyAuth"),
-		Body(JSONRequestOf[createUserRequest]{}),
-		StatusWithHeaders(http.StatusCreated, JSONResponseOf[userResponse]{},
-			ResponseHeader("Location", String, "Created user URL"),
+	docs.AddSecurityScheme("apiKeyAuth", doc.APIKeySecurity("X-API-Key", "header"))
+	docs.Register(http.MethodPost, "/users",
+		doc.Summary("Create user"),
+		doc.Description("Creates a new user"),
+		doc.Tags("users"),
+		doc.QueryWithDescription("notify", doc.Bool, false, "Send notification email"),
+		doc.Security("apiKeyAuth"),
+		doc.Body(doc.Request[createUserRequest]()),
+		doc.StatusWithHeaders(http.StatusCreated, doc.Success[userResponse](),
+			doc.ResponseHeader("Location", doc.String, "Created user URL"),
 		),
-		ResponseStatus(http.StatusBadRequest, JSONErrorResponse{}),
+		doc.Status(http.StatusBadRequest, doc.Error()),
 	)
 
-	doc := GenerateOpenAPI(registry)
-	if doc.OpenAPI != "3.0.3" || doc.Info.Title != "Users API" || doc.Info.Description == "" {
-		t.Fatalf("unexpected document metadata: %#v", doc)
+	openapiDoc := doc.GenerateOpenAPI(docs)
+	if openapiDoc.OpenAPI != "3.0.3" || openapiDoc.Info.Title != "Users API" || openapiDoc.Info.Description == "" {
+		t.Fatalf("unexpected document metadata: %#v", openapiDoc)
 	}
-	operation := doc.Paths["/users"]["post"]
+	operation := openapiDoc.Paths["/users"]["post"]
 	if operation.Summary != "Create user" || len(operation.Tags) != 1 || operation.Tags[0] != "users" {
 		t.Fatalf("unexpected operation metadata: %#v", operation)
 	}
@@ -196,14 +199,14 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		t.Fatalf("unexpected query parameter: %#v", operation.Parameters)
 	}
 	requestSchema := operation.RequestBody.Content["application/json"].Schema
-	if requestSchema.Ref == "" || !strings.Contains(requestSchema.Ref, "JSONRequestOfCreateUserRequest") {
+	if requestSchema.Ref == "" || !strings.Contains(requestSchema.Ref, "RequestOfCreateUserRequest") {
 		t.Fatalf("request schema should use a component ref, got %#v", requestSchema)
 	}
-	requestSchema = resolveOpenAPISchema(doc, requestSchema)
+	requestSchema = resolveOpenAPISchema(openapiDoc, requestSchema)
 	if requestSchema.Properties["header"] == nil {
 		t.Fatalf("request wrapper header was not generated: %#v", requestSchema)
 	}
-	requestContentSchema := resolveOpenAPISchema(doc, requestSchema.Properties["content"])
+	requestContentSchema := resolveOpenAPISchema(openapiDoc, requestSchema.Properties["content"])
 	emailRequestSchema := requestContentSchema.Properties["email"]
 	if emailRequestSchema.Format != "email" || emailRequestSchema.Example != "user@example.com" {
 		t.Fatalf("request schema tags were not generated: %#v", emailRequestSchema)
@@ -217,31 +220,31 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		t.Fatalf("response header was not generated: %#v", created.Headers)
 	}
 	createdSchema := created.Content["application/json"].Schema
-	if createdSchema.Ref == "" || !strings.Contains(createdSchema.Ref, "JSONResponseOfUserResponse") {
+	if createdSchema.Ref == "" || !strings.Contains(createdSchema.Ref, "ResponseOfUserResponse") {
 		t.Fatalf("response schema should use a component ref, got %#v", createdSchema)
 	}
-	createdSchema = resolveOpenAPISchema(doc, createdSchema)
+	createdSchema = resolveOpenAPISchema(openapiDoc, createdSchema)
 	if created.Description != "Created" || createdSchema.Properties["header"] == nil {
 		t.Fatalf("unexpected response schema: %#v", created)
 	}
-	responseContentSchema := resolveOpenAPISchema(doc, createdSchema.Properties["content"])
+	responseContentSchema := resolveOpenAPISchema(openapiDoc, createdSchema.Properties["content"])
 	if responseContentSchema.Properties["id"].Type != "integer" {
 		t.Fatalf("typed response content schema was not generated: %#v", responseContentSchema)
 	}
-	errorSchema := resolveOpenAPISchema(doc, operation.Responses["400"].Content["application/json"].Schema)
+	errorSchema := resolveOpenAPISchema(openapiDoc, operation.Responses["400"].Content["application/json"].Schema)
 	if errorSchema.Properties["content"] != nil {
 		t.Fatalf("error response schema should not include content: %#v", operation.Responses["400"])
 	}
 	if operation.Security[0]["apiKeyAuth"] == nil {
 		t.Fatalf("operation security was not generated: %#v", operation.Security)
 	}
-	scheme := doc.Components.SecuritySchemes["apiKeyAuth"]
+	scheme := openapiDoc.Components.SecuritySchemes["apiKeyAuth"]
 	if scheme.Type != "apiKey" || scheme.Name != "X-API-Key" || scheme.In != "header" {
 		t.Fatalf("security scheme was not generated: %#v", scheme)
 	}
 }
 
-func resolveOpenAPISchema(doc OpenAPI, schema *Schema) *Schema {
+func resolveOpenAPISchema(doc doc.OpenAPI, schema *doc.Schema) *doc.Schema {
 	if schema == nil || schema.Ref == "" {
 		return schema
 	}
@@ -254,4 +257,13 @@ func resolveOpenAPISchema(doc OpenAPI, schema *Schema) *Schema {
 		return schema
 	}
 	return resolved
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }

@@ -1,4 +1,4 @@
-package api
+package doc
 
 import (
 	"testing"
@@ -7,6 +7,15 @@ import (
 
 type schemaAddress struct {
 	City string `json:"city"`
+}
+
+type createTaskRequest struct {
+	Title string `json:"title"`
+}
+
+type taskResponse struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
 }
 
 type schemaExample struct {
@@ -19,6 +28,20 @@ type schemaExample struct {
 	Tags      []string          `json:"tags,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 	Ignored   string            `json:"-"`
+}
+
+type schemaJSONRequestOf[T any] struct {
+	Header  RequestInfo `json:"header,omitempty"`
+	Content *T          `json:"content,omitempty"`
+}
+
+type schemaJSONResponseOf[T any] struct {
+	Header  ResponseInfo `json:"header,omitempty"`
+	Content *T           `json:"content,omitempty"`
+}
+
+type schemaJSONErrorResponse struct {
+	Header ResponseInfo `json:"header,omitempty"`
 }
 
 func TestSchemaFromTypeSupportsCommonGoShapes(t *testing.T) {
@@ -70,7 +93,7 @@ func TestSchemaFromTypeAllowsManualSchema(t *testing.T) {
 }
 
 func TestSchemaFromTypeSupportsTypedJSONResponseContent(t *testing.T) {
-	schema := SchemaFromType(JSONResponseOf[taskResponse]{})
+	schema := SchemaFromType(schemaJSONResponseOf[taskResponse]{})
 
 	if schema.Properties["header"].Properties["type"].Type != "string" {
 		t.Fatalf("expected header schema, got %#v", schema.Properties["header"])
@@ -94,7 +117,7 @@ func TestSchemaFromTypeSupportsTypedJSONResponseContent(t *testing.T) {
 }
 
 func TestSchemaFromTypeSupportsTypedJSONResponseSliceContent(t *testing.T) {
-	schema := SchemaFromType(JSONResponseOf[[]taskResponse]{})
+	schema := SchemaFromType(schemaJSONResponseOf[[]taskResponse]{})
 
 	content := schema.Properties["content"]
 	if content.Type != "array" {
@@ -109,7 +132,7 @@ func TestSchemaFromTypeSupportsTypedJSONResponseSliceContent(t *testing.T) {
 }
 
 func TestSchemaFromTypeSupportsJSONErrorResponse(t *testing.T) {
-	schema := SchemaFromType(JSONErrorResponse{})
+	schema := SchemaFromType(schemaJSONErrorResponse{})
 
 	if _, ok := schema.Properties["header"]; !ok {
 		t.Fatalf("expected header property in error response schema: %#v", schema)
@@ -120,7 +143,7 @@ func TestSchemaFromTypeSupportsJSONErrorResponse(t *testing.T) {
 }
 
 func TestSchemaFromTypeSupportsTypedJSONRequestContent(t *testing.T) {
-	schema := SchemaFromType(JSONRequestOf[createTaskRequest]{})
+	schema := SchemaFromType(schemaJSONRequestOf[createTaskRequest]{})
 
 	if schema.Properties["header"].Properties["uuid"].Type != "string" {
 		t.Fatalf("expected request header schema, got %#v", schema.Properties["header"])

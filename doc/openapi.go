@@ -1,4 +1,4 @@
-package api
+package doc
 
 import (
 	"net/http"
@@ -13,7 +13,7 @@ import (
 // OpenAPI is the generated OpenAPI 3 document.
 type OpenAPI struct {
 	OpenAPI    string                          `json:"openapi"`
-	Info       Info                            `json:"info"`
+	Info       API                             `json:"info"`
 	Paths      map[string]map[string]Operation `json:"paths"`
 	Components *Components                     `json:"components,omitempty"`
 }
@@ -78,25 +78,25 @@ type OpenAPIHeader struct {
 	Schema      *Schema `json:"schema,omitempty"`
 }
 
-// GenerateOpenAPI renders an OpenAPI 3.0 document from a registry.
-func GenerateOpenAPI(registry *Registry) OpenAPI {
+// GenerateOpenAPI renders an OpenAPI 3.0 document from a docs.
+func GenerateOpenAPI(docs *Docs) OpenAPI {
 	doc := OpenAPI{
 		OpenAPI: "3.0.3",
 		Paths:   make(map[string]map[string]Operation),
 	}
-	if registry == nil {
+	if docs == nil {
 		return doc
 	}
-	doc.Info = registry.Info()
+	doc.Info = docs.API()
 	schemas := newOpenAPISchemaBuilder()
-	for name, scheme := range registry.SecuritySchemes() {
+	for name, scheme := range docs.SecuritySchemes() {
 		ensureComponents(&doc)
 		if doc.Components.SecuritySchemes == nil {
 			doc.Components.SecuritySchemes = make(map[string]SecurityScheme)
 		}
 		doc.Components.SecuritySchemes[name] = scheme
 	}
-	for _, route := range registry.Routes() {
+	for _, route := range docs.Routes() {
 		path := normalizeOpenAPIPath(route.Path)
 		method := strings.ToLower(route.Method)
 		if doc.Paths[path] == nil {

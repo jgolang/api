@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/jgolang/api"
+	"github.com/jgolang/api/doc"
 )
 
 type route struct {
@@ -17,23 +18,23 @@ type route struct {
 
 // Router adapts http.ServeMux to api.Router.
 type Router struct {
-	mux      *http.ServeMux
-	registry *api.Registry
-	mu       sync.Mutex
-	routes   map[string][]route
-	handled  map[string]bool
+	mux     *http.ServeMux
+	docs    *doc.Docs
+	mu      sync.Mutex
+	routes  map[string][]route
+	handled map[string]bool
 }
 
 // New creates a net/http adapter.
-func New(mux *http.ServeMux, registry *api.Registry) *Router {
+func New(mux *http.ServeMux, docs *doc.Docs) *Router {
 	if mux == nil {
 		mux = http.NewServeMux()
 	}
 	return &Router{
-		mux:      mux,
-		registry: registry,
-		routes:   make(map[string][]route),
-		handled:  make(map[string]bool),
+		mux:     mux,
+		docs:    docs,
+		routes:  make(map[string][]route),
+		handled: make(map[string]bool),
 	}
 }
 
@@ -43,9 +44,9 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handle registers an HTTP handler and stores its metadata.
-func (router *Router) Handle(method string, path string, handler http.HandlerFunc, opts ...api.RouteOption) {
-	if router.registry != nil {
-		router.registry.Register(method, path, opts...)
+func (router *Router) Handle(method string, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
+	if router.docs != nil {
+		router.docs.Register(method, path, opts...)
 	}
 	pattern := serveMuxPattern(path)
 	router.mu.Lock()

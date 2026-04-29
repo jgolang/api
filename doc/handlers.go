@@ -1,4 +1,4 @@
-package api
+package doc
 
 import (
 	"encoding/json"
@@ -7,11 +7,11 @@ import (
 	"net/http"
 )
 
-// OpenAPIHandler returns a handler that serves the registry as OpenAPI JSON.
-func OpenAPIHandler(registry *Registry) http.HandlerFunc {
+// OpenAPIHandler returns a handler that serves the docs as OpenAPI JSON.
+func OpenAPIHandler(docs *Docs) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if err := json.NewEncoder(w).Encode(GenerateOpenAPI(registry)); err != nil {
+		if err := json.NewEncoder(w).Encode(GenerateOpenAPI(docs)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
