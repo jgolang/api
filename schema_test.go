@@ -75,6 +75,9 @@ func TestSchemaFromTypeSupportsTypedJSONResponseContent(t *testing.T) {
 	if schema.Properties["header"].Properties["type"].Type != "string" {
 		t.Fatalf("expected header schema, got %#v", schema.Properties["header"])
 	}
+	if schema.Properties["header"].Properties["type"].Example != "success" {
+		t.Fatalf("expected response header example, got %#v", schema.Properties["header"].Properties["type"])
+	}
 	content := schema.Properties["content"]
 	if content.Type != "object" {
 		t.Fatalf("expected content object schema, got %#v", content)
@@ -121,6 +124,9 @@ func TestSchemaFromTypeSupportsTypedJSONRequestContent(t *testing.T) {
 
 	if schema.Properties["header"].Properties["uuid"].Type != "string" {
 		t.Fatalf("expected request header schema, got %#v", schema.Properties["header"])
+	}
+	if schema.Properties["header"].Properties["uuid"].Example != "ADAD3-ADD33-AFSFK" {
+		t.Fatalf("expected request header example, got %#v", schema.Properties["header"].Properties["uuid"])
 	}
 	content := schema.Properties["content"]
 	if content.Type != "object" {
