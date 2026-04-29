@@ -1,8 +1,0 @@
-./doc.go
-./handlers.go
-./openapi.go
-./registry.go
-./schema.go
-./doc_test.go
-./schema_test.go
-./test_fixtures_test.go
