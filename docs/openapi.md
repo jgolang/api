@@ -77,6 +77,9 @@ api.Body(api.JSONRequestOf[CreateTaskRequest]{})
 api.Body(api.RequestDoc[CreateTaskRequest]())
 ```
 
+The typed request wrapper documents `content` as optional, so endpoints that only
+receive `header` can still use the same JSON request envelope.
+
 Runtime responses use `api.JSONResponse`, whose `content` field is `interface{}` for backward compatibility. For OpenAPI documentation, use typed wrappers so the generator can infer the payload schema:
 
 ```go
@@ -84,6 +87,9 @@ api.Status(http.StatusOK, api.JSONResponseOf[TaskResponse]{})
 api.Status(http.StatusOK, api.JSONResponseOf[[]TaskResponse]{})
 api.Status(http.StatusBadRequest, api.JSONErrorResponse{})
 ```
+
+The typed response wrapper also documents `content` as optional, so successful
+responses may use only `header` when there is no payload.
 
 The helpers below are equivalent and often read better in route declarations:
 
@@ -93,6 +99,9 @@ api.Status(http.StatusBadRequest, api.ErrorDoc())
 ```
 
 These types are for documentation only. They do not change the runtime request or response format.
+In generated OpenAPI documents, inferred Go types are emitted under
+`components.schemas` and referenced with `$ref` to avoid repeating schemas per
+operation.
 
 ## Route metadata options
 

@@ -2,9 +2,12 @@ package api
 
 import (
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+	"unicode"
 )
 
 // OpenAPI is the generated OpenAPI 3 document.
@@ -18,6 +21,7 @@ type OpenAPI struct {
 // Components contains reusable OpenAPI components.
 type Components struct {
 	SecuritySchemes map[string]SecurityScheme `json:"securitySchemes,omitempty"`
+	Schemas         map[string]*Schema        `json:"schemas,omitempty"`
 }
 
 // SecurityScheme is an OpenAPI security scheme object.
@@ -76,9 +80,11 @@ func GenerateOpenAPI(registry *Registry) OpenAPI {
 		return doc
 	}
 	doc.Info = registry.Info()
+	schemas := newOpenAPISchemaBuilder()
 	for name, scheme := range registry.SecuritySchemes() {
-		if doc.Components == nil {
-			doc.Components = &Components{SecuritySchemes: make(map[string]SecurityScheme)}
+		ensureComponents(&doc)
+		if doc.Components.SecuritySchemes == nil {
+			doc.Components.SecuritySchemes = make(map[string]SecurityScheme)
 		}
 		doc.Components.SecuritySchemes[name] = scheme
 	}
@@ -88,10 +94,11 @@ func GenerateOpenAPI(registry *Registry) OpenAPI {
 		if doc.Paths[path] == nil {
 			doc.Paths[path] = make(map[string]Operation)
 		}
-		doc.Paths[path][method] = buildOperation(route)
+		doc.Paths[path][method] = buildOperation(route, schemas)
 		for _, security := range route.Security {
-			if doc.Components == nil {
-				doc.Components = &Components{SecuritySchemes: make(map[string]SecurityScheme)}
+			ensureComponents(&doc)
+			if doc.Components.SecuritySchemes == nil {
+				doc.Components.SecuritySchemes = make(map[string]SecurityScheme)
 			}
 			if _, ok := doc.Components.SecuritySchemes[security]; !ok {
 				doc.Components.SecuritySchemes[security] = SecurityScheme{
@@ -102,10 +109,14 @@ func GenerateOpenAPI(registry *Registry) OpenAPI {
 			}
 		}
 	}
+	if len(schemas.components) > 0 {
+		ensureComponents(&doc)
+		doc.Components.Schemas = schemas.components
+	}
 	return doc
 }
 
-func buildOperation(route Route) Operation {
+func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 	operation := Operation{
 		Summary:     route.Summary,
 		Description: route.Description,
@@ -137,7 +148,7 @@ func buildOperation(route Route) Operation {
 	if route.Body != nil || route.BodySchema != nil {
 		schema := route.BodySchema
 		if schema == nil {
-			schema = SchemaFromType(route.Body)
+			schema = schemas.SchemaFromType(route.Body)
 		}
 		operation.RequestBody = &RequestBodyObject{
 			Required: true,
@@ -157,7 +168,7 @@ func buildOperation(route Route) Operation {
 		object := ResponseObject{Description: description}
 		schema := response.Schema
 		if schema == nil && response.Body != nil {
-			schema = SchemaFromType(response.Body)
+			schema = schemas.SchemaFromType(response.Body)
 		}
 		if schema != nil {
 			object.Content = map[string]MediaType{
@@ -175,6 +186,12 @@ func buildOperation(route Route) Operation {
 	return operation
 }
 
+func ensureComponents(doc *OpenAPI) {
+	if doc.Components == nil {
+		doc.Components = &Components{}
+	}
+}
+
 func normalizeOpenAPIPath(path string) string {
 	if path == "" {
 		return "/"
@@ -183,4 +200,256 @@ func normalizeOpenAPIPath(path string) string {
 		path = "/" + path
 	}
 	return path
+}
+
+type openAPISchemaBuilder struct {
+	components map[string]*Schema
+	names      map[reflect.Type]string
+	usedNames  map[string]reflect.Type
+}
+
+func newOpenAPISchemaBuilder() *openAPISchemaBuilder {
+	return &openAPISchemaBuilder{
+		components: make(map[string]*Schema),
+		names:      make(map[reflect.Type]string),
+		usedNames:  make(map[string]reflect.Type),
+	}
+}
+
+func (builder *openAPISchemaBuilder) SchemaFromType(value interface{}) *Schema {
+	if schema, ok := value.(*Schema); ok {
+		return schema
+	}
+	if value == nil {
+		return &Schema{}
+	}
+	if typ, ok := value.(reflect.Type); ok {
+		return builder.schemaFromReflectType(typ)
+	}
+	return builder.schemaFromReflectType(reflect.TypeOf(value))
+}
+
+func (builder *openAPISchemaBuilder) schemaFromReflectType(typ reflect.Type) *Schema {
+	if typ == nil {
+		return &Schema{}
+	}
+	if typ == reflect.TypeOf(time.Time{}) {
+		return &Schema{Type: "string", Format: "date-time"}
+	}
+	if typ.Kind() == reflect.Ptr {
+		schema := cloneSchema(builder.schemaFromReflectType(typ.Elem()))
+		schema.Nullable = true
+		return schema
+	}
+	if typ.Kind() == reflect.Struct && typ.Name() != "" {
+		return builder.componentRef(typ)
+	}
+	switch typ.Kind() {
+	case reflect.Bool:
+		return &Schema{Type: "boolean"}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
+		return &Schema{Type: "integer", Format: "int32"}
+	case reflect.Int64:
+		return &Schema{Type: "integer", Format: "int64"}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
+		return &Schema{Type: "integer", Format: "int32"}
+	case reflect.Uint64:
+		return &Schema{Type: "integer", Format: "int64"}
+	case reflect.Float32:
+		return &Schema{Type: "number", Format: "float"}
+	case reflect.Float64:
+		return &Schema{Type: "number", Format: "double"}
+	case reflect.String:
+		return &Schema{Type: "string"}
+	case reflect.Slice, reflect.Array:
+		return &Schema{Type: "array", Items: builder.schemaFromReflectType(typ.Elem())}
+	case reflect.Map:
+		schema := &Schema{Type: "object"}
+		if typ.Key().Kind() == reflect.String {
+			schema.AdditionalProperties = builder.schemaFromReflectType(typ.Elem())
+		}
+		return schema
+	case reflect.Struct:
+		return builder.structSchema(typ)
+	case reflect.Interface:
+		return &Schema{}
+	default:
+		return &Schema{Type: "string"}
+	}
+}
+
+func (builder *openAPISchemaBuilder) componentRef(typ reflect.Type) *Schema {
+	name := builder.componentName(typ)
+	if _, ok := builder.components[name]; !ok {
+		builder.components[name] = &Schema{Type: "object"}
+		builder.components[name] = builder.structSchema(typ)
+	}
+	return &Schema{Ref: "#/components/schemas/" + name}
+}
+
+func (builder *openAPISchemaBuilder) structSchema(typ reflect.Type) *Schema {
+	schema := &Schema{
+		Type:       "object",
+		Properties: make(map[string]*Schema),
+	}
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.PkgPath != "" && !field.Anonymous {
+			continue
+		}
+		name, omitEmpty, skip := jsonFieldName(field)
+		if skip {
+			continue
+		}
+		if field.Anonymous && name == "" {
+			embedded := builder.schemaFromReflectType(field.Type)
+			embedded = builder.resolveLocalRef(embedded)
+			for propName, propSchema := range embedded.Properties {
+				schema.Properties[propName] = propSchema
+			}
+			schema.Required = append(schema.Required, embedded.Required...)
+			continue
+		}
+		if name == "" {
+			name = field.Name
+		}
+		fieldSchema := builder.schemaFromReflectType(field.Type)
+		applySchemaTags(fieldSchema, field)
+		schema.Properties[name] = fieldSchema
+		if isRequiredField(field, omitEmpty) {
+			schema.Required = append(schema.Required, name)
+		}
+	}
+	if len(schema.Properties) == 0 {
+		schema.Properties = nil
+	}
+	if len(schema.Required) == 0 {
+		schema.Required = nil
+	}
+	return schema
+}
+
+func (builder *openAPISchemaBuilder) resolveLocalRef(schema *Schema) *Schema {
+	if schema == nil || schema.Ref == "" {
+		return schema
+	}
+	const prefix = "#/components/schemas/"
+	if !strings.HasPrefix(schema.Ref, prefix) {
+		return schema
+	}
+	resolved := builder.components[strings.TrimPrefix(schema.Ref, prefix)]
+	if resolved == nil {
+		return schema
+	}
+	return resolved
+}
+
+func (builder *openAPISchemaBuilder) componentName(typ reflect.Type) string {
+	if name, ok := builder.names[typ]; ok {
+		return name
+	}
+	base := schemaTypeName(typ)
+	name := base
+	for i := 2; ; i++ {
+		used, exists := builder.usedNames[name]
+		if !exists || used == typ {
+			builder.names[typ] = name
+			builder.usedNames[name] = typ
+			return name
+		}
+		name = base + strconv.Itoa(i)
+	}
+}
+
+func schemaTypeName(typ reflect.Type) string {
+	for typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	switch typ.Kind() {
+	case reflect.Slice, reflect.Array:
+		return "ArrayOf" + schemaTypeName(typ.Elem())
+	default:
+		return schemaNameFromString(typ.Name())
+	}
+}
+
+func schemaNameFromString(value string) string {
+	if value == "" {
+		return "Schema"
+	}
+	if open := strings.Index(value, "["); open >= 0 && strings.HasSuffix(value, "]") {
+		base := schemaNameFromString(value[:open])
+		args := value[open+1 : len(value)-1]
+		for _, arg := range splitGenericArgs(args) {
+			base += schemaNameFromTypeString(arg)
+		}
+		return base
+	}
+	return exportedIdentifier(lastTypeSegment(value))
+}
+
+func schemaNameFromTypeString(value string) string {
+	value = strings.TrimSpace(value)
+	for strings.HasPrefix(value, "*") {
+		value = strings.TrimPrefix(value, "*")
+	}
+	if strings.HasPrefix(value, "[]") {
+		return "ArrayOf" + schemaNameFromTypeString(strings.TrimPrefix(value, "[]"))
+	}
+	return schemaNameFromString(value)
+}
+
+func splitGenericArgs(value string) []string {
+	var args []string
+	start := 0
+	depth := 0
+	for i, char := range value {
+		switch char {
+		case '[':
+			depth++
+		case ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				args = append(args, strings.TrimSpace(value[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	args = append(args, strings.TrimSpace(value[start:]))
+	return args
+}
+
+func lastTypeSegment(value string) string {
+	if slash := strings.LastIndex(value, "/"); slash >= 0 {
+		value = value[slash+1:]
+	}
+	if dot := strings.LastIndex(value, "."); dot >= 0 {
+		value = value[dot+1:]
+	}
+	return value
+}
+
+func exportedIdentifier(value string) string {
+	var builder strings.Builder
+	upperNext := true
+	for _, char := range value {
+		if !unicode.IsLetter(char) && !unicode.IsDigit(char) {
+			upperNext = true
+			continue
+		}
+		if builder.Len() == 0 && unicode.IsDigit(char) {
+			builder.WriteString("Schema")
+		}
+		if upperNext {
+			builder.WriteRune(unicode.ToUpper(char))
+			upperNext = false
+			continue
+		}
+		builder.WriteRune(char)
+	}
+	if builder.Len() == 0 {
+		return "Schema"
+	}
+	return builder.String()
 }

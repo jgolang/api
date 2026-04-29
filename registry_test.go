@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -76,8 +77,12 @@ func TestGenerateOpenAPI(t *testing.T) {
 		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)
 	}
 	response := operation.Responses["200"]
-	if response.Content["application/json"].Schema.Properties["id"].Type != "integer" {
+	responseSchema := resolveOpenAPISchema(doc, response.Content["application/json"].Schema)
+	if responseSchema.Properties["id"].Type != "integer" {
 		t.Fatalf("response schema was not generated: %#v", response)
+	}
+	if response.Content["application/json"].Schema.Ref == "" {
+		t.Fatalf("response schema should use a component ref: %#v", response.Content["application/json"].Schema)
 	}
 	if doc.Components.SecuritySchemes["bearerAuth"].Scheme != "bearer" {
 		t.Fatalf("security scheme was not generated: %#v", doc.Components)
@@ -180,25 +185,36 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		t.Fatalf("unexpected query parameter: %#v", operation.Parameters)
 	}
 	requestSchema := operation.RequestBody.Content["application/json"].Schema
+	if requestSchema.Ref == "" || !strings.Contains(requestSchema.Ref, "JSONRequestOfCreateUserRequest") {
+		t.Fatalf("request schema should use a component ref, got %#v", requestSchema)
+	}
+	requestSchema = resolveOpenAPISchema(doc, requestSchema)
 	if requestSchema.Properties["header"] == nil {
 		t.Fatalf("request wrapper header was not generated: %#v", requestSchema)
 	}
-	emailRequestSchema := requestSchema.Properties["content"].Properties["email"]
+	requestContentSchema := resolveOpenAPISchema(doc, requestSchema.Properties["content"])
+	emailRequestSchema := requestContentSchema.Properties["email"]
 	if emailRequestSchema.Format != "email" || emailRequestSchema.Example != "user@example.com" {
 		t.Fatalf("request schema tags were not generated: %#v", emailRequestSchema)
 	}
-	if !containsString(requestSchema.Properties["content"].Required, "email") {
-		t.Fatalf("required field was not generated: %#v", requestSchema.Properties["content"].Required)
+	if !containsString(requestContentSchema.Required, "email") {
+		t.Fatalf("required field was not generated: %#v", requestContentSchema.Required)
 	}
 	created := operation.Responses["201"]
 	createdSchema := created.Content["application/json"].Schema
+	if createdSchema.Ref == "" || !strings.Contains(createdSchema.Ref, "JSONResponseOfUserResponse") {
+		t.Fatalf("response schema should use a component ref, got %#v", createdSchema)
+	}
+	createdSchema = resolveOpenAPISchema(doc, createdSchema)
 	if created.Description != "Created" || createdSchema.Properties["header"] == nil {
 		t.Fatalf("unexpected response schema: %#v", created)
 	}
-	if createdSchema.Properties["content"].Properties["id"].Type != "integer" {
-		t.Fatalf("typed response content schema was not generated: %#v", createdSchema.Properties["content"])
+	responseContentSchema := resolveOpenAPISchema(doc, createdSchema.Properties["content"])
+	if responseContentSchema.Properties["id"].Type != "integer" {
+		t.Fatalf("typed response content schema was not generated: %#v", responseContentSchema)
 	}
-	if operation.Responses["400"].Content["application/json"].Schema.Properties["content"] != nil {
+	errorSchema := resolveOpenAPISchema(doc, operation.Responses["400"].Content["application/json"].Schema)
+	if errorSchema.Properties["content"] != nil {
 		t.Fatalf("error response schema should not include content: %#v", operation.Responses["400"])
 	}
 	if operation.Security[0]["apiKeyAuth"] == nil {
@@ -208,4 +224,19 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 	if scheme.Type != "apiKey" || scheme.Name != "X-API-Key" || scheme.In != "header" {
 		t.Fatalf("security scheme was not generated: %#v", scheme)
 	}
+}
+
+func resolveOpenAPISchema(doc OpenAPI, schema *Schema) *Schema {
+	if schema == nil || schema.Ref == "" {
+		return schema
+	}
+	const prefix = "#/components/schemas/"
+	if !strings.HasPrefix(schema.Ref, prefix) {
+		return schema
+	}
+	resolved := doc.Components.Schemas[strings.TrimPrefix(schema.Ref, prefix)]
+	if resolved == nil {
+		return schema
+	}
+	return resolved
 }
