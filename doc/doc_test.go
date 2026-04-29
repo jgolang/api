@@ -20,11 +20,11 @@ func TestDocHelpersGenerateOpenAPIMetadata(t *testing.T) {
 		Summary("Create user"),
 		Tags("users"),
 		HeaderWithDescription("X-Request-ID", String, false, "Trace request ID"),
-		Body(Request[createUserRequest]()),
-		StatusWithHeaders(http.StatusCreated, Success[userResponse](),
+		Body(testRequestOf[createUserRequest]{}),
+		StatusWithHeaders(http.StatusCreated, testResponseOf[userResponse]{},
 			ResponseHeader("Location", String, "Created user URL"),
 		),
-		Status(http.StatusBadRequest, Error()),
+		Status(http.StatusBadRequest, testErrorResponse{}),
 	)
 
 	openapiDoc := GenerateOpenAPI(docs)

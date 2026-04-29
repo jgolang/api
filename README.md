@@ -189,6 +189,7 @@ import (
 
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/doc"
+	"github.com/jgolang/api/envelope"
 	"github.com/jgolang/api/stdadapter"
 )
 
@@ -221,15 +222,15 @@ func main() {
 	api.Post(router, "/tasks", createTask,
 		doc.Summary("Create task"),
 		doc.Tags("tasks"),
-		doc.Body(doc.Request[CreateTaskRequest]()),
+		doc.Body(envelope.Request[CreateTaskRequest]()),
 		doc.Security("bearerAuth"),
-		doc.Status(201, doc.Success[TaskResponse]()),
+		doc.Status(201, envelope.Success[TaskResponse]()),
 	)
 
 	api.Get(router, "/tasks", listTasks,
 		doc.Summary("List tasks"),
 		doc.Tags("tasks"),
-		doc.Status(200, doc.Success[[]TaskResponse]()),
+		doc.Status(200, envelope.Success[[]TaskResponse]()),
 	)
 
 	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))

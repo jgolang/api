@@ -16,6 +16,7 @@ import (
 
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/doc"
+	"github.com/jgolang/api/envelope"
 	"github.com/jgolang/api/stdadapter"
 )
 
@@ -50,18 +51,18 @@ func main() {
 		doc.Summary("Create task"),
 		doc.Tags("tasks"),
 		doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Trace request ID"),
-		doc.Body(doc.Request[CreateTaskRequest]()),
+		doc.Body(envelope.Request[CreateTaskRequest]()),
 		doc.Security("bearerAuth"),
-		doc.StatusWithHeaders(201, doc.Success[TaskResponse](),
+		doc.StatusWithHeaders(201, envelope.Success[TaskResponse](),
 			doc.ResponseHeader("Location", doc.String, "Created task URL"),
 		),
-		doc.Status(400, doc.Error()),
+		doc.Status(400, envelope.Error()),
 	)
 
 	api.Get(router, "/tasks", listTasks,
 		doc.Summary("List tasks"),
 		doc.Tags("tasks"),
-		doc.Status(200, doc.Success[[]TaskResponse]()),
+		doc.Status(200, envelope.Success[[]TaskResponse]()),
 	)
 
 	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
@@ -78,7 +79,7 @@ The `doc` subpackage contains the OpenAPI metadata helpers, schema generation, r
 Runtime requests use `api.JSONRequest`, whose `content` field is `json.RawMessage` for backward compatibility. For OpenAPI documentation, use typed wrappers so the generator can infer the payload schema:
 
 ```go
-doc.Body(doc.Request[CreateTaskRequest]())
+doc.Body(envelope.Request[CreateTaskRequest]())
 ```
 
 The typed request wrapper documents `content` as optional, so endpoints that only
@@ -87,9 +88,9 @@ receive `header` can still use the same JSON request envelope.
 Runtime responses use `api.JSONResponse`, whose `content` field is `interface{}` for backward compatibility. For OpenAPI documentation, use typed wrappers so the generator can infer the payload schema:
 
 ```go
-doc.Status(http.StatusOK, doc.Success[TaskResponse]())
-doc.Status(http.StatusOK, doc.Success[[]TaskResponse]())
-doc.Status(http.StatusBadRequest, doc.Error())
+doc.Status(http.StatusOK, envelope.Success[TaskResponse]())
+doc.Status(http.StatusOK, envelope.Success[[]TaskResponse]())
+doc.Status(http.StatusBadRequest, envelope.Error())
 ```
 
 The typed response wrapper also documents `content` as optional, so successful
@@ -106,10 +107,10 @@ operation.
 - `doc.OperationID("createTask")`
 - `doc.Description("Creates a new task")`
 - `doc.Tags("tasks")`
-- `doc.Body(doc.Request[CreateTaskRequest]())`
+- `doc.Body(envelope.Request[CreateTaskRequest]())`
 - `doc.BodySchema(&doc.Schema{Type: "object"})`
-- `doc.Status(200, doc.Success[TaskResponse]())`
-- `doc.StatusWithHeaders(201, doc.Success[TaskResponse](), doc.ResponseHeader("Location", doc.String, "Created resource URL"))`
+- `doc.Status(200, envelope.Success[TaskResponse]())`
+- `doc.StatusWithHeaders(201, envelope.Success[TaskResponse](), doc.ResponseHeader("Location", doc.String, "Created resource URL"))`
 - `doc.ResponseSchema(400, "Bad Request", &doc.Schema{Type: "object"})`
 - `doc.Query("page", doc.Int, false)`
 - `doc.QueryWithDescription("page", doc.Int, false, "Page number")`

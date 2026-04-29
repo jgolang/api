@@ -20,6 +20,28 @@ type taskResponse struct {
 	Title string `json:"title"`
 }
 
+type testRequestOf[T any] struct {
+	Header  testRequestInfo `json:"header,omitempty"`
+	Content *T              `json:"content,omitempty"`
+}
+
+type testResponseOf[T any] struct {
+	Header  testResponseInfo `json:"header,omitempty"`
+	Content *T               `json:"content,omitempty"`
+}
+
+type testErrorResponse struct {
+	Header testResponseInfo `json:"header,omitempty"`
+}
+
+type testRequestInfo struct {
+	UUID string `json:"uuid,omitempty" example:"ADAD3-ADD33-AFSFK"`
+}
+
+type testResponseInfo struct {
+	Type string `json:"type" example:"success"`
+}
+
 func TestRegistryRegistersRoutesWithMetadata(t *testing.T) {
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
 	router := doc.NewRouter(docs)
@@ -64,7 +86,7 @@ func TestGenerateOpenAPI(t *testing.T) {
 		doc.PathWithDescription("id", doc.Int, false, "Task ID"),
 		doc.Security("bearerAuth"),
 		doc.Status(http.StatusOK, taskResponse{}),
-		doc.Status(http.StatusBadRequest, doc.Error()),
+		doc.Status(http.StatusBadRequest, testErrorResponse{}),
 	)
 
 	openapiDoc := doc.GenerateOpenAPI(docs)
@@ -180,11 +202,11 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		doc.Tags("users"),
 		doc.QueryWithDescription("notify", doc.Bool, false, "Send notification email"),
 		doc.Security("apiKeyAuth"),
-		doc.Body(doc.Request[createUserRequest]()),
-		doc.StatusWithHeaders(http.StatusCreated, doc.Success[userResponse](),
+		doc.Body(testRequestOf[createUserRequest]{}),
+		doc.StatusWithHeaders(http.StatusCreated, testResponseOf[userResponse]{},
 			doc.ResponseHeader("Location", doc.String, "Created user URL"),
 		),
-		doc.Status(http.StatusBadRequest, doc.Error()),
+		doc.Status(http.StatusBadRequest, testErrorResponse{}),
 	)
 
 	openapiDoc := doc.GenerateOpenAPI(docs)

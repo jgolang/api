@@ -1,0 +1,5 @@
+./doc.go
+./handlers.go
+./openapi.go
+./registry.go
+./schema.go
