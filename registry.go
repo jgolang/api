@@ -53,6 +53,15 @@ type RouteResponse struct {
 	Description string
 	Body        interface{}
 	Schema      *Schema
+	Headers     []ResponseHeaderInfo
+}
+
+// ResponseHeaderInfo describes a documented response header.
+type ResponseHeaderInfo struct {
+	Name        string
+	Type        DataType
+	Description string
+	Schema      *Schema
 }
 
 // Registry stores route metadata for OpenAPI generation.
@@ -217,6 +226,26 @@ func Responds(status int, body interface{}) RouteOption {
 	return ResponseStatus(status, body)
 }
 
+// StatusWithHeaders adds a response model and documented response headers.
+func StatusWithHeaders(status int, body interface{}, headers ...ResponseHeaderInfo) RouteOption {
+	return func(route *Route) {
+		route.Responses = append(route.Responses, RouteResponse{
+			Status:  status,
+			Body:    body,
+			Headers: cloneResponseHeaders(headers),
+		})
+	}
+}
+
+// ResponseHeader documents a header returned by a response.
+func ResponseHeader(name string, typ DataType, description string) ResponseHeaderInfo {
+	return ResponseHeaderInfo{
+		Name:        name,
+		Type:        typ,
+		Description: description,
+	}
+}
+
 // ResponseWithDescription adds a response model and description.
 func ResponseWithDescription(status int, description string, body interface{}) RouteOption {
 	return func(route *Route) {
@@ -241,17 +270,32 @@ func ResponseSchema(status int, description string, schema *Schema) RouteOption 
 
 // Query adds a query parameter.
 func Query(name string, typ DataType, required bool) RouteOption {
-	return parameter("query", name, typ, required)
+	return parameter("query", name, typ, required, "")
+}
+
+// QueryWithDescription adds a query parameter with an OpenAPI description.
+func QueryWithDescription(name string, typ DataType, required bool, description string) RouteOption {
+	return parameter("query", name, typ, required, description)
 }
 
 // Header adds a request header parameter.
 func Header(name string, typ DataType, required bool) RouteOption {
-	return parameter("header", name, typ, required)
+	return parameter("header", name, typ, required, "")
+}
+
+// HeaderWithDescription adds a request header parameter with an OpenAPI description.
+func HeaderWithDescription(name string, typ DataType, required bool, description string) RouteOption {
+	return parameter("header", name, typ, required, description)
 }
 
 // Path adds a path parameter.
 func Path(name string, typ DataType, required bool) RouteOption {
-	return parameter("path", name, typ, required)
+	return parameter("path", name, typ, required, "")
+}
+
+// PathWithDescription adds a path parameter with an OpenAPI description.
+func PathWithDescription(name string, typ DataType, required bool, description string) RouteOption {
+	return parameter("path", name, typ, required, description)
 }
 
 // Security adds a named security requirement to the operation.
@@ -261,13 +305,14 @@ func Security(name string) RouteOption {
 	}
 }
 
-func parameter(in string, name string, typ DataType, required bool) RouteOption {
+func parameter(in string, name string, typ DataType, required bool, description string) RouteOption {
 	return func(route *Route) {
 		route.Parameters = append(route.Parameters, Parameter{
-			Name:     name,
-			In:       in,
-			Type:     typ,
-			Required: required,
+			Name:        name,
+			In:          in,
+			Type:        typ,
+			Required:    required,
+			Description: description,
 		})
 	}
 }
@@ -305,8 +350,17 @@ func cloneRoute(route Route) Route {
 	clone.Responses = append([]RouteResponse(nil), route.Responses...)
 	for i := range clone.Responses {
 		clone.Responses[i].Schema = cloneSchema(route.Responses[i].Schema)
+		clone.Responses[i].Headers = cloneResponseHeaders(route.Responses[i].Headers)
 	}
 	clone.BodySchema = cloneSchema(route.BodySchema)
+	return clone
+}
+
+func cloneResponseHeaders(headers []ResponseHeaderInfo) []ResponseHeaderInfo {
+	clone := append([]ResponseHeaderInfo(nil), headers...)
+	for i := range clone {
+		clone[i].Schema = cloneSchema(headers[i].Schema)
+	}
 	return clone
 }
 

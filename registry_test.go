@@ -57,8 +57,8 @@ func TestGenerateOpenAPI(t *testing.T) {
 		OperationID("getTask"),
 		Summary("Get task"),
 		Tags("tasks"),
-		Header("X-Request-ID", String, false),
-		Path("id", Int, true),
+		HeaderWithDescription("X-Request-ID", String, false, "Trace request ID"),
+		PathWithDescription("id", Int, false, "Task ID"),
 		Security("bearerAuth"),
 		ResponseStatus(http.StatusOK, taskResponse{}),
 		ResponseStatus(http.StatusBadRequest, ErrorResponse{}),
@@ -81,10 +81,10 @@ func TestGenerateOpenAPI(t *testing.T) {
 	if len(operation.Parameters) != 2 {
 		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)
 	}
-	if operation.Parameters[0].Name != "X-Request-ID" || operation.Parameters[0].In != "header" {
+	if operation.Parameters[0].Name != "X-Request-ID" || operation.Parameters[0].In != "header" || operation.Parameters[0].Description != "Trace request ID" {
 		t.Fatalf("header parameter was not generated: %#v", operation.Parameters)
 	}
-	if operation.Parameters[1].Name != "id" || operation.Parameters[1].In != "path" {
+	if operation.Parameters[1].Name != "id" || operation.Parameters[1].In != "path" || !operation.Parameters[1].Required || operation.Parameters[1].Description != "Task ID" {
 		t.Fatalf("path parameter was not generated: %#v", operation.Parameters)
 	}
 	response := operation.Responses["200"]
@@ -116,24 +116,22 @@ func TestRegistryRoutesReturnsDefensiveCopy(t *testing.T) {
 	registry := NewRegistry(Info{Title: "Tasks API", Version: "1.0.0"})
 	registry.Register(http.MethodGet, "/tasks",
 		Tags("tasks"),
-		ResponseSchema(http.StatusOK, "OK", &Schema{
-			Type: "object",
-			Properties: map[string]*Schema{
-				"id": {Type: "integer"},
-			},
+		StatusWithHeaders(http.StatusOK, taskResponse{}, ResponseHeaderInfo{
+			Name:   "X-RateLimit-Remaining",
+			Schema: &Schema{Type: "integer"},
 		}),
 	)
 
 	routes := registry.Routes()
 	routes[0].Tags[0] = "mutated"
-	routes[0].Responses[0].Schema.Properties["id"].Type = "string"
+	routes[0].Responses[0].Headers[0].Schema.Type = "string"
 
 	fresh := registry.Routes()
 	if fresh[0].Tags[0] != "tasks" {
 		t.Fatalf("tags were mutated through Routes snapshot: %#v", fresh[0].Tags)
 	}
-	if fresh[0].Responses[0].Schema.Properties["id"].Type != "integer" {
-		t.Fatalf("schema was mutated through Routes snapshot: %#v", fresh[0].Responses[0].Schema)
+	if fresh[0].Responses[0].Headers[0].Schema.Type != "integer" {
+		t.Fatalf("response header schema was mutated through Routes snapshot: %#v", fresh[0].Responses[0].Headers[0].Schema)
 	}
 }
 
@@ -177,10 +175,12 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		Summary("Create user"),
 		Description("Creates a new user"),
 		Tags("users"),
-		Query("notify", Bool, false),
+		QueryWithDescription("notify", Bool, false, "Send notification email"),
 		Security("apiKeyAuth"),
 		Body(JSONRequestOf[createUserRequest]{}),
-		ResponseStatus(http.StatusCreated, JSONResponseOf[userResponse]{}),
+		StatusWithHeaders(http.StatusCreated, JSONResponseOf[userResponse]{},
+			ResponseHeader("Location", String, "Created user URL"),
+		),
 		ResponseStatus(http.StatusBadRequest, JSONErrorResponse{}),
 	)
 
@@ -192,7 +192,7 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 	if operation.Summary != "Create user" || len(operation.Tags) != 1 || operation.Tags[0] != "users" {
 		t.Fatalf("unexpected operation metadata: %#v", operation)
 	}
-	if len(operation.Parameters) != 1 || operation.Parameters[0].Name != "notify" || operation.Parameters[0].Schema.Type != "boolean" {
+	if len(operation.Parameters) != 1 || operation.Parameters[0].Name != "notify" || operation.Parameters[0].Schema.Type != "boolean" || operation.Parameters[0].Description != "Send notification email" {
 		t.Fatalf("unexpected query parameter: %#v", operation.Parameters)
 	}
 	requestSchema := operation.RequestBody.Content["application/json"].Schema
@@ -212,6 +212,10 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		t.Fatalf("required field was not generated: %#v", requestContentSchema.Required)
 	}
 	created := operation.Responses["201"]
+	location := created.Headers["Location"]
+	if location.Description != "Created user URL" || location.Schema.Type != "string" {
+		t.Fatalf("response header was not generated: %#v", created.Headers)
+	}
 	createdSchema := created.Content["application/json"].Schema
 	if createdSchema.Ref == "" || !strings.Contains(createdSchema.Ref, "JSONResponseOfUserResponse") {
 		t.Fatalf("response schema should use a component ref, got %#v", createdSchema)

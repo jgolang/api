@@ -48,10 +48,12 @@ func main() {
 		api.OperationID("createTask"),
 		api.Summary("Create task"),
 		api.Tags("tasks"),
-		api.Header("X-Request-ID", api.String, false),
+		api.HeaderWithDescription("X-Request-ID", api.String, false, "Trace request ID"),
 		api.Body(api.RequestDoc[CreateTaskRequest]()),
 		api.Security("bearerAuth"),
-		api.Status(201, api.SuccessDoc[TaskResponse]()),
+		api.StatusWithHeaders(201, api.SuccessDoc[TaskResponse](),
+			api.ResponseHeader("Location", api.String, "Created task URL"),
+		),
 		api.Status(400, api.ErrorDoc()),
 	)
 
@@ -114,11 +116,15 @@ operation.
 - `api.Body(CreateTaskRequest{})`
 - `api.BodySchema(&api.Schema{Type: "object"})`
 - `api.Status(200, TaskResponse{})`
+- `api.StatusWithHeaders(201, TaskResponse{}, api.ResponseHeader("Location", api.String, "Created resource URL"))`
 - `api.ResponseStatus(200, TaskResponse{})`
 - `api.ResponseSchema(400, "Bad Request", &api.Schema{Type: "object"})`
 - `api.Query("page", api.Int, false)`
+- `api.QueryWithDescription("page", api.Int, false, "Page number")`
 - `api.Header("X-Request-ID", api.String, false)`
+- `api.HeaderWithDescription("X-Request-ID", api.String, false, "Trace request ID")`
 - `api.Path("id", api.Int, true)`
+- `api.PathWithDescription("id", api.Int, true, "Resource ID")`
 - `api.Security("bearerAuth")`
 
 ## Security schemes

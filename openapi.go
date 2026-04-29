@@ -67,8 +67,15 @@ type MediaType struct {
 
 // ResponseObject is an OpenAPI response object.
 type ResponseObject struct {
-	Description string               `json:"description"`
-	Content     map[string]MediaType `json:"content,omitempty"`
+	Description string                   `json:"description"`
+	Headers     map[string]OpenAPIHeader `json:"headers,omitempty"`
+	Content     map[string]MediaType     `json:"content,omitempty"`
+}
+
+// OpenAPIHeader is an OpenAPI header object.
+type OpenAPIHeader struct {
+	Description string  `json:"description,omitempty"`
+	Schema      *Schema `json:"schema,omitempty"`
 }
 
 // GenerateOpenAPI renders an OpenAPI 3.0 document from a registry.
@@ -128,10 +135,7 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 	for _, param := range route.Parameters {
 		schema := param.Schema
 		if schema == nil {
-			schema = &Schema{Type: string(param.Type)}
-			if param.Type == Int {
-				schema.Format = "int32"
-			}
+			schema = schemaFromDataType(param.Type)
 		}
 		operation.Parameters = append(operation.Parameters, OpenAPIParameter{
 			Name:        param.Name,
@@ -168,6 +172,19 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 			description = "Response"
 		}
 		object := ResponseObject{Description: description}
+		if len(response.Headers) > 0 {
+			object.Headers = make(map[string]OpenAPIHeader, len(response.Headers))
+			for _, header := range response.Headers {
+				schema := header.Schema
+				if schema == nil {
+					schema = schemaFromDataType(header.Type)
+				}
+				object.Headers[header.Name] = OpenAPIHeader{
+					Description: header.Description,
+					Schema:      schema,
+				}
+			}
+		}
 		schema := response.Schema
 		if schema == nil && response.Body != nil {
 			schema = schemas.SchemaFromType(response.Body)
@@ -186,6 +203,14 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 		operation.Security = append(operation.Security, map[string][]string{security: {}})
 	}
 	return operation
+}
+
+func schemaFromDataType(typ DataType) *Schema {
+	schema := &Schema{Type: string(typ)}
+	if typ == Int {
+		schema.Format = "int32"
+	}
+	return schema
 }
 
 func ensureComponents(doc *OpenAPI) {
