@@ -42,6 +42,7 @@ type Route struct {
 	Tags        []string
 	Body        interface{}
 	BodySchema  *Schema
+	BodyExample interface{}
 	Responses   []RouteResponse
 	Parameters  []Parameter
 	Security    []string
@@ -53,6 +54,7 @@ type RouteResponse struct {
 	Description string
 	Body        interface{}
 	Schema      *Schema
+	Example     interface{}
 	Headers     []ResponseHeaderInfo
 }
 
@@ -197,9 +199,11 @@ func cloneRoute(route Route) Route {
 	clone.Responses = append([]RouteResponse(nil), route.Responses...)
 	for i := range clone.Responses {
 		clone.Responses[i].Schema = cloneSchema(route.Responses[i].Schema)
+		clone.Responses[i].Example = cloneValue(route.Responses[i].Example)
 		clone.Responses[i].Headers = cloneResponseHeaders(route.Responses[i].Headers)
 	}
 	clone.BodySchema = cloneSchema(route.BodySchema)
+	clone.BodyExample = cloneValue(route.BodyExample)
 	return clone
 }
 
@@ -227,4 +231,8 @@ func cloneSchema(schema *Schema) *Schema {
 	clone.Required = append([]string(nil), schema.Required...)
 	clone.Enum = append([]interface{}(nil), schema.Enum...)
 	return &clone
+}
+
+func cloneValue(value interface{}) interface{} {
+	return value
 }

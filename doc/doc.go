@@ -36,6 +36,14 @@ func Body(body interface{}) RouteOption {
 	}
 }
 
+// BodyWithExample sets the request body model and an OpenAPI media type example.
+func BodyWithExample(body interface{}, example interface{}) RouteOption {
+	return func(route *Route) {
+		route.Body = body
+		route.BodyExample = example
+	}
+}
+
 // BodySchema sets a manual request body schema.
 func BodySchema(schema *Schema) RouteOption {
 	return func(route *Route) {
@@ -46,6 +54,18 @@ func BodySchema(schema *Schema) RouteOption {
 // Status adds a response model for a status code.
 func Status(status int, body interface{}) RouteOption {
 	return ResponseWithDescription(status, "", body)
+}
+
+// StatusWithExample adds a response model and an OpenAPI media type example.
+func StatusWithExample(status int, body interface{}, example interface{}, headers ...ResponseHeaderInfo) RouteOption {
+	return func(route *Route) {
+		route.Responses = append(route.Responses, RouteResponse{
+			Status:  status,
+			Body:    body,
+			Example: example,
+			Headers: append([]ResponseHeaderInfo(nil), headers...),
+		})
+	}
 }
 
 // Responds adds a response model for a status code.
@@ -66,11 +86,17 @@ func StatusWithHeaders(status int, body interface{}, headers ...ResponseHeaderIn
 
 // ResponseWithDescription adds a response model and description.
 func ResponseWithDescription(status int, description string, body interface{}) RouteOption {
+	return ResponseWithDescriptionAndExample(status, description, body, nil)
+}
+
+// ResponseWithDescriptionAndExample adds a response model, description, and example.
+func ResponseWithDescriptionAndExample(status int, description string, body interface{}, example interface{}) RouteOption {
 	return func(route *Route) {
 		route.Responses = append(route.Responses, RouteResponse{
 			Status:      status,
 			Description: description,
 			Body:        body,
+			Example:     example,
 		})
 	}
 }

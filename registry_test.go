@@ -202,10 +202,22 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		doc.Tags("users"),
 		doc.QueryWithDescription("notify", doc.Bool, false, "Send notification email"),
 		doc.Security("apiKeyAuth"),
-		doc.Body(testRequestOf[createUserRequest]{}),
-		doc.StatusWithHeaders(http.StatusCreated, testResponseOf[userResponse]{},
-			doc.ResponseHeader("Location", doc.String, "Created user URL"),
-		),
+		doc.BodyWithExample(testRequestOf[createUserRequest]{}, map[string]any{
+			"header": map[string]any{
+				"lang": "es",
+			},
+			"content": map[string]any{
+				"email": "user@example.com",
+			},
+		}),
+		doc.StatusWithExample(http.StatusCreated, testResponseOf[userResponse]{}, map[string]any{
+			"header": map[string]any{
+				"type": "success",
+			},
+			"content": map[string]any{
+				"id": float64(1),
+			},
+		}, doc.ResponseHeader("Location", doc.String, "Created user URL")),
 		doc.Status(http.StatusBadRequest, testErrorResponse{}),
 	)
 
@@ -221,6 +233,10 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		t.Fatalf("unexpected query parameter: %#v", operation.Parameters)
 	}
 	requestSchema := operation.RequestBody.Content["application/json"].Schema
+	requestExample := operation.RequestBody.Content["application/json"].Example.(map[string]any)
+	if requestExample["content"].(map[string]any)["email"] != "user@example.com" {
+		t.Fatalf("request example was not generated: %#v", requestExample)
+	}
 	if requestSchema.Ref == "" || !strings.Contains(requestSchema.Ref, "RequestOfCreateUserRequest") {
 		t.Fatalf("request schema should use a component ref, got %#v", requestSchema)
 	}
@@ -237,6 +253,10 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 		t.Fatalf("required field was not generated: %#v", requestContentSchema.Required)
 	}
 	created := operation.Responses["201"]
+	createdExample := created.Content["application/json"].Example.(map[string]any)
+	if createdExample["content"].(map[string]any)["id"] != float64(1) {
+		t.Fatalf("response example was not generated: %#v", createdExample)
+	}
 	location := created.Headers["Location"]
 	if location.Description != "Created user URL" || location.Schema.Type != "string" {
 		t.Fatalf("response header was not generated: %#v", created.Headers)

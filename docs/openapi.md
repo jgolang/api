@@ -96,6 +96,9 @@ doc.Status(http.StatusBadRequest, envelope.Error())
 The typed response wrapper also documents `content` as optional, so successful
 responses may use only `header` when there is no payload.
 
+Use `doc.BodyWithExample` and `doc.StatusWithExample` to add complete request or
+response examples to the generated OpenAPI media type.
+
 These types are for documentation only. They do not change the runtime request or response format.
 In generated OpenAPI documents, inferred Go types are emitted under
 `components.schemas` and referenced with `$ref` to avoid repeating schemas per
@@ -108,8 +111,10 @@ operation.
 - `doc.Description("Creates a new task")`
 - `doc.Tags("tasks")`
 - `doc.Body(envelope.Request[CreateTaskRequest]())`
+- `doc.BodyWithExample(envelope.Request[CreateTaskRequest](), map[string]any{"content": map[string]any{"title": "Buy milk"}})`
 - `doc.BodySchema(&doc.Schema{Type: "object"})`
 - `doc.Status(200, envelope.Success[TaskResponse]())`
+- `doc.StatusWithExample(200, envelope.Success[TaskResponse](), map[string]any{"content": map[string]any{"id": 1}})`
 - `doc.StatusWithHeaders(201, envelope.Success[TaskResponse](), doc.ResponseHeader("Location", doc.String, "Created resource URL"))`
 - `doc.ResponseSchema(400, "Bad Request", &doc.Schema{Type: "object"})`
 - `doc.Query("page", doc.Int, false)`
