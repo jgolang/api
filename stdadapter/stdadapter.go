@@ -1,6 +1,7 @@
 package stdadapter
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -9,6 +10,19 @@ import (
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/doc"
 )
+
+func init() {
+	api.RegisterAdapter("std", func(target any, docs *doc.Docs) (api.Router, error) {
+		if target == nil {
+			return New(nil, docs), nil
+		}
+		mux, ok := target.(*http.ServeMux)
+		if !ok {
+			return nil, fmt.Errorf("std adapter expects *http.ServeMux")
+		}
+		return New(mux, docs), nil
+	})
+}
 
 type route struct {
 	method  string

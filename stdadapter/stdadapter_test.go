@@ -30,6 +30,33 @@ func TestRouterRegistersServeMuxRouteAndMetadata(t *testing.T) {
 	}
 }
 
+func TestRegisteredAdapterCreatesRouter(t *testing.T) {
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	router, err := api.NewRouter("std", http.NewServeMux(), docs)
+	if err != nil {
+		t.Fatalf("expected std adapter, got error: %v", err)
+	}
+
+	api.Get(router, "/tasks", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}, doc.Summary("List tasks"))
+
+	routes := docs.Routes()
+	if len(routes) != 1 || routes[0].Summary != "List tasks" {
+		t.Fatalf("route metadata was not registered: %#v", routes)
+	}
+}
+
+func TestRegisteredAdapterRejectsInvalidTarget(t *testing.T) {
+	router, err := api.NewRouter("std", struct{}{}, nil)
+	if err == nil {
+		t.Fatalf("expected invalid target error")
+	}
+	if router != nil {
+		t.Fatalf("expected nil router, got %#v", router)
+	}
+}
+
 func TestRouterAllowsMultipleMethodsForSamePath(t *testing.T) {
 	router := New(http.NewServeMux(), nil)
 	api.Get(router, "/tasks", func(w http.ResponseWriter, r *http.Request) {
