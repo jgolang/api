@@ -212,6 +212,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		LogRequest(r.Method, r.RequestURI, rctx.EventID, r.Form.Encode(), r.Header, rctx.RawBody)
 
 		r = UpdateRequestContext(rctx, r)
+		rctx.Context = r.Context()
 		r = r.WithContext(rctx)
 
 		r.Header.Set(EventIDHeaderKey, rctx.EventID)
