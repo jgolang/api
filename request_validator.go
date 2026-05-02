@@ -40,36 +40,108 @@ func (receiver RequestReceiver) ProcessEncryptedBody(r *http.Request) (*core.Req
 
 // ProcessBody process API request body information.
 func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataContext, error) {
-	var request envelope.JSONRequest
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(rawBody, &request)
-	if err != nil {
-		return nil, err
-	}
 	requestData := core.RequestDataContext{
-		Context:       r.Context(),
-		UUID:          request.Header.UUID,
-		DeviceType:    request.Header.DeviceType,
-		DeviceBrand:   request.Header.DeviceBrand,
-		DeviceModel:   request.Header.DeviceModel,
-		DeviceOS:      request.Header.OS,
-		OSVersion:     request.Header.OSVersion,
-		OSTimezone:    request.Header.Timezone,
-		AppLanguage:   request.Header.Lang,
-		AppVersion:    request.Header.AppVersion,
-		AppBuildInfo:  request.Header.AppBuildVersion,
-		AppName:       request.Header.AppName,
-		SecurityToken: request.Header.SecurityToken,
-		DeviceSerial:  request.Header.DeviceSerial,
-		DeviceId:      request.Header.DeviceId,
-		Latitude:      request.Header.Latitude,
-		Longitude:     request.Header.Longitude,
-		RawBody:       rawBody,
-		Content:       core.JSONContent(request.Content),
+		Context: r.Context(),
+		RawBody: rawBody,
 	}
+
+	headerData := newRequestContextFromHeaders(r)
+	requestData.UUID = headerData.UUID
+	requestData.DeviceType = headerData.DeviceType
+	requestData.DeviceBrand = headerData.DeviceBrand
+	requestData.DeviceModel = headerData.DeviceModel
+	requestData.DeviceOS = headerData.DeviceOS
+	requestData.OSVersion = headerData.OSVersion
+	requestData.OSTimezone = headerData.OSTimezone
+	requestData.AppLanguage = headerData.AppLanguage
+	requestData.AppVersion = headerData.AppVersion
+	requestData.AppBuildInfo = headerData.AppBuildInfo
+	requestData.AppName = headerData.AppName
+	requestData.SecurityToken = headerData.SecurityToken
+	requestData.DeviceSerial = headerData.DeviceSerial
+	requestData.DeviceId = headerData.DeviceID
+	requestData.Latitude = headerData.Latitude
+	requestData.Longitude = headerData.Longitude
+	requestData.EventID = headerData.EventID
+
+	if len(bytesTrimSpace(rawBody)) == 0 {
+		return &requestData, nil
+	}
+
+	mode := CurrentRequestMode
+	if mode == RequestModeAuto && envelopeRequestBody(rawBody) {
+		mode = RequestModeEnvelope
+	}
+	if mode == RequestModeAuto {
+		mode = RequestModePlain
+	}
+
+	if mode == RequestModeEnvelope {
+		var request envelope.JSONRequest
+		err = json.Unmarshal(rawBody, &request)
+		if err != nil {
+			return nil, err
+		}
+		if requestData.UUID == "" {
+			requestData.UUID = request.Header.UUID
+		}
+		if requestData.DeviceType == "" {
+			requestData.DeviceType = request.Header.DeviceType
+		}
+		if requestData.DeviceBrand == "" {
+			requestData.DeviceBrand = request.Header.DeviceBrand
+		}
+		if requestData.DeviceModel == "" {
+			requestData.DeviceModel = request.Header.DeviceModel
+		}
+		if requestData.DeviceOS == "" {
+			requestData.DeviceOS = request.Header.OS
+		}
+		if requestData.OSVersion == "" {
+			requestData.OSVersion = request.Header.OSVersion
+		}
+		if requestData.OSTimezone == "" {
+			requestData.OSTimezone = request.Header.Timezone
+		}
+		if requestData.AppLanguage == "" {
+			requestData.AppLanguage = request.Header.Lang
+		}
+		if requestData.AppVersion == "" {
+			requestData.AppVersion = request.Header.AppVersion
+		}
+		if requestData.AppBuildInfo == "" {
+			requestData.AppBuildInfo = request.Header.AppBuildVersion
+		}
+		if requestData.AppName == "" {
+			requestData.AppName = request.Header.AppName
+		}
+		if requestData.SecurityToken == "" {
+			requestData.SecurityToken = request.Header.SecurityToken
+		}
+		if requestData.DeviceSerial == "" {
+			requestData.DeviceSerial = request.Header.DeviceSerial
+		}
+		if requestData.DeviceId == "" {
+			requestData.DeviceId = request.Header.DeviceId
+		}
+		if requestData.Latitude == "" {
+			requestData.Latitude = request.Header.Latitude
+		}
+		if requestData.Longitude == "" {
+			requestData.Longitude = request.Header.Longitude
+		}
+		requestData.Content = core.JSONContent(request.Content)
+		return &requestData, nil
+	}
+
+	if !json.Valid(rawBody) {
+		return nil, io.ErrUnexpectedEOF
+	}
+	requestData.Content = core.JSONContent(rawBody)
 	return &requestData, nil
 }
 

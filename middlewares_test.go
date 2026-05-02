@@ -2,79 +2,138 @@ package api
 
 import (
 	"bytes"
-	"io"
-	"log"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-var bodyExample = `
-{
-    "info": {
-        "deviceUUID": "ADAD3-ADD33-AFSFK...",
-        "deviceType": "tablet",
-        "deviceBrand": "Samsung",
-        "deviceModel": "A11",
-        "os": "android",
-        "osVersion": "1.0.0",
-        "osTimezone": "-6",
-        "appLanguage": "es",
-        "appVersion": "3.0.0",
-        "appBuildVersion": "1.0.0.10",
-        "sessionId": "sessionID_123"
-    },
-    "content": {
-        "method": "google",
-        "token": "9uQHRyaWJhbHdvcmxkd2lkZS5ndDpNaWt1bTFrdS4K..."
-    }
-}
-`
+func TestProcessRequestAllowsGETWithoutBodyInPlainMode(t *testing.T) {
+	previousMode := CurrentRequestMode
+	SetRequestMode(RequestModePlain)
+	defer SetRequestMode(previousMode)
 
-type response struct {
-	Method string `json:"method"`
-	Token  string `json:"token"`
-}
-
-func TestProcessRequest(t *testing.T) {
-	testHandler := func(w http.ResponseWriter, r *http.Request) {
+	handler := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
 		requestData, err := GetRequestContext(r)
 		if err != nil {
-			log.Print(err)
-			return
+			t.Fatalf("expected request context, got error: %v", err)
 		}
-		request := response{}
-		err = requestData.DecodeContent(&request)
-		if err != nil {
-			Error{}.Write(w, r)
-			log.Print(err)
+		if len(requestData.Body()) != 0 {
+			t.Fatalf("expected empty body for GET request, got %q", string(requestData.Body()))
 		}
-		log.Print(request.Method)
-		Success{}.Write(w, r)
+		Success{Content: map[string]string{"status": "ok"}}.Write(w, r)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", res.Code)
 	}
-	req := httptest.NewRequest(http.MethodGet, "http://www.your-domain.com/v1/foo/bar", nil)
-	req.Body = io.NopCloser(bytes.NewBuffer([]byte(bodyExample)))
+}
+
+func TestProcessRequestParsesEnvelopeWhenConfigured(t *testing.T) {
+	previousMode := CurrentRequestMode
+	SetRequestMode(RequestModeEnvelope)
+	defer SetRequestMode(previousMode)
+
+	handler := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
+		requestData, err := GetRequestContext(r)
+		if err != nil {
+			t.Fatalf("expected request context, got error: %v", err)
+		}
+		var payload struct {
+			Title string `json:"title"`
+		}
+		if err := requestData.DecodeContent(&payload); err != nil {
+			t.Fatalf("expected envelope content to decode, got error: %v", err)
+		}
+		if payload.Title != "task" {
+			t.Fatalf("unexpected payload: %#v", payload)
+		}
+		if requestData.SecurityToken != "header-token" {
+			t.Fatalf("expected HTTP header metadata to win, got %q", requestData.SecurityToken)
+		}
+		Success{}.Write(w, r)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewBufferString(`{"header":{"token":"body-token"},"content":{"title":"task"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(SecurityTokenHeaderKey, "header-token")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", res.Code)
+	}
+}
+
+func TestRequestHeaderJSONAcceptsCharset(t *testing.T) {
+	handler := RequestHeaderJSON(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewBufferString(`{"title":"task"}`))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("unexpected status code: %d", res.Code)
+	}
+}
+
+func TestCustomTokenReturnsUnauthorizedForMalformedHeader(t *testing.T) {
+	previousResponseMode := CurrentResponseMode
+	SetResponseMode(ResponseModePlain)
+	defer SetResponseMode(previousResponseMode)
+
+	handler := CustomToken(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	req.Header.Set("Authorization", "invalid")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected status code: %d", res.Code)
+	}
+	if res.Header().Get("WWW-Authenticate") == "" {
+		t.Fatalf("expected WWW-Authenticate header")
+	}
+}
+
+func TestRequestBodySkipsGETByDefault(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/tasks", bytes.NewBufferString(`not-json`))
 	res := httptest.NewRecorder()
 
-	type args struct {
-		next http.HandlerFunc
+	RequestBody(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}).ServeHTTP(res, req)
+
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("unexpected status code: %d", res.Code)
 	}
-	tests := []struct {
-		name string
-		args args
-		want http.HandlerFunc
-	}{
-		{
-			name: "Example",
-			args: args{
-				next: testHandler,
-			},
-		},
+}
+
+func TestResponseModeNoneWritesRawContent(t *testing.T) {
+	previousMode := CurrentResponseMode
+	SetResponseMode(ResponseModeNone)
+	defer SetResponseMode(previousMode)
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	res := httptest.NewRecorder()
+
+	Success{Content: map[string]string{"status": "ok"}}.Write(res, req)
+
+	var body map[string]string
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatalf("expected JSON body, got error: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			handleFunc := ProcessRequest(tt.args.next)
-			handleFunc.ServeHTTP(res, req)
-		})
+	if body["status"] != "ok" {
+		t.Fatalf("unexpected response body: %#v", body)
 	}
 }

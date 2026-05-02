@@ -51,21 +51,41 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 		title = ""
 	}
 
+	responseInfo := envelope.ResponseInfo{
+		Title:   title,
+		Message: msg,
+		Type:    data.ResponseType,
+		Action:  data.Actions,
+		Token:   data.SecurityToken,
+		Code:    code,
+		EventID: data.EventID,
+		Info:    data.Info,
+	}
+
+	body := any(envelope.Response{
+		Content: data.Content,
+		Header:  responseInfo,
+	})
+	switch CurrentResponseMode {
+	case ResponseModeNone:
+		body = data.Content
+	case ResponseModePlain:
+		body = map[string]any{
+			"title":    responseInfo.Title,
+			"message":  responseInfo.Message,
+			"type":     responseInfo.Type,
+			"code":     responseInfo.Code,
+			"token":    responseInfo.Token,
+			"action":   responseInfo.Action,
+			"event_id": responseInfo.EventID,
+			"info":     responseInfo.Info,
+			"content":  data.Content,
+		}
+	}
+
 	return &core.ResponseFormatted{
 		HTTPStatusCode: data.HTTPStatusCode,
 		Headers:        data.Headers,
-		Body: envelope.Response{
-			Content: data.Content,
-			Header: envelope.ResponseInfo{
-				Title:   title,
-				Message: msg,
-				Type:    data.ResponseType,
-				Action:  data.Actions,
-				Token:   data.SecurityToken,
-				Code:    code,
-				EventID: data.EventID,
-				Info:    data.Info,
-			},
-		},
+		Body:           body,
 	}
 }
