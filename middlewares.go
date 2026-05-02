@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	"github.com/jgolang/api/core"
 )
@@ -174,6 +175,8 @@ func GenSkipPath(method string, path string) SkipPath {
 // ProcessRequest process request information.
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
 		if _, exists := SkipPaths[GenSkipPath(r.Method, r.URL.Path)]; exists {
 			next.ServeHTTP(w, r)
 			return
@@ -248,7 +251,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		}
 		w.WriteHeader(rec.Code)
 		w.Write(rec.Body.Bytes())
-		LogResponse(rctx.EventID, rec)
+		LogResponseWithDuration(rctx.EventID, rec, time.Since(start))
 	}
 }
 

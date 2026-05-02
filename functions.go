@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/jgolang/api/core"
@@ -327,34 +329,143 @@ func Context(ctx context.Context) *RequestContext {
 	}
 }
 
+const redactedLogValue = "[REDACTED]"
+
 // PrintFullEvent set true value for allow print full event request
 var PrintFullEvent bool = false
 
+// LogRequestBody enables request body logging.
+var LogRequestBody bool = false
+
+// LogResponseBody enables response body logging.
+var LogResponseBody bool = false
+
+// MaxLoggedBodyBytes limits logged request and response bodies when PrintFullEvent is false.
+var MaxLoggedBodyBytes int = 2000
+
+// SensitiveLogKeys defines fields and headers that must be redacted in logs.
+var SensitiveLogKeys = []string{
+	"authorization",
+	"token",
+	"password",
+	"secret",
+	"credential",
+	"apikey",
+	"api-key",
+	"key",
+}
+
 // LogRequest prints API request in log.
 func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody []byte) {
-	var requestBody string
-	if rawBody != nil && len(rawBody) != 0 {
-		if len(rawBody) > 2000 && !PrintFullEvent {
-			requestBody = fmt.Sprintf("REQUEST_BODY: %v%v%v", string(rawBody[:1000]), " ***** SKIPPED ***** ", string(rawBody[len(rawBody)-1000:]))
-		} else {
-			requestBody = fmt.Sprintf("REQUEST_BODY: %v", string(rawBody))
-		}
+	format := "REQUEST event_id=%q method=%q uri=%q"
+	args := []interface{}{eventID, method, uri}
+	if form != "" {
+		format += " form=%q"
+		args = append(args, form)
 	}
-	Print("REQUEST_EVENT_ID: %v \nREQUEST_URI: [%v] %v \n%v", eventID, method, uri, requestBody)
+	if len(headers) != 0 {
+		format += " headers=%s"
+		args = append(args, formatLogValue(sanitizeHeadersForLog(headers)))
+	}
+	if LogRequestBody && len(rawBody) != 0 {
+		format += " body=%q"
+		args = append(args, formatBodyForLog(rawBody))
+	}
+	Print(format, args...)
 }
 
 // LogResponse prints API response in log.
 func LogResponse(eventID string, res *httptest.ResponseRecorder) {
-	var responseBody string
+	LogResponseWithDuration(eventID, res, 0)
+}
+
+// LogResponseWithDuration prints API response in log including request duration.
+func LogResponseWithDuration(eventID string, res *httptest.ResponseRecorder, duration time.Duration) {
+	format := "RESPONSE event_id=%q status=%d status_text=%q"
+	args := []interface{}{eventID, res.Code, http.StatusText(res.Code)}
+	if duration > 0 {
+		format += " duration_ms=%d"
+		args = append(args, duration.Milliseconds())
+	}
 	rawBody := res.Body.Bytes()
-	if rawBody != nil && len(rawBody) != 0 {
-		if len(rawBody) > 2000 && !PrintFullEvent {
-			responseBody = fmt.Sprintf("RESPONSE_BODY: %v%v%v", string(rawBody[:1000]), " ***** SKIPPED ***** ", string(rawBody[len(rawBody)-1000:]))
-		} else {
-			responseBody = fmt.Sprintf("RESPONSE_BODY: %v", string(rawBody))
+	if LogResponseBody && len(rawBody) != 0 {
+		format += " body=%q"
+		args = append(args, formatBodyForLog(rawBody))
+	}
+	Print(format, args...)
+}
+
+func formatBodyForLog(rawBody []byte) string {
+	body := sanitizeJSONBodyForLog(rawBody)
+	if PrintFullEvent || MaxLoggedBodyBytes <= 0 || len(body) <= MaxLoggedBodyBytes {
+		return body
+	}
+	if MaxLoggedBodyBytes <= 20 {
+		return body[:MaxLoggedBodyBytes]
+	}
+	edgeSize := MaxLoggedBodyBytes / 2
+	return body[:edgeSize] + " ***** SKIPPED ***** " + body[len(body)-edgeSize:]
+}
+
+func sanitizeJSONBodyForLog(rawBody []byte) string {
+	var value interface{}
+	if err := json.Unmarshal(rawBody, &value); err != nil {
+		return string(rawBody)
+	}
+	return formatLogValue(sanitizeValueForLog(value))
+}
+
+func sanitizeHeadersForLog(headers http.Header) http.Header {
+	sanitized := make(http.Header, len(headers))
+	for key, values := range headers {
+		if isSensitiveLogKey(key) {
+			sanitized[key] = []string{redactedLogValue}
+			continue
+		}
+		sanitized[key] = append([]string(nil), values...)
+	}
+	return sanitized
+}
+
+func sanitizeValueForLog(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		sanitized := make(map[string]interface{}, len(typed))
+		for key, value := range typed {
+			if isSensitiveLogKey(key) {
+				sanitized[key] = redactedLogValue
+				continue
+			}
+			sanitized[key] = sanitizeValueForLog(value)
+		}
+		return sanitized
+	case []interface{}:
+		sanitized := make([]interface{}, len(typed))
+		for i, value := range typed {
+			sanitized[i] = sanitizeValueForLog(value)
+		}
+		return sanitized
+	default:
+		return value
+	}
+}
+
+func isSensitiveLogKey(key string) bool {
+	key = strings.ToLower(key)
+	for _, sensitiveKey := range SensitiveLogKeys {
+		if strings.Contains(key, strings.ToLower(sensitiveKey)) {
+			return true
 		}
 	}
-	Print("RESPONSE_EVENT_ID: %v \nSTATUS_CODE: %v %v \n%v", eventID, res.Code, http.StatusText(res.Code), responseBody)
+	return false
+}
+
+func formatLogValue(value interface{}) string {
+	rawValue, err := json.Marshal(value)
+	if err != nil {
+		return `"[unavailable]"`
+	}
+	return string(rawValue)
 }
 
 func generateEventID(ctx context.Context, prefix, uri string) string {
