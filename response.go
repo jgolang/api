@@ -15,12 +15,18 @@ type Response interface {
 func getSecurityToken(r *http.Request) string {
 	requestData, err := GetRequestContext(r)
 	if err != nil {
-		return r.Header.Get(SecurityTokenHeaderKey)
+		if token := r.Header.Get(SecurityTokenHeaderKey); token != "" {
+			return token
+		}
+		return bearerTokenFromHeader(r.Header.Get("Authorization"))
 	}
 	if requestData.SecurityToken != "" {
 		return requestData.SecurityToken
 	}
-	return r.Header.Get(SecurityTokenHeaderKey)
+	if token := r.Header.Get(SecurityTokenHeaderKey); token != "" {
+		return token
+	}
+	return bearerTokenFromHeader(r.Header.Get("Authorization"))
 }
 
 func getEventID(r *http.Request) string {

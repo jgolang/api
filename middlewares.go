@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	"github.com/jgolang/api/core"
 )
@@ -37,7 +39,8 @@ func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(auth) != 2 || auth[0] != "Basic" {
-			response := Error500()
+			w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
+			response := Error401()
 			response.Message = DefaultInvalidAuthHeaderMsg
 			response.Write(w, r)
 			return
@@ -60,7 +63,8 @@ func CustomToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(auth) != 2 || auth[0] != CustomTokenPrefix {
-			response := Error500()
+			w.Header().Set("WWW-Authenticate", `Bearer realm="api"`)
+			response := Error401()
 			response.Message = DefaultInvalidAuthHeaderMsg
 			response.Write(w, r)
 			return
@@ -81,17 +85,24 @@ func CustomToken(next http.HandlerFunc) http.HandlerFunc {
 // RequestHeaderJSON validate header Content-Type, is required and equal to application/json
 func RequestHeaderJSON(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !requestHasBody(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		contentType := r.Header.Get("Content-Type")
 		if len(contentType) == 0 {
 			Error{
-				Message: "No content-type!",
+				Message:        "No content-type!",
+				HTTPStatusCode: http.StatusUnsupportedMediaType,
 			}.Write(w, r)
 			return
 		}
-		if contentType != "application/json" {
+		mediaType, _, err := mime.ParseMediaType(contentType)
+		if err != nil || mediaType != "application/json" {
 			Error{
-				Message:      "Content-Type not is JSON!",
-				ResponseCode: ResponseCodes.InvalidJSON,
+				Message:        "Content-Type not is JSON!",
+				ResponseCode:   ResponseCodes.InvalidJSON,
+				HTTPStatusCode: http.StatusUnsupportedMediaType,
 			}.Write(w, r)
 			return
 		}
@@ -115,7 +126,7 @@ func RequestHeaderSession(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // RequestBody wrapper middleware
-var RequestBody = NewRequestBodyMiddleware(PPPGMethodsKey)
+var RequestBody = NewRequestBodyMiddleware(PPPMethodsKey)
 
 // NewRequestBodyMiddleware doc ...
 func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
@@ -164,6 +175,8 @@ func GenSkipPath(method string, path string) SkipPath {
 // ProcessRequest process request information.
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
 		if _, exists := SkipPaths[GenSkipPath(r.Method, r.URL.Path)]; exists {
 			next.ServeHTTP(w, r)
 			return
@@ -199,6 +212,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		LogRequest(r.Method, r.RequestURI, rctx.EventID, r.Form.Encode(), r.Header, rctx.RawBody)
 
 		r = UpdateRequestContext(rctx, r)
+		rctx.Context = r.Context()
 		r = r.WithContext(rctx)
 
 		r.Header.Set(EventIDHeaderKey, rctx.EventID)
@@ -238,6 +252,16 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		}
 		w.WriteHeader(rec.Code)
 		w.Write(rec.Body.Bytes())
-		LogResponse(rctx.EventID, rec)
+		LogResponseWithDuration(rctx.EventID, rec, time.Since(start))
 	}
+}
+
+func requestHasBody(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.ContentLength > 0 || len(r.TransferEncoding) > 0 {
+		return true
+	}
+	return r.Body != nil && r.Body != http.NoBody
 }

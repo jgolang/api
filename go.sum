@@ -1,6 +1,8 @@
 github.com/go-errors/errors v1.5.1 h1:ZwEMSLRCapFLflTpT7NKaAc7ukJ8ZPEjzlxt8rPN8bk=
 github.com/go-errors/errors v1.5.1/go.mod h1:sIVyrIiJhuEF+Pj9Ebtd6P/rEYROXFi3BopGUQ5a5Og=
-github.com/jgolang/errors v0.1.9 h1:/IuuwC3zM3g++LXTH5fw6voGfEFoaQa9iSsPCMGalAU=
-github.com/jgolang/errors v0.1.9/go.mod h1:HMFh/3IIKILAnWj00X771oGK6Nk3C7Sf0yZYimo9HJg=
+github.com/jgolang/errors v0.2.1 h1:IEQx+1oM8e/c7Nt3WCqzmO59h/WSFfSkW0LfYDbQAP4=
+github.com/jgolang/errors v0.2.1/go.mod h1:7jzxJ5Ox468U7Jk0R+JWI3sfPfLGSwPOie7ISDYlVhY=
 github.com/jgolang/helpers v0.1.1 h1://J8R0XORNNkbb/oJRnlxZIoP/Ylp9RIuZ7iVd9TSEA=
 github.com/jgolang/helpers v0.1.1/go.mod h1:PK1yvxLE9j9dTMCbexp8SNakq4vZKFWXC6wlPZcG/tI=
+github.com/jgolang/helpers v0.1.2 h1:fSGvrlHyX1Va8caCjOdO5bxrMtdRKf0uk5KEPGimtKM=
+github.com/jgolang/helpers v0.1.2/go.mod h1:eHn2bdOKfio6f3djDUrldS/sJf42yn+s8M+ZRviv+xs=
