@@ -171,19 +171,92 @@ Supported tags:
 
 ## External router adapter example
 
-Adapters for third-party routers should live outside this module. A minimal adapter only needs to translate `api.Router.Handle` to the chosen router and register metadata:
+Adapters for third-party routers live outside this module, so `github.com/jgolang/api` never depends on them. An adapter does four things:
+
+1. registers a factory with `api.RegisterAdapter`, so `api.NewRouter("gin", engine, docs)` works;
+2. calls `docs.Register` in `Handle`, so the route appears in `/openapi.json`;
+3. converts `{id}` path variables to the router's syntax (`:id` for Gin);
+4. copies the router's path parameters into `api.SetRouteVars`, so `api.GetRouteVar` works in handlers.
+
+A complete Gin adapter, as its own module (`go get github.com/gin-gonic/gin github.com/jgolang/api`); it compiles against `jgolang/api` v0.8.0:
 
 ```go
-type RouterAdapter struct {
-	docs *doc.Docs
-	// router *yourRouter
+// Package ginadapter shows an api.Router adapter for Gin, kept outside
+// github.com/jgolang/api so the library does not depend on Gin.
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/jgolang/api"
+	"github.com/jgolang/api/doc"
+)
+
+func init() {
+	api.RegisterAdapter("gin", func(target any, docs *doc.Docs) (api.Router, error) {
+		engine, ok := target.(*gin.Engine)
+		if !ok {
+			return nil, fmt.Errorf("gin adapter expects *gin.Engine")
+		}
+		return &Router{engine: engine, docs: docs}, nil
+	})
 }
 
-func (adapter *RouterAdapter) Handle(method string, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
-	if adapter.docs != nil {
-		adapter.docs.Register(method, path, opts...)
+// Router adapts *gin.Engine to api.Router.
+type Router struct {
+	engine *gin.Engine
+	docs   *doc.Docs
+}
+
+// Handle documents the route and registers it on Gin.
+func (router *Router) Handle(method string, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
+	if router.docs != nil {
+		router.docs.Register(method, path, opts...)
+	}
+	router.engine.Handle(method, ginPath(path), func(c *gin.Context) {
+		r := c.Request
+		if len(c.Params) > 0 {
+			vars := make(map[string]string, len(c.Params))
+			for _, param := range c.Params {
+				vars[param.Key] = param.Value
+			}
+			r = api.SetRouteVars(vars, r)
+		}
+		handler(c.Writer, r)
+	})
+}
+
+// ServeHTTP lets the adapter be passed to http.ListenAndServe.
+func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	router.engine.ServeHTTP(w, r)
+}
+
+// ginPath turns "/tasks/{id}" into Gin's "/tasks/:id".
+func ginPath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			parts[i] = ":" + strings.TrimSuffix(strings.TrimPrefix(part, "{"), "}")
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+func main() {
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	router, err := api.NewRouter("gin", gin.New(), docs)
+	if err != nil {
+		panic(err)
 	}
 
-	// Translate method, path, and handler to your router here.
+	api.Get(router, "/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "task", api.GetRouteVar("id", r))
+	}, doc.Summary("Get task"), doc.PathWithDescription("id", doc.String, true, "Task ID"))
+	router.Handle(http.MethodGet, "/openapi.json", doc.OpenAPIHandler(docs))
+
+	_ = http.ListenAndServe(":8080", router.(http.Handler))
 }
 ```
