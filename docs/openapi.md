@@ -117,6 +117,10 @@ operation.
 - `doc.StatusWithExample(200, envelope.Success[TaskResponse](), map[string]any{"content": map[string]any{"id": 1}})`
 - `doc.StatusWithHeaders(201, envelope.Success[TaskResponse](), doc.ResponseHeader("Location", doc.String, "Created resource URL"))`
 - `doc.ResponseSchema(400, "Bad Request", &doc.Schema{Type: "object"})`
+- `doc.ResponseExamples(409, "Transition not allowed or system record", ErrorBody{}, map[string]any{"transition": transitionExample, "system": systemExample})` (OpenAPI `examples` map)
+
+Two response options with the same status are merged into one response: descriptions are joined with " or ", and each single example becomes a named example (named by its description).
+
 - `doc.Query("page", doc.Int, false)`
 - `doc.QueryWithDescription("page", doc.Int, false, "Page number")`
 - `doc.QueryEnum("in_inbox", doc.Bool, false, "Only true is accepted.", true)` (writes `schema.enum`; values match the type)

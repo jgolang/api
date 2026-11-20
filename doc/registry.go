@@ -59,7 +59,9 @@ type RouteResponse struct {
 	Body        interface{}
 	Schema      *Schema
 	Example     interface{}
-	Headers     []ResponseHeaderInfo
+	// Examples are named examples, written as the OpenAPI examples map.
+	Examples map[string]interface{}
+	Headers  []ResponseHeaderInfo
 }
 
 // ResponseHeaderInfo describes a documented response header.
@@ -246,10 +248,22 @@ func cloneRoute(route Route) Route {
 	for i := range clone.Responses {
 		clone.Responses[i].Schema = cloneSchema(route.Responses[i].Schema)
 		clone.Responses[i].Example = cloneValue(route.Responses[i].Example)
+		clone.Responses[i].Examples = cloneExamples(route.Responses[i].Examples)
 		clone.Responses[i].Headers = cloneResponseHeaders(route.Responses[i].Headers)
 	}
 	clone.BodySchema = cloneSchema(route.BodySchema)
 	clone.BodyExample = cloneValue(route.BodyExample)
+	return clone
+}
+
+func cloneExamples(examples map[string]interface{}) map[string]interface{} {
+	if examples == nil {
+		return nil
+	}
+	clone := make(map[string]interface{}, len(examples))
+	for name, value := range examples {
+		clone[name] = cloneValue(value)
+	}
 	return clone
 }
 
