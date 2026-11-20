@@ -1,6 +1,8 @@
 // Package doc contains OpenAPI documentation metadata, schema generation, and handlers.
 package doc
 
+import "reflect"
+
 // Summary sets the OpenAPI operation summary.
 func Summary(summary string) RouteOption {
 	return func(route *Route) {
@@ -145,33 +147,55 @@ func PathWithDescription(name string, typ DataType, required bool, description s
 	return parameter("path", name, typ, required, description)
 }
 
-// QueryEnum adds a string query parameter that accepts only values, written
-// as schema.enum so generated clients send an accepted value.
-func QueryEnum(name string, description string, required bool, values ...string) RouteOption {
-	return enumParameter("query", name, required, description, values)
+// QueryEnum documents a query parameter whose accepted values are values,
+// written as schema.enum. typ and values must match (doc.Bool with true,
+// doc.Int with 10, 20). Repeated values are written once; with no values the
+// parameter is documented like QueryWithDescription. Documentation only: the
+// request is not validated.
+func QueryEnum(name string, typ DataType, required bool, description string, values ...interface{}) RouteOption {
+	return enumParameter("query", name, typ, required, description, values)
 }
 
-// PathEnum adds a string path parameter that accepts only values. Path
-// parameters are always required.
-func PathEnum(name string, description string, values ...string) RouteOption {
-	return enumParameter("path", name, true, description, values)
+// PathEnum documents a path parameter whose accepted values are values, like
+// QueryEnum. Path parameters are always written as required.
+func PathEnum(name string, typ DataType, required bool, description string, values ...interface{}) RouteOption {
+	return enumParameter("path", name, typ, required, description, values)
 }
 
-func enumParameter(in string, name string, required bool, description string, values []string) RouteOption {
-	enum := make([]interface{}, len(values))
-	for i, value := range values {
-		enum[i] = value
-	}
+func enumParameter(in string, name string, typ DataType, required bool, description string, values []interface{}) RouteOption {
 	return func(route *Route) {
-		route.Parameters = append(route.Parameters, Parameter{
+		param := Parameter{
 			Name:        name,
 			In:          in,
-			Type:        String,
+			Type:        typ,
 			Required:    required,
 			Description: description,
-			Schema:      &Schema{Type: string(String), Enum: enum},
-		})
+		}
+		if enum := uniqueValues(values); len(enum) > 0 {
+			param.Schema = &Schema{Type: string(typ), Enum: enum}
+		}
+		route.Parameters = append(route.Parameters, param)
 	}
+}
+
+// uniqueValues returns a new slice with each value once, in first-seen order;
+// JSON Schema requires enum items to be unique. DeepEqual avoids the panic ==
+// would raise on slice or map values.
+func uniqueValues(values []interface{}) []interface{} {
+	unique := make([]interface{}, 0, len(values))
+	for _, value := range values {
+		seen := false
+		for _, kept := range unique {
+			if reflect.DeepEqual(kept, value) {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			unique = append(unique, value)
+		}
+	}
+	return unique
 }
 
 // Public marks the operation as public: the spec writes security: [], which
