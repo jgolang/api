@@ -39,6 +39,8 @@ The `header` contains metadata about the request and the device making the reque
 }
 ```
 
+With the default `api.BlankSuccess = true`, success responses leave `title` and `message` empty. Error, warning, informative and custom response types always carry them, and with the default `api.TraceVisibility = 1` the message ends with ` (<event id>-<code>)`.
+
 ### Content
 
 The `content` part contains the actual data for the specific endpoint request. This is where the endpoint-specific request object goes.

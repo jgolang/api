@@ -28,7 +28,9 @@ func shortID(traceID string) string {
 // - 3: Includes only the event ID.
 var TraceVisibility = 1
 
-// BlankSuccess contols if success include user feeback information
+// BlankSuccess controls whether success responses leave out their title and
+// message. Responses of any other type (error, warning, informative or a
+// custom type) keep them, since that is the feedback a client shows.
 var BlankSuccess = true
 
 // Format the response body information.
@@ -46,7 +48,7 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 	if TraceVisibility == 3 {
 		msg = fmt.Sprintf("%s (%s)", data.Message, shortID(data.EventID))
 	}
-	if BlankSuccess {
+	if BlankSuccess && data.ResponseType == SuccessType {
 		msg = ""
 		title = ""
 	}
