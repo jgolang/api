@@ -128,7 +128,7 @@ func init() {
 	mapMethods[MethodPutKey] = []string{
 		http.MethodPut,
 	}
-	mapMethods[MethodPutKey] = []string{
-		http.MethodPut,
+	mapMethods[MethodPatchKey] = []string{
+		http.MethodPatch,
 	}
 }
