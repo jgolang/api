@@ -126,7 +126,6 @@ operation.
 - `doc.PathWithDescription("id", doc.Int, true, "Resource ID")`
 - `doc.PathEnum("status", doc.String, true, "Task status.", "open", "done")`
 - `doc.Public()` (writes `security: []`; overrides `doc.Security` and the default)
-- `docs.SetDefaultSecurity("bearer")` on the `*doc.Docs` (top-level `security`)
 - `doc.Security("bearerAuth")`
 
 ## Security schemes
@@ -140,6 +139,15 @@ docs.AddSecurityScheme("apiKeyAuth", doc.APIKeySecurity("X-API-Key", "header"))
 ```
 
 If a route references a security name that was not registered, the OpenAPI generator assumes an HTTP bearer JWT scheme by default.
+
+To require a scheme on every route, set it once on the docs and mark the exceptions public:
+
+```go
+docs.SetDefaultSecurity("bearerAuth") // top-level security
+api.Get(router, "/health", health, doc.Public()) // security: []
+```
+
+Each name passed to `SetDefaultSecurity` is a separate requirement, which OpenAPI reads as alternatives (any one is enough). `doc.Public()` writes `security: []`, ignores the route's `doc.Security` options and adds no scheme for them. `Operation.Public` carries the flag in Go; `Operation`'s JSON methods read and write it as `security: []`, and a struct that embeds `doc.Operation` marshals as `Operation`.
 
 ## Schema tags
 

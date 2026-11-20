@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"reflect"
@@ -45,21 +46,54 @@ type Operation struct {
 	RequestBody *RequestBodyObject        `json:"requestBody,omitempty"`
 	Responses   map[string]ResponseObject `json:"responses"`
 	Security    []map[string][]string     `json:"security,omitempty"`
-	// Public writes security: [] instead of Security.
+	// Public writes security: [] and ignores Security when set.
 	Public bool `json:"-"`
 }
 
 // MarshalJSON writes security: [] for a public operation; omitempty would
-// otherwise drop the empty list that OpenAPI uses to mean "no security".
+// otherwise drop the empty list that OpenAPI uses to mean "no security". It
+// leaves HTML escaping to the caller's encoder. A struct that embeds Operation
+// gets this method too and marshals as Operation.
 func (operation Operation) MarshalJSON() ([]byte, error) {
 	type plain Operation
 	if !operation.Public {
-		return json.Marshal(plain(operation))
+		return marshalNoEscape(plain(operation))
 	}
-	return json.Marshal(struct {
+	return marshalNoEscape(struct {
 		plain
 		Security []map[string][]string `json:"security"`
 	}{plain: plain(operation), Security: []map[string][]string{}})
+}
+
+// UnmarshalJSON reads security: [] back as Public, so a decoded spec marshals
+// to the same document.
+func (operation *Operation) UnmarshalJSON(data []byte) error {
+	type plain Operation
+	var decoded struct {
+		plain
+		Security *[]map[string][]string `json:"security"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*operation = Operation(decoded.plain)
+	if decoded.Security != nil {
+		operation.Security = *decoded.Security
+		operation.Public = len(*decoded.Security) == 0
+	}
+	return nil
+}
+
+// marshalNoEscape encodes value without HTML escaping; the outer encoder
+// escapes the result when it is configured to.
+func marshalNoEscape(value interface{}) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
 // OpenAPIParameter is an OpenAPI parameter object.
@@ -121,6 +155,9 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 			doc.Paths[path] = make(map[string]Operation)
 		}
 		doc.Paths[path][method] = buildOperation(route, schemas)
+		if route.Public {
+			continue
+		}
 		for _, security := range route.Security {
 			ensureSecurityScheme(&doc, security)
 		}
@@ -228,10 +265,10 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 		operation.Responses["204"] = ResponseObject{Description: "No Content"}
 	}
 	operation.Public = route.Public
+	if route.Public {
+		return operation
+	}
 	for _, security := range route.Security {
-		if route.Public {
-			break
-		}
 		operation.Security = append(operation.Security, map[string][]string{security: {}})
 	}
 	return operation

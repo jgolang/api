@@ -141,16 +141,34 @@ func (docs *Docs) AddSecurityScheme(name string, scheme SecurityScheme) {
 	docs.securitySchemes[name] = scheme
 }
 
-// SetDefaultSecurity sets the security requirements that apply to every
-// operation without its own, written as the spec's top-level security. Routes
-// marked with Public opt out.
+// SetDefaultSecurity sets the security schemes that apply to every operation
+// without its own requirements, written as the spec's top-level security. Each
+// name is a separate requirement, which OpenAPI reads as alternatives (any one
+// is enough). A name with no scheme added through AddSecurityScheme is
+// documented as bearer JWT. Empty names and repeats are ignored; routes marked
+// with Public opt out.
 func (docs *Docs) SetDefaultSecurity(names ...string) {
 	if docs == nil {
 		return
 	}
+	unique := make([]string, 0, len(names))
+	for _, name := range names {
+		if name != "" && !hasName(unique, name) {
+			unique = append(unique, name)
+		}
+	}
 	docs.mu.Lock()
 	defer docs.mu.Unlock()
-	docs.defaultSecurity = append([]string(nil), names...)
+	docs.defaultSecurity = unique
+}
+
+func hasName(values []string, value string) bool {
+	for _, existing := range values {
+		if existing == value {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultSecurity returns the names set with SetDefaultSecurity.
