@@ -1,7 +1,6 @@
 package api
 
 import (
-	stderrors "errors"
 	"net/http"
 
 	"github.com/jgolang/api/core"
@@ -66,31 +65,11 @@ func getErrCode(errs ...error) (code core.ResponseCode, msg string) {
 		if e == nil {
 			return "", ""
 		}
-		if coded := codedErrorOf(e); coded != nil {
-			return core.ResponseCode(coded.Code.Str()), coded.Code.Msg()
+		if coder := errors.CodeOf(e); coder != nil {
+			return core.ResponseCode(coder.Str()), coder.Msg()
 		}
 	}
 	return "", ""
-}
-
-// codedErrorOf returns the first jgolang/errors error in err's chain whose code
-// is not nil.
-//
-// Workaround for ERR-01 (jgolang/errors#4): errors v0.2.x CodeOf stops at a nil
-// code and panics on a typed nil. Replace with errors.CodeOf once api requires
-// errors v0.3.0 (story 3.4).
-func codedErrorOf(err error) *errors.Error {
-	for err != nil {
-		var coded *errors.Error
-		if !stderrors.As(err, &coded) || coded == nil {
-			return nil
-		}
-		if coded.Code != nil {
-			return coded
-		}
-		err = coded.Unwrap()
-	}
-	return nil
 }
 
 // Error400 returns a new HTTP Bad Request error code. Its response code and

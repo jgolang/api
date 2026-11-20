@@ -45,6 +45,26 @@ With the default `api.BlankSuccess = true`, success responses leave `title` and 
 
 The `content` part contains the actual data for the specific endpoint request. This is where the endpoint-specific request object goes.
 
+
+## Writing errors
+
+`api.WriteError(w, r, err)` answers with the status of the error's code kind (`jgolang/errors` v0.4.0+): validation 400, unauthorized 401, forbidden 403, not_found 404, conflict 409, and 500 for infrastructure or a code without a kind. The response code and message come from the same code, also behind `fmt.Errorf`. `api.StatusForKind` exposes the mapping.
+
+```go
+var ErrTaskNotFound = errors.Define(codes.New("PLN-111", "task not found").WithKind(codes.KindNotFound), "task not found")
+
+func getTask(w http.ResponseWriter, r *http.Request) {
+	task, err := tasks.Find(r.PathValue("id")) // your code; returns errors.Wrap(ErrTaskNotFound)
+	if err != nil {
+		api.WriteError(w, r, err) // 404
+		return
+	}
+	api.SuccessWithContent(task).Write(w, r)
+}
+```
+
+401 and 403 use the unauthorized title, like `Error401`/`Error403`; a nil error answers 500. `ExampleWriteError` in `example_write_error_test.go` is the compiled version.
+
 ## Response Structure
 
 The response JSON object also consists of two main parts: `header` and `content`.

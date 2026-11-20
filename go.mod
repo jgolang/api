@@ -3,7 +3,7 @@ module github.com/jgolang/api
 go 1.26.2
 
 require (
-	github.com/jgolang/errors v0.2.1
+	github.com/jgolang/errors v0.6.0
 	github.com/jgolang/helpers v0.1.2
 )
 
