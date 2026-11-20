@@ -13,15 +13,20 @@ import (
 // RequestReceiverV2 implementation of core.APIRequestReceiver interface
 type RequestReceiverV2 struct{}
 
-// ProcessEncryptedBody API request encription information.
+// ProcessEncryptedBody reads the encrypted payload from the values data and
+// metadata, taken from the form body or the URL query (r.FormValue). Both are
+// required. A body that cannot be parsed returns the parse error. On any error
+// the returned value is empty.
 func (receiver RequestReceiverV2) ProcessEncryptedBody(r *http.Request) (*core.RequestEncryptedData, error) {
 	var requestData core.RequestEncryptedData
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		return &requestData, err
+	}
 
 	data := r.FormValue("data")
 	metadata := r.FormValue("metadata")
 
-	if data != "" || metadata != "" {
+	if data == "" || metadata == "" {
 		return &requestData, fmt.Errorf("does not provide required information")
 	}
 
