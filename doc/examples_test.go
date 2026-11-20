@@ -1,7 +1,9 @@
 package doc
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -9,11 +11,8 @@ type conflictBody struct {
 	Code string `json:"code"`
 }
 
-func conflictMedia(t *testing.T, opts ...RouteOption) (ResponseObject, MediaType) {
+func conflictMedia(t *testing.T, docs *Docs) MediaType {
 	t.Helper()
-	docs := New(API{Title: "test", Version: "1"})
-	docs.Register("POST", "/tasks/{id}/complete", opts...)
-
 	response, ok := GenerateOpenAPI(docs).Paths["/tasks/{id}/complete"]["post"].Responses["409"]
 	if !ok {
 		t.Fatal("expected a 409 response")
@@ -22,50 +21,64 @@ func conflictMedia(t *testing.T, opts ...RouteOption) (ResponseObject, MediaType
 	if !ok {
 		t.Fatal("expected application/json content")
 	}
-	return response, media
+	return media
+}
+
+func newConflictDocs(opts ...RouteOption) *Docs {
+	docs := New(API{Title: "test", Version: "1"})
+	docs.Register("POST", "/tasks/{id}/complete", opts...)
+	return docs
 }
 
 func TestResponseExamplesWritesNamedExamples(t *testing.T) {
-	examples := map[string]interface{}{
+	media := conflictMedia(t, newConflictDocs(ResponseExamples(409, "Transition not allowed or system record", conflictBody{}, map[string]interface{}{
 		"transition": conflictBody{Code: "PLN-016"},
 		"system":     conflictBody{Code: "PLN-024"},
-	}
+	})))
 
-	response, media := conflictMedia(t, ResponseExamples(409, "Transition not allowed or system record", conflictBody{}, examples))
-
-	if response.Description != "Transition not allowed or system record" {
-		t.Fatalf("unexpected description %q", response.Description)
-	}
-	if media.Example != nil || len(media.Examples) != 2 {
-		t.Fatalf("expected two named examples and no single example, got %+v", media)
-	}
-	if !reflect.DeepEqual(media.Examples["system"].Value, conflictBody{Code: "PLN-024"}) {
-		t.Fatalf("unexpected system example %+v", media.Examples["system"])
-	}
-}
-
-func TestRepeatedStatusOptionsMergeIntoNamedExamples(t *testing.T) {
-	response, media := conflictMedia(t,
-		ResponseWithDescriptionAndExample(409, "Transition not allowed", conflictBody{}, conflictBody{Code: "PLN-016"}),
-		ResponseWithDescriptionAndExample(409, "System record", conflictBody{}, conflictBody{Code: "PLN-024"}),
-	)
-
-	if response.Description != "Transition not allowed or System record" {
-		t.Fatalf("unexpected merged description %q", response.Description)
-	}
 	want := map[string]ExampleObject{
-		"Transition not allowed": {Summary: "Transition not allowed", Value: conflictBody{Code: "PLN-016"}},
-		"System record":          {Summary: "System record", Value: conflictBody{Code: "PLN-024"}},
+		"transition": {Value: conflictBody{Code: "PLN-016"}},
+		"system":     {Value: conflictBody{Code: "PLN-024"}},
 	}
 	if media.Example != nil || !reflect.DeepEqual(media.Examples, want) {
-		t.Fatalf("expected merged named examples, got %+v", media)
+		t.Fatalf("expected two named examples and no single example, got %+v", media)
 	}
 }
 
-func TestSingleExampleStaysAnExample(t *testing.T) {
-	_, media := conflictMedia(t, StatusWithExample(409, conflictBody{}, conflictBody{Code: "PLN-016"}))
+func TestResponseExamplesJSONHasNoSingleExample(t *testing.T) {
+	media := conflictMedia(t, newConflictDocs(ResponseExamples(409, "", conflictBody{}, map[string]interface{}{"a": conflictBody{}})))
 
-	if media.Examples != nil || !reflect.DeepEqual(media.Example, conflictBody{Code: "PLN-016"}) {
-		t.Fatalf("expected a single example, got %+v", media)
+	raw, err := json.Marshal(media)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(raw), `"example":`) || !strings.Contains(string(raw), `"examples":`) {
+		t.Fatalf("expected only examples, got %s", raw)
+	}
+}
+
+func TestLaterOptionForTheSameStatusStillReplaces(t *testing.T) {
+	media := conflictMedia(t, newConflictDocs(
+		ResponseExamples(409, "", conflictBody{}, map[string]interface{}{"a": conflictBody{Code: "A"}}),
+		StatusWithExample(409, conflictBody{}, conflictBody{Code: "B"}),
+	))
+
+	if media.Examples != nil || !reflect.DeepEqual(media.Example, conflictBody{Code: "B"}) {
+		t.Fatalf("expected the later option to replace the earlier one, got %+v", media)
+	}
+}
+
+func TestResponseExamplesCopiesTheInputMap(t *testing.T) {
+	input := map[string]interface{}{"a": conflictBody{Code: "A"}}
+	option := ResponseExamples(409, "", conflictBody{}, input)
+	input["b"] = conflictBody{Code: "B"}
+
+	docs := New(API{Title: "test", Version: "1"})
+	first := docs.Register("POST", "/tasks/{id}/complete", option)
+	first.Responses[0].Examples["c"] = conflictBody{Code: "C"}
+	docs.Register("POST", "/other", option)
+
+	if got := docs.Routes()[1].Responses[0].Examples; len(got) != 1 {
+		t.Fatalf("expected only the original example, got %v", got)
 	}
 }

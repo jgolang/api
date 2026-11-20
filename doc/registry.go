@@ -59,7 +59,8 @@ type RouteResponse struct {
 	Body        interface{}
 	Schema      *Schema
 	Example     interface{}
-	// Examples are named examples, written as the OpenAPI examples map.
+	// Examples are named examples, written as the OpenAPI examples map; when
+	// set, Example is not written (OpenAPI allows one or the other).
 	Examples map[string]interface{}
 	Headers  []ResponseHeaderInfo
 }

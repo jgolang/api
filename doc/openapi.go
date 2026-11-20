@@ -181,73 +181,6 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 	return doc
 }
 
-// responsesByStatus groups responses by status, in first-seen order.
-func responsesByStatus(responses []RouteResponse) [][]RouteResponse {
-	var groups [][]RouteResponse
-	index := make(map[int]int)
-	for _, response := range responses {
-		i, ok := index[response.Status]
-		if !ok {
-			i = len(groups)
-			index[response.Status] = i
-			groups = append(groups, nil)
-		}
-		groups[i] = append(groups[i], response)
-	}
-	return groups
-}
-
-// mergeResponses combines responses for one status, so a second option for
-// the same status adds to the first instead of replacing it. Descriptions are
-// joined with " or ", headers are combined, the first schema or body wins, and
-// each single example becomes a named example (named by its description, or
-// "example N").
-func mergeResponses(group []RouteResponse) RouteResponse {
-	if len(group) == 1 {
-		return group[0]
-	}
-	merged := RouteResponse{Status: group[0].Status, Examples: map[string]interface{}{}}
-	var descriptions []string
-	for i, response := range group {
-		if response.Description != "" && !hasName(descriptions, response.Description) {
-			descriptions = append(descriptions, response.Description)
-		}
-		if merged.Schema == nil && merged.Body == nil {
-			merged.Schema, merged.Body = response.Schema, response.Body
-		}
-		merged.Headers = append(merged.Headers, response.Headers...)
-		for name, value := range response.Examples {
-			merged.Examples[name] = value
-		}
-		if response.Example != nil {
-			name := response.Description
-			if name == "" {
-				name = "example " + strconv.Itoa(i+1)
-			}
-			merged.Examples[name] = response.Example
-		}
-	}
-	merged.Description = strings.Join(descriptions, " or ")
-	if len(merged.Examples) == 0 {
-		merged.Examples = nil
-	}
-	return merged
-}
-
-// exampleSummary uses a merged response's description as the summary of the
-// example named after it.
-func exampleSummary(group []RouteResponse, name string) string {
-	if len(group) < 2 {
-		return ""
-	}
-	for _, response := range group {
-		if response.Description == name {
-			return name
-		}
-	}
-	return ""
-}
-
 // ensureSecurityScheme adds a bearer JWT scheme named name unless the docs
 // already declare one.
 func ensureSecurityScheme(doc *OpenAPI, name string) {
@@ -303,8 +236,7 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 			},
 		}
 	}
-	for _, group := range responsesByStatus(route.Responses) {
-		response := mergeResponses(group)
+	for _, response := range route.Responses {
 		description := response.Description
 		if description == "" {
 			description = http.StatusText(response.Status)
@@ -336,7 +268,7 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 				media.Example = nil
 				media.Examples = make(map[string]ExampleObject, len(response.Examples))
 				for name, value := range response.Examples {
-					media.Examples[name] = ExampleObject{Summary: exampleSummary(group, name), Value: value}
+					media.Examples[name] = ExampleObject{Value: value}
 				}
 			}
 			object.Content = map[string]MediaType{"application/json": media}
