@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"encoding/json"
 	"net/http"
 	"reflect"
 	"sort"
@@ -16,6 +17,7 @@ type OpenAPI struct {
 	Info       API                             `json:"info"`
 	Paths      map[string]map[string]Operation `json:"paths"`
 	Components *Components                     `json:"components,omitempty"`
+	Security   []map[string][]string           `json:"security,omitempty"`
 }
 
 // Components contains reusable OpenAPI components.
@@ -43,6 +45,21 @@ type Operation struct {
 	RequestBody *RequestBodyObject        `json:"requestBody,omitempty"`
 	Responses   map[string]ResponseObject `json:"responses"`
 	Security    []map[string][]string     `json:"security,omitempty"`
+	// Public writes security: [] instead of Security.
+	Public bool `json:"-"`
+}
+
+// MarshalJSON writes security: [] for a public operation; omitempty would
+// otherwise drop the empty list that OpenAPI uses to mean "no security".
+func (operation Operation) MarshalJSON() ([]byte, error) {
+	type plain Operation
+	if !operation.Public {
+		return json.Marshal(plain(operation))
+	}
+	return json.Marshal(struct {
+		plain
+		Security []map[string][]string `json:"security"`
+	}{plain: plain(operation), Security: []map[string][]string{}})
 }
 
 // OpenAPIParameter is an OpenAPI parameter object.
@@ -105,24 +122,34 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 		}
 		doc.Paths[path][method] = buildOperation(route, schemas)
 		for _, security := range route.Security {
-			ensureComponents(&doc)
-			if doc.Components.SecuritySchemes == nil {
-				doc.Components.SecuritySchemes = make(map[string]SecurityScheme)
-			}
-			if _, ok := doc.Components.SecuritySchemes[security]; !ok {
-				doc.Components.SecuritySchemes[security] = SecurityScheme{
-					Type:         "http",
-					Scheme:       "bearer",
-					BearerFormat: "JWT",
-				}
-			}
+			ensureSecurityScheme(&doc, security)
 		}
+	}
+	for _, security := range docs.DefaultSecurity() {
+		doc.Security = append(doc.Security, map[string][]string{security: {}})
+		ensureSecurityScheme(&doc, security)
 	}
 	if len(schemas.components) > 0 {
 		ensureComponents(&doc)
 		doc.Components.Schemas = schemas.components
 	}
 	return doc
+}
+
+// ensureSecurityScheme adds a bearer JWT scheme named name unless the docs
+// already declare one.
+func ensureSecurityScheme(doc *OpenAPI, name string) {
+	ensureComponents(doc)
+	if doc.Components.SecuritySchemes == nil {
+		doc.Components.SecuritySchemes = make(map[string]SecurityScheme)
+	}
+	if _, ok := doc.Components.SecuritySchemes[name]; !ok {
+		doc.Components.SecuritySchemes[name] = SecurityScheme{
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "JWT",
+		}
+	}
 }
 
 func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
@@ -200,7 +227,11 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 	if len(operation.Responses) == 0 {
 		operation.Responses["204"] = ResponseObject{Description: "No Content"}
 	}
+	operation.Public = route.Public
 	for _, security := range route.Security {
+		if route.Public {
+			break
+		}
 		operation.Security = append(operation.Security, map[string][]string{security: {}})
 	}
 	return operation

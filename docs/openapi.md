@@ -125,6 +125,8 @@ operation.
 - `doc.Path("id", doc.Int, true)`
 - `doc.PathWithDescription("id", doc.Int, true, "Resource ID")`
 - `doc.PathEnum("status", "Task status.", "open", "done")`
+- `doc.Public()` (writes `security: []`; overrides `doc.Security` and the default)
+- `docs.SetDefaultSecurity("bearer")` on the `*doc.Docs` (top-level `security`)
 - `doc.Security("bearerAuth")`
 
 ## Security schemes

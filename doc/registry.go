@@ -47,6 +47,9 @@ type Route struct {
 	Responses   []RouteResponse
 	Parameters  []Parameter
 	Security    []string
+	// Public marks the operation as not requiring security (security: []),
+	// overriding Security and any default security.
+	Public bool
 }
 
 // RouteResponse describes an HTTP response for an operation.
@@ -73,6 +76,7 @@ type Docs struct {
 	mu              sync.RWMutex
 	routes          []Route
 	securitySchemes map[string]SecurityScheme
+	defaultSecurity []string
 }
 
 // New creates an OpenAPI documentation collector.
@@ -135,6 +139,28 @@ func (docs *Docs) AddSecurityScheme(name string, scheme SecurityScheme) {
 	docs.mu.Lock()
 	defer docs.mu.Unlock()
 	docs.securitySchemes[name] = scheme
+}
+
+// SetDefaultSecurity sets the security requirements that apply to every
+// operation without its own, written as the spec's top-level security. Routes
+// marked with Public opt out.
+func (docs *Docs) SetDefaultSecurity(names ...string) {
+	if docs == nil {
+		return
+	}
+	docs.mu.Lock()
+	defer docs.mu.Unlock()
+	docs.defaultSecurity = append([]string(nil), names...)
+}
+
+// DefaultSecurity returns the names set with SetDefaultSecurity.
+func (docs *Docs) DefaultSecurity() []string {
+	if docs == nil {
+		return nil
+	}
+	docs.mu.RLock()
+	defer docs.mu.RUnlock()
+	return append([]string(nil), docs.defaultSecurity...)
 }
 
 // SecuritySchemes returns a snapshot of configured security schemes.

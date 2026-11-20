@@ -174,6 +174,14 @@ func enumParameter(in string, name string, required bool, description string, va
 	}
 }
 
+// Public marks the operation as public: the spec writes security: [], which
+// overrides any default security and the operation's Security options.
+func Public() RouteOption {
+	return func(route *Route) {
+		route.Public = true
+	}
+}
+
 // Security adds a named security requirement to the operation.
 func Security(name string) RouteOption {
 	return func(route *Route) {
