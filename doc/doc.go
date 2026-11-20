@@ -1,6 +1,8 @@
 // Package doc contains OpenAPI documentation metadata, schema generation, and handlers.
 package doc
 
+import "reflect"
+
 // Summary sets the OpenAPI operation summary.
 func Summary(summary string) RouteOption {
 	return func(route *Route) {
@@ -143,6 +145,57 @@ func Path(name string, typ DataType, required bool) RouteOption {
 // PathWithDescription adds a path parameter with an OpenAPI description.
 func PathWithDescription(name string, typ DataType, required bool, description string) RouteOption {
 	return parameter("path", name, typ, required, description)
+}
+
+// QueryEnum documents a query parameter whose accepted values are values,
+// written as schema.enum. typ and values must match (doc.Bool with true,
+// doc.Int with 10, 20). Repeated values are written once; with no values the
+// parameter is documented like QueryWithDescription. Documentation only: the
+// request is not validated.
+func QueryEnum(name string, typ DataType, required bool, description string, values ...interface{}) RouteOption {
+	return enumParameter("query", name, typ, required, description, values)
+}
+
+// PathEnum documents a path parameter whose accepted values are values, like
+// QueryEnum. Path parameters are always written as required.
+func PathEnum(name string, typ DataType, required bool, description string, values ...interface{}) RouteOption {
+	return enumParameter("path", name, typ, required, description, values)
+}
+
+func enumParameter(in string, name string, typ DataType, required bool, description string, values []interface{}) RouteOption {
+	return func(route *Route) {
+		param := Parameter{
+			Name:        name,
+			In:          in,
+			Type:        typ,
+			Required:    required,
+			Description: description,
+		}
+		if enum := uniqueValues(values); len(enum) > 0 {
+			param.Schema = &Schema{Type: string(typ), Enum: enum}
+		}
+		route.Parameters = append(route.Parameters, param)
+	}
+}
+
+// uniqueValues returns a new slice with each value once, in first-seen order;
+// JSON Schema requires enum items to be unique. DeepEqual avoids the panic ==
+// would raise on slice or map values.
+func uniqueValues(values []interface{}) []interface{} {
+	unique := make([]interface{}, 0, len(values))
+	for _, value := range values {
+		seen := false
+		for _, kept := range unique {
+			if reflect.DeepEqual(kept, value) {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			unique = append(unique, value)
+		}
+	}
+	return unique
 }
 
 // Security adds a named security requirement to the operation.
