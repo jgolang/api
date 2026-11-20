@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -141,5 +142,25 @@ func TestOperationMarshalLeavesEscapingToTheEncoder(t *testing.T) {
 
 	if !bytes.Contains(buffer.Bytes(), []byte(`"summary":"a < b"`)) {
 		t.Fatalf("expected unescaped summary, got %s", buffer.String())
+	}
+}
+
+func TestRouteSecurityOverridesTheDefault(t *testing.T) {
+	docs := newTestDocs()
+	docs.SetDefaultSecurity("bearer")
+	docs.Register("GET", "/admin", Security("apiKey"))
+
+	security := decodeMap(t, marshalString(t, GenerateOpenAPI(docs).Paths["/admin"]["get"]))["security"]
+
+	if !reflect.DeepEqual(security, []interface{}{map[string]interface{}{"apiKey": []interface{}{}}}) {
+		t.Fatalf("expected the route's own apiKey requirement, got %v", security)
+	}
+}
+
+func TestOperationMarshalStillEscapesWithPlainMarshal(t *testing.T) {
+	raw := marshalString(t, Operation{Summary: "a < b", Responses: map[string]ResponseObject{}})
+
+	if !strings.Contains(raw, `a \u003c b`) {
+		t.Fatalf("expected json.Marshal to escape <, got %s", raw)
 	}
 }

@@ -14,8 +14,19 @@ func ExamplePublic() {
 	docs.Register("GET", "/health", doc.Public())
 
 	spec := doc.GenerateOpenAPI(docs)
-	top, _ := json.Marshal(spec.Security)
-	health, _ := json.Marshal(spec.Paths["/health"]["get"].Security)
-	fmt.Println(string(top), spec.Paths["/health"]["get"].Public, string(health))
-	// Output: [{"bearer":[]}] true null
+	top, err := json.Marshal(spec.Security)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	health, err := json.Marshal(spec.Paths["/health"]["get"])
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(top))
+	fmt.Println(string(health))
+	// Output:
+	// [{"bearer":[]}]
+	// {"responses":{"204":{"description":"No Content"}},"security":[]}
 }

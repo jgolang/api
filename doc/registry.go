@@ -146,7 +146,8 @@ func (docs *Docs) AddSecurityScheme(name string, scheme SecurityScheme) {
 // name is a separate requirement, which OpenAPI reads as alternatives (any one
 // is enough). A name with no scheme added through AddSecurityScheme is
 // documented as bearer JWT. Empty names and repeats are ignored; routes marked
-// with Public opt out.
+// with Public opt out. Each call replaces the previous names, so a call with
+// no names clears the default.
 func (docs *Docs) SetDefaultSecurity(names ...string) {
 	if docs == nil {
 		return

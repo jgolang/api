@@ -66,7 +66,8 @@ func (operation Operation) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON reads security: [] back as Public, so a decoded spec marshals
-// to the same document.
+// to the same document. It replaces the whole Operation; decode into a zero
+// value.
 func (operation *Operation) UnmarshalJSON(data []byte) error {
 	type plain Operation
 	var decoded struct {
