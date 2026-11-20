@@ -145,6 +145,35 @@ func PathWithDescription(name string, typ DataType, required bool, description s
 	return parameter("path", name, typ, required, description)
 }
 
+// QueryEnum adds a string query parameter that accepts only values, written
+// as schema.enum so generated clients send an accepted value.
+func QueryEnum(name string, description string, required bool, values ...string) RouteOption {
+	return enumParameter("query", name, required, description, values)
+}
+
+// PathEnum adds a string path parameter that accepts only values. Path
+// parameters are always required.
+func PathEnum(name string, description string, values ...string) RouteOption {
+	return enumParameter("path", name, true, description, values)
+}
+
+func enumParameter(in string, name string, required bool, description string, values []string) RouteOption {
+	enum := make([]interface{}, len(values))
+	for i, value := range values {
+		enum[i] = value
+	}
+	return func(route *Route) {
+		route.Parameters = append(route.Parameters, Parameter{
+			Name:        name,
+			In:          in,
+			Type:        String,
+			Required:    required,
+			Description: description,
+			Schema:      &Schema{Type: string(String), Enum: enum},
+		})
+	}
+}
+
 // Security adds a named security requirement to the operation.
 func Security(name string) RouteOption {
 	return func(route *Route) {
