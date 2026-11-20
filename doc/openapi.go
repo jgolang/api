@@ -1,6 +1,8 @@
 package doc
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"reflect"
 	"sort"
@@ -16,6 +18,7 @@ type OpenAPI struct {
 	Info       API                             `json:"info"`
 	Paths      map[string]map[string]Operation `json:"paths"`
 	Components *Components                     `json:"components,omitempty"`
+	Security   []map[string][]string           `json:"security,omitempty"`
 }
 
 // Components contains reusable OpenAPI components.
@@ -43,6 +46,55 @@ type Operation struct {
 	RequestBody *RequestBodyObject        `json:"requestBody,omitempty"`
 	Responses   map[string]ResponseObject `json:"responses"`
 	Security    []map[string][]string     `json:"security,omitempty"`
+	// Public writes security: [] and ignores Security when set.
+	Public bool `json:"-"`
+}
+
+// MarshalJSON writes security: [] for a public operation; omitempty would
+// otherwise drop the empty list that OpenAPI uses to mean "no security". It
+// leaves HTML escaping to the caller's encoder. A struct that embeds Operation
+// gets this method too and marshals as Operation.
+func (operation Operation) MarshalJSON() ([]byte, error) {
+	type plain Operation
+	if !operation.Public {
+		return marshalNoEscape(plain(operation))
+	}
+	return marshalNoEscape(struct {
+		plain
+		Security []map[string][]string `json:"security"`
+	}{plain: plain(operation), Security: []map[string][]string{}})
+}
+
+// UnmarshalJSON reads security: [] back as Public, so a decoded spec marshals
+// to the same document. It replaces the whole Operation; decode into a zero
+// value.
+func (operation *Operation) UnmarshalJSON(data []byte) error {
+	type plain Operation
+	var decoded struct {
+		plain
+		Security *[]map[string][]string `json:"security"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*operation = Operation(decoded.plain)
+	if decoded.Security != nil {
+		operation.Security = *decoded.Security
+		operation.Public = len(*decoded.Security) == 0
+	}
+	return nil
+}
+
+// marshalNoEscape encodes value without HTML escaping; the outer encoder
+// escapes the result when it is configured to.
+func marshalNoEscape(value interface{}) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
 // OpenAPIParameter is an OpenAPI parameter object.
@@ -104,25 +156,38 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 			doc.Paths[path] = make(map[string]Operation)
 		}
 		doc.Paths[path][method] = buildOperation(route, schemas)
-		for _, security := range route.Security {
-			ensureComponents(&doc)
-			if doc.Components.SecuritySchemes == nil {
-				doc.Components.SecuritySchemes = make(map[string]SecurityScheme)
-			}
-			if _, ok := doc.Components.SecuritySchemes[security]; !ok {
-				doc.Components.SecuritySchemes[security] = SecurityScheme{
-					Type:         "http",
-					Scheme:       "bearer",
-					BearerFormat: "JWT",
-				}
-			}
+		if route.Public {
+			continue
 		}
+		for _, security := range route.Security {
+			ensureSecurityScheme(&doc, security)
+		}
+	}
+	for _, security := range docs.DefaultSecurity() {
+		doc.Security = append(doc.Security, map[string][]string{security: {}})
+		ensureSecurityScheme(&doc, security)
 	}
 	if len(schemas.components) > 0 {
 		ensureComponents(&doc)
 		doc.Components.Schemas = schemas.components
 	}
 	return doc
+}
+
+// ensureSecurityScheme adds a bearer JWT scheme named name unless the docs
+// already declare one.
+func ensureSecurityScheme(doc *OpenAPI, name string) {
+	ensureComponents(doc)
+	if doc.Components.SecuritySchemes == nil {
+		doc.Components.SecuritySchemes = make(map[string]SecurityScheme)
+	}
+	if _, ok := doc.Components.SecuritySchemes[name]; !ok {
+		doc.Components.SecuritySchemes[name] = SecurityScheme{
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "JWT",
+		}
+	}
 }
 
 func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
@@ -199,6 +264,10 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 	}
 	if len(operation.Responses) == 0 {
 		operation.Responses["204"] = ResponseObject{Description: "No Content"}
+	}
+	operation.Public = route.Public
+	if route.Public {
+		return operation
 	}
 	for _, security := range route.Security {
 		operation.Security = append(operation.Security, map[string][]string{security: {}})

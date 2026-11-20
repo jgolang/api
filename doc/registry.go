@@ -47,6 +47,9 @@ type Route struct {
 	Responses   []RouteResponse
 	Parameters  []Parameter
 	Security    []string
+	// Public marks the operation as not requiring security (security: []),
+	// overriding Security and any default security.
+	Public bool
 }
 
 // RouteResponse describes an HTTP response for an operation.
@@ -73,6 +76,7 @@ type Docs struct {
 	mu              sync.RWMutex
 	routes          []Route
 	securitySchemes map[string]SecurityScheme
+	defaultSecurity []string
 }
 
 // New creates an OpenAPI documentation collector.
@@ -135,6 +139,47 @@ func (docs *Docs) AddSecurityScheme(name string, scheme SecurityScheme) {
 	docs.mu.Lock()
 	defer docs.mu.Unlock()
 	docs.securitySchemes[name] = scheme
+}
+
+// SetDefaultSecurity sets the security schemes that apply to every operation
+// without its own requirements, written as the spec's top-level security. Each
+// name is a separate requirement, which OpenAPI reads as alternatives (any one
+// is enough). A name with no scheme added through AddSecurityScheme is
+// documented as bearer JWT. Empty names and repeats are ignored; routes marked
+// with Public opt out. Each call replaces the previous names, so a call with
+// no names clears the default.
+func (docs *Docs) SetDefaultSecurity(names ...string) {
+	if docs == nil {
+		return
+	}
+	unique := make([]string, 0, len(names))
+	for _, name := range names {
+		if name != "" && !hasName(unique, name) {
+			unique = append(unique, name)
+		}
+	}
+	docs.mu.Lock()
+	defer docs.mu.Unlock()
+	docs.defaultSecurity = unique
+}
+
+func hasName(values []string, value string) bool {
+	for _, existing := range values {
+		if existing == value {
+			return true
+		}
+	}
+	return false
+}
+
+// DefaultSecurity returns the names set with SetDefaultSecurity.
+func (docs *Docs) DefaultSecurity() []string {
+	if docs == nil {
+		return nil
+	}
+	docs.mu.RLock()
+	defer docs.mu.RUnlock()
+	return append([]string(nil), docs.defaultSecurity...)
 }
 
 // SecuritySchemes returns a snapshot of configured security schemes.

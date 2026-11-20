@@ -238,6 +238,8 @@ func main() {
 		Version: "1.0.0",
 	})
 	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
+	// Optional: require bearerAuth everywhere and mark exceptions with doc.Public().
+	// docs.SetDefaultSecurity("bearerAuth")
 
 	router := stdadapter.New(http.NewServeMux(), docs)
 
