@@ -1,50 +1,151 @@
-# API Developer Helper Library
+# jgolang/api
 
-## Overview
+`github.com/jgolang/api` is a small HTTP request/response micro-framework on top of `net/http`. It gives every endpoint the same response shape, typed request helpers, error responses driven by [`jgolang/errors`](https://github.com/jgolang/errors) codes, event IDs for tracing, and an OpenAPI 3 document built from the routes you register.
 
-This library is designed to standardize communication for API requests and responses in a microframework. It provides a consistent structure for headers and content, ensuring uniformity across different endpoints. The library helps developers easily wrap their endpoint-specific logic within a predefined request and response format.
+```sh
+go get github.com/jgolang/api
+```
 
-## Request Structure
+The JSON envelope with device metadata in the request `header` (`device_type`, `device_brand`, `lat`, `lon`, `token`, …) is still supported, but it is no longer the default. It is documented in [docs/legacy.md](docs/legacy.md).
 
-The request JSON object consists of two main parts: `header` and `content`.
+## Quick start
 
-### Header
+```go
+package main
 
-The `header` contains metadata about the request and the device making the request. This includes information like device type, brand, OS version, and security token.
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/jgolang/api"
+	"github.com/jgolang/api/doc"
+	"github.com/jgolang/api/envelope"
+	"github.com/jgolang/api/stdadapter"
+	"github.com/jgolang/errors"
+	"github.com/jgolang/errors/codes"
+)
+
+type CreateTaskRequest struct {
+	Title string `json:"title"`
+}
+
+type TaskResponse struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+var CodeTitleRequired = codes.New("TSK-001", "title is required").WithKind(codes.KindValidation)
+
+func createTask(w http.ResponseWriter, r *http.Request) {
+	var req CreateTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		api.Error400().Write(w, r)
+		return
+	}
+	if req.Title == "" {
+		api.WriteError(w, r, errors.NewC(CodeTitleRequired, "empty title")) // 400
+		return
+	}
+	task := TaskResponse{ID: 1, Title: req.Title}
+	success := api.SuccessWithContent(task)
+	success.HTTPStatusCode = http.StatusCreated
+	success.Write(w, r)
+}
+
+func main() {
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	router := stdadapter.New(http.NewServeMux(), docs)
+
+	api.Post(router, "/tasks", api.ProcessRequest(createTask),
+		doc.Summary("Create task"),
+		doc.Tags("tasks"),
+		doc.Body(CreateTaskRequest{}),
+		doc.Status(201, envelope.Success[TaskResponse]()),
+	)
+
+	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
+	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
+
+	http.ListenAndServe(":8080", router)
+}
+```
+
+With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`) and answers with the response envelope:
 
 ```json
 {
     "header": {
-        "uuid": "2e67ee64-fb5e-11ed-be56-0242ac120003",
-        "device_type": "user",
-        "device_brand": "postman",
-        "device_serial": "postman_device_serial",
-        "device_id": "postman_device_id",
-        "device_model": "postman",
-        "os": "postman",
-        "os_version": "0.0.0",
-        "lang": "es",
-        "timezone": "-6",
-        "app_version": "1.3.0",
-        "app_build_version": "0.1.0",
-        "device_id": "",
-        "device_serial": "",
-        "lat": "",
-        "lon": "",
-        "token": "" // security token
+        "type": "success",
+        "code": "0000",
+        "event_id": "44767dd580599c70c7516af431772e8c"
     },
-    "content": {
-        // specific endpoint request object
-    }
+    "content": {"id": 1, "title": "Buy milk"}
 }
 ```
 
-With the default `api.BlankSuccess = true`, success responses leave `title` and `message` empty. Error, warning, informative and custom response types always carry them, and with the default `api.TraceVisibility = 1` the message ends with ` (<event id>-<code>)` (an empty message gets no suffix).
+## The request flow
 
-### Content
+1. **Route registration.** `api.Get`, `api.Post`, `api.Put`, `api.Patch` and `api.Delete` register a handler on any `api.Router` and record its `doc.RouteOption`s for the OpenAPI document. `stdadapter` is the `net/http` router; see [Routing and OpenAPI](#routing-and-openapi).
+2. **`api.ProcessRequest`.** Wrap a handler with this middleware to get the full flow. It:
+   - reads the body and parses it according to the [request mode](#request-and-response-modes); an invalid JSON body answers 400 with code `e002`;
+   - collects request metadata from HTTP headers (see [Reading the request](#reading-the-request));
+   - assigns an [event ID](#trace-ids) and logs the request and the response;
+   - stores the request context, replaces `r.Body` with the endpoint content, and answers 500 if the handler panics.
 
-The `content` part contains the actual data for the specific endpoint request. This is where the endpoint-specific request object goes.
+   Use `api.MiddlewaresChain(...)` to compose it with your own middlewares. `api.AddSkipPath(api.GenSkipPath(method, path), true)` makes it pass a route through untouched.
+3. **The handler** reads the content, then writes one [response](#responses) or [error](#writing-errors).
+4. **The formatter** shapes the response according to the [response mode](#request-and-response-modes) and adds the event ID, code and token.
 
+A handler that is not wrapped by `api.ProcessRequest` still works: it reads the raw body itself, and its responses are formatted the same way, without a generated event ID.
+
+## Request and response modes
+
+Two package-level settings in `modes.go` control the wire format. Set them once at startup, before serving requests.
+
+```go
+api.SetRequestMode(api.RequestModeAuto)
+api.SetResponseMode(api.ResponseModePlain)
+```
+
+| Request mode | Body parsing |
+| --- | --- |
+| `api.RequestModePlain` (default) | The body is the endpoint content, as plain JSON. |
+| `api.RequestModeEnvelope` | The body is `{"header": {...}, "content": {...}}`; the content is `content`, and the `header` fields fill request metadata that the HTTP headers did not set ([legacy envelope](docs/legacy.md)). |
+| `api.RequestModeAuto` | Envelope when the body is a JSON object with one or two keys, one of them `header` or `content`; plain otherwise. |
+| `api.RequestModeNone` | The body is not unwrapped; it is read as plain JSON. |
+
+| Response mode | Body written |
+| --- | --- |
+| `api.ResponseModeEnvelope` (default) | `{"header": {"type", "title", "message", "code", "token", "action", "event_id", "info"}, "content": ...}`; empty header fields are omitted, except `type`. |
+| `api.ResponseModePlain` | The same fields at the top level, with `content` next to them: `{"type": "success", "code": "0000", ..., "content": ...}`. Every field is present. |
+| `api.ResponseModeNone` | Only the content, as is. |
+
+An unknown value resets the mode to its default. The modes are plain package variables (`api.CurrentRequestMode`, `api.CurrentResponseMode`), so they apply to the whole process. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
+
+## Reading the request
+
+After `api.ProcessRequest`, `r.Body` holds only the endpoint content in every request mode, so a handler decodes it as usual:
+
+```go
+var req CreateTaskRequest
+if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	api.Error400().Write(w, r)
+	return
+}
+```
+
+The request context carries the content and its metadata:
+
+```go
+rctx := api.Context(r.Context())
+err := rctx.DecodeContent(&req) // same content as r.Body
+eventID := rctx.EventID
+token := rctx.SecurityToken
+```
+
+Request metadata comes from HTTP headers: `X-Request-ID` (else `UUID`) for the request UUID, `SecurityToken` (else `Authorization: Bearer <token>`) for the token, `AppLanguage` (else `Accept-Language`) for the language, and `DeviceType`, `DeviceBrand`, `DeviceModel`, `DeviceOS`, `OSVersion`, `OSTimezone`, `AppVersion`, `AppBuildVersion`, `AppName`, `DeviceSerial`, `DeviceID`, `Latitude`, `Longitude` for the client. In envelope request mode the JSON `header` fills the same fields when the HTTP header is absent.
+
+Route variables are read with `api.GetRouteVar("id", r)`. `stdadapter` matches `{id}` segments itself and stores them with `api.SetRouteVars`, so `r.PathValue` is empty there; an adapter for another router either calls `api.SetRouteVars` or replaces `api.GetRouteVar`.
 
 ## Query parameters
 
@@ -63,7 +164,38 @@ if !ok {
 }
 ```
 
-The older `api.GetQueryParamValue*` helpers return an `api.Response`; prefer the `Query*` helpers in new code.
+The older `api.GetQueryParamValue*` helpers return an `api.Response`; prefer the `Query*` helpers in new code. `ExampleQueryInt` and `ExampleQueryEnum` in `example_query_test.go` are the compiled versions.
+
+## Responses
+
+Every response kind (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) is a `core.ResponseData` with a `Write(w, r)` method. Its fields (`Title`, `Message`, `HTTPStatusCode`, `ResponseCode`, `Content`, `Headers`, `Info`, `Actions`) can be set before writing. `Write` fills the event ID and the request token, and defaults the title, message, status and code of its kind.
+
+| Helper | Status | Code |
+| --- | --- | --- |
+| `api.Success200()`, `api.SuccessWithMsg(msg)` | 200 | `0000` |
+| `api.SuccessWithContent(content)` | 200 | `0000` |
+| `api.Success201()` | 201 | `0000` |
+| `api.Error400(errs...)`, `api.ErrorWithMsg(msg, errs...)` | 400 | the first coded error in `errs`, else `e001` |
+| `api.Error401()`, `api.Error403()` | 401, 403 | `b001`, `b002` |
+| `api.Error500(errs...)`, `api.Error500WithMsg(msg, errs...)` | 500 | the first coded error in `errs`, else `e300` |
+| `api.Error501(errs...)` | 503 | the first coded error in `errs`, else `e001` |
+
+Response codes are written in lower case. The default titles, messages and codes are package variables (`api.DefaultSuccessTitle`, `api.InternalServerMessage`, `api.ResponseCodes`, …).
+
+```go
+api.SuccessWithContent(task).Write(w, r)
+
+created := api.SuccessWithContent(task)
+created.HTTPStatusCode = http.StatusCreated
+created.Write(w, r)
+
+api.Error500(err).Write(w, r)
+```
+
+Two settings shape the `title` and `message` of every response:
+
+- `api.BlankSuccess` (default `true`): success responses leave `title` and `message` empty. Error, warning, informative and custom response types always carry them.
+- `api.TraceVisibility` (default `1`): a trace suffix appended to a non-empty message. `1` appends ` (<event id>-<code>)`, `2` only ` (<code>)`, `3` only ` (<event id>)`; any other value appends nothing. The event ID is cut to `api.TraceIDLength` characters (default 6). For example, `Error500()` writes `"An error has occurred please try again later. (cdf606-e300)"`.
 
 ## Writing errors
 
@@ -73,7 +205,7 @@ The older `api.GetQueryParamValue*` helpers return an `api.Response`; prefer the
 var ErrTaskNotFound = errors.Define(codes.New("PLN-111", "task not found").WithKind(codes.KindNotFound), "task not found")
 
 func getTask(w http.ResponseWriter, r *http.Request) {
-	task, err := tasks.Find(r.PathValue("id")) // your code; returns errors.Wrap(ErrTaskNotFound)
+	task, err := tasks.Find(api.GetRouteVar("id", r)) // your code; returns errors.Wrap(ErrTaskNotFound)
 	if err != nil {
 		api.WriteError(w, r, err) // 404
 		return
@@ -84,141 +216,9 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 
 401 and 403 use the unauthorized title, like `Error401`/`Error403`; a nil error answers 500. `ExampleWriteError` in `example_write_error_test.go` is the compiled version.
 
-## Response Structure
+## Routing and OpenAPI
 
-The response JSON object also consists of two main parts: `header` and `content`.
-
-### Header
-
-The `header` includes metadata about the response, such as the response status, messages, and security token.
-
-```json
-{
-    "header": {
-        "title": "",
-        "message": "",
-        "type": "success",
-        "code": "000",
-        "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjNjMWM3ODBlLWQxMDAtNGEwZS05MTc3LTc1ZGRmY2Q0ZWU4MSIsInR5cGUiOiJhcHAiLCJleHAiOjE3MDkzOTQ0MTV9.f9I97DpJA1D2ahxq9-edCNnVOZVoLYBoQwuvAJf6F_8",
-        "event_id": "f3c50980e8c71811b25b2319f0daf5a0",
-        "action": "",
-        "event_id": ""
-    },
-    "content": {
-        // Specific endpoint response
-    }
-}
-```
-
-### Content
-
-The `content` part contains the actual data for the specific endpoint response. This is where the endpoint-specific response object goes.
-
-## Usage
-
-### Implementing a Standard Request
-
-To implement a standard request using this library, follow these steps:
-
-1. **Create the Request Object:**
-   - Fill in the `header` with the required metadata.
-   - Add the specific endpoint request object within the `content`.
-
-2. **Send the Request:**
-   - Use the appropriate method (e.g., HTTP POST) to send the request to the endpoint.
-
-### Example Request
-
-```json
-{
-    "header": {
-        "uuid": "2e67ee64-fb5e-11ed-be56-0242ac120003",
-        "device_type": "user",
-        "device_brand": "postman",
-        "device_serial": "postman_device_serial",
-        "device_id": "postman_device_id",
-        "device_model": "postman",
-        "os": "postman",
-        "os_version": "0.0.0",
-        "lang": "es",
-        "timezone": "-6",
-        "app_version": "1.3.0",
-        "app_build_version": "0.1.0",
-        "token": "your-security-token"
-    },
-    "content": {
-        "example_key": "example_value"
-    }
-}
-```
-
-### Implementing a Standard Response
-
-To implement a standard response using this library, follow these steps:
-
-1. **Create the Response Object:**
-   - Fill in the `header` with the response metadata.
-   - Add the specific endpoint response object within the `content`.
-
-2. **Return the Response:**
-   - Return the response object as a JSON response to the client.
-
-### Example Response
-
-```json
-{
-    "header": {
-        "title": "Request Successful",
-        "message": "The request was processed successfully.",
-        "type": "success",
-        "code": "000",
-        "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjNjMWM3ODBlLWQxMDAtNGEwZS05MTc3LTc1ZGRmY2Q0ZWU4MSIsInR5cGUiOiJhcHAiLCJleHAiOjE3MDkzOTQ0MTV9.f9I97DpJA1D2ahxq9-edCNnVOZVoLYBoQwuvAJf6F_8",
-        "event_id": "f3c50980e8c71811b25b2319f0daf5a0",
-        "action": "example_action"
-    },
-    "content": {
-        "example_response_key": "example_response_value"
-    }
-}
-```
-
-## Golang Implementation Example
-
-Below is an example of how to use this library in a Golang project to create a standard success response.
-To use this library, you need to use the middleware function `api.ProcessRequest()`
-> See other helpful midlewares in the file `./middleware.go`
-
-### Example Usage in an API Handler
-
-```go
-package main
-
-import (
-	"net/http"
-
-	"github.com/jgolang/api"
-)
-
-func handler(w http.ResponseWriter, r *http.Request) {
-	response := api.Success200()
-	response.Content = map[string]interface{}{
-		"key": "value",
-	}
-	response.Write(w, r)
-}
-
-func main() {
-    middlewaresChain := MiddlewaresChain(middleware.ProcessRequest)
-	http.HandleFunc("/api/example", middlewaresChain(handler))
-	http.ListenAndServe(":8080", nil)
-}
-```
-
-In this example, the `handler` function creates a standard success response with a status code of 200 and some content. It then writes this response to the HTTP response writer. This ensures that all responses follow the same structure and include the necessary metadata.
-
-## Router-agnostic OpenAPI documentation
-
-The package includes a router-agnostic registration layer for OpenAPI 3 and Swagger UI. The native adapter uses only Go's standard `net/http` package, while adapters for Gin, Echo, chi, gorilla/mux, or other routers should live in the application that chooses those routers.
+The package includes a router-agnostic registration layer for OpenAPI 3 and Swagger UI. The native adapter uses only Go's standard `net/http` package, while adapters for Gin, Echo, chi, gorilla/mux, or other routers should live in the application that chooses those routers (`api.RegisterAdapter` and `api.NewRouter` register and build them by name).
 
 The philosophy is to keep `github.com/jgolang/api` small and predictable: prefer Go's standard library and `github.com/jgolang/...` dependencies, with any exception made explicitly.
 
@@ -262,17 +262,18 @@ func main() {
 
 	router := stdadapter.New(http.NewServeMux(), docs)
 
-	api.Post(router, "/tasks", createTask,
+	api.Post(router, "/tasks", api.ProcessRequest(createTask),
 		doc.Summary("Create task"),
 		doc.Tags("tasks"),
-		doc.Body(envelope.Request[CreateTaskRequest]()),
+		doc.Body(CreateTaskRequest{}),
 		doc.Security("bearerAuth"),
 		doc.Status(201, envelope.Success[TaskResponse]()),
 	)
 
-	api.Get(router, "/tasks", listTasks,
+	api.Get(router, "/tasks", api.ProcessRequest(listTasks),
 		doc.Summary("List tasks"),
 		doc.Tags("tasks"),
+		doc.Query("limit", doc.Int, false),
 		doc.Status(200, envelope.Success[[]TaskResponse]()),
 	)
 
@@ -283,11 +284,25 @@ func main() {
 }
 ```
 
-See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, and external adapter examples.
+`GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it. Document the body in the shape the request mode expects: the content type itself in plain mode (`doc.Body(CreateTaskRequest{})`), or `doc.Body(envelope.Request[CreateTaskRequest]())` in envelope mode. `envelope.Success[T]()` and `envelope.Error()` document the envelope response mode.
+
+See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
+
+## Security notes
+
+- `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
+- The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
+- Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
 
 ## Trace IDs
 
-The package does not depend on a tracing vendor. Applications can provide trace IDs through `api.RegisterTraceIDProvider(...)`; see [docs/tracing.md](docs/tracing.md).
+`api.ProcessRequest` gives every request an event ID. The package does not depend on a tracing vendor: register a provider with `api.RegisterTraceIDProvider(...)` and its trace ID becomes the event ID; without one, the event ID is a hash of the request UUID (or client IP), the time and the URI. See [docs/tracing.md](docs/tracing.md).
+
+The event ID is stored in the request context (`api.Context(r.Context()).EventID`) and in the `EventID` request header (`api.EventIDHeaderKey`), written in the response `event_id` field, used as the log correlation ID, and appended to messages according to `api.TraceVisibility`.
+
+## Legacy envelope
+
+The device-metadata request envelope, the v1 and v2 request receivers, the encrypted body flow and the `api.Response`-returning helpers are documented in [docs/legacy.md](docs/legacy.md).
 
 ## Contributing
 
