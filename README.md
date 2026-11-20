@@ -285,6 +285,8 @@ func main() {
 
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, and external adapter examples.
 
+`stdadapter` registers each route as a Go 1.22 `ServeMux` pattern (`GET /tasks/{id}`), so matching, precedence, 404 and 405 come from `net/http`; a GET route also answers HEAD. Paths match exactly (a trailing `/` does not match deeper paths). Registering a route that conflicts with an earlier one keeps the first and reports the conflict through `api.PrintError`. Wildcards must be whole segments (`/files/{name}`, not `/files/{name}.json`).
+
 ## Trace IDs
 
 The package does not depend on a tracing vendor. Applications can provide trace IDs through `api.RegisterTraceIDProvider(...)`; see [docs/tracing.md](docs/tracing.md).
