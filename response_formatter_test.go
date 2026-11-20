@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -68,6 +69,28 @@ func TestBlankSuccessBlanksOnlySuccessResponses(t *testing.T) {
 			}
 			if header.Title != "Heads up" || !strings.HasPrefix(header.Message, "task not found (") {
 				t.Fatalf("expected title and message with trace suffix, got %q %q", header.Title, header.Message)
+			}
+		})
+	}
+}
+
+func TestTraceSuffixIsSkippedForEmptyMessages(t *testing.T) {
+	useFormatterSettings(t, true)
+
+	for _, visibility := range []int{1, 2, 3} {
+		t.Run(fmt.Sprintf("TraceVisibility %d", visibility), func(t *testing.T) {
+			TraceVisibility = visibility
+
+			body, ok := ResponseFormatter{}.Format(core.ResponseData{
+				ResponseType: ErrorType,
+				ResponseCode: "PLN-111",
+				EventID:      "abc123",
+			}).Body.(envelope.Response)
+			if !ok {
+				t.Fatal("expected an envelope body")
+			}
+			if body.Header.Message != "" {
+				t.Fatalf("expected an empty message, got %q", body.Header.Message)
 			}
 		})
 	}
