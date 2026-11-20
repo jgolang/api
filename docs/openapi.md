@@ -119,12 +119,12 @@ operation.
 - `doc.ResponseSchema(400, "Bad Request", &doc.Schema{Type: "object"})`
 - `doc.Query("page", doc.Int, false)`
 - `doc.QueryWithDescription("page", doc.Int, false, "Page number")`
-- `doc.QueryEnum("in_inbox", "Only true is accepted.", false, "true")` (writes `schema.enum`)
+- `doc.QueryEnum("in_inbox", doc.Bool, false, "Only true is accepted.", true)` (writes `schema.enum`; values match the type)
 - `doc.Header("X-Request-ID", doc.String, false)`
 - `doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Trace request ID")`
 - `doc.Path("id", doc.Int, true)`
 - `doc.PathWithDescription("id", doc.Int, true, "Resource ID")`
-- `doc.PathEnum("status", "Task status.", "open", "done")`
+- `doc.PathEnum("status", doc.String, true, "Task status.", "open", "done")`
 - `doc.Security("bearerAuth")`
 
 ## Security schemes
