@@ -23,6 +23,7 @@ func shortID(traceID string) string {
 }
 
 // TraceVisibility controls how trace information is included in the response message.
+// No trace is added to an empty message.
 // - 1: Includes both event ID and response code.
 // - 2: Includes only the Code.
 // - 3: Includes only the event ID.
@@ -39,14 +40,16 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 	title := data.Title
 	code := strings.ToLower(string(data.ResponseCode))
 
-	if TraceVisibility == 1 {
-		msg = fmt.Sprintf("%s (%s-%s)", data.Message, shortID(data.EventID), code)
-	}
-	if TraceVisibility == 2 {
-		msg = fmt.Sprintf("%s (%s)", data.Message, code)
-	}
-	if TraceVisibility == 3 {
-		msg = fmt.Sprintf("%s (%s)", data.Message, shortID(data.EventID))
+	// A trace suffix on an empty message would show clients a bare " (id-code)".
+	if data.Message != "" {
+		switch TraceVisibility {
+		case 1:
+			msg = fmt.Sprintf("%s (%s-%s)", data.Message, shortID(data.EventID), code)
+		case 2:
+			msg = fmt.Sprintf("%s (%s)", data.Message, code)
+		case 3:
+			msg = fmt.Sprintf("%s (%s)", data.Message, shortID(data.EventID))
+		}
 	}
 	if BlankSuccess && data.ResponseType == SuccessType {
 		msg = ""
