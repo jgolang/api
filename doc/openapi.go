@@ -114,8 +114,15 @@ type RequestBodyObject struct {
 
 // MediaType is an OpenAPI media type object.
 type MediaType struct {
-	Schema  *Schema     `json:"schema,omitempty"`
-	Example interface{} `json:"example,omitempty"`
+	Schema   *Schema                  `json:"schema,omitempty"`
+	Example  interface{}              `json:"example,omitempty"`
+	Examples map[string]ExampleObject `json:"examples,omitempty"`
+}
+
+// ExampleObject is an OpenAPI example object.
+type ExampleObject struct {
+	Summary string      `json:"summary,omitempty"`
+	Value   interface{} `json:"value"`
 }
 
 // ResponseObject is an OpenAPI response object.
@@ -256,9 +263,15 @@ func buildOperation(route Route, schemas *openAPISchemaBuilder) Operation {
 			schema = schemas.SchemaFromType(response.Body)
 		}
 		if schema != nil {
-			object.Content = map[string]MediaType{
-				"application/json": {Schema: schema, Example: response.Example},
+			media := MediaType{Schema: schema, Example: response.Example}
+			if len(response.Examples) > 0 {
+				media.Example = nil
+				media.Examples = make(map[string]ExampleObject, len(response.Examples))
+				for name, value := range response.Examples {
+					media.Examples[name] = ExampleObject{Value: value}
+				}
 			}
+			object.Content = map[string]MediaType{"application/json": media}
 		}
 		operation.Responses[strconv.Itoa(response.Status)] = object
 	}

@@ -97,6 +97,22 @@ func ResponseWithDescriptionAndExample(status int, description string, body inte
 	}
 }
 
+// ResponseExamples adds a response model with several named examples, written
+// as the OpenAPI examples map, for a status that can answer in more than one
+// way (for example a 409 for two different conflicts). Like the other response
+// options, a later option for the same status replaces it.
+func ResponseExamples(status int, description string, body interface{}, examples map[string]interface{}) RouteOption {
+	examples = cloneExamples(examples)
+	return func(route *Route) {
+		route.Responses = append(route.Responses, RouteResponse{
+			Status:      status,
+			Description: description,
+			Body:        body,
+			Examples:    cloneExamples(examples),
+		})
+	}
+}
+
 // ResponseSchema adds a response with a manual schema.
 func ResponseSchema(status int, description string, schema *Schema) RouteOption {
 	return func(route *Route) {
