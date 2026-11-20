@@ -46,6 +46,25 @@ With the default `api.BlankSuccess = true`, success responses leave `title` and 
 The `content` part contains the actual data for the specific endpoint request. This is where the endpoint-specific request object goes.
 
 
+## Query parameters
+
+`api.QueryInt`, `api.QueryBool`, `api.QueryEnum` and `api.QueryString` read the first value of a query parameter and tell absent from invalid. `ok` is false when the parameter is absent. An invalid value, an empty one for the typed helpers, or a malformed query string that hides the parameter returns `ok` true and a validation error (`codes.ValFormat`), which `api.WriteError` answers with 400. `api.WithQueryCode` sets your own code; give it `codes.KindValidation` to keep the 400.
+
+```go
+var CodeLimitInvalid = codes.New("PLN-050", "limit must be a number").WithKind(codes.KindValidation)
+
+limit, ok, err := api.QueryInt(r, "limit", api.WithQueryCode(CodeLimitInvalid))
+if err != nil {
+	api.WriteError(w, r, err) // 400
+	return
+}
+if !ok {
+	limit = 20
+}
+```
+
+The older `api.GetQueryParamValue*` helpers return an `api.Response`; prefer the `Query*` helpers in new code.
+
 ## Writing errors
 
 `api.WriteError(w, r, err)` answers with the status of the error's code kind (`jgolang/errors` v0.4.0+): validation 400, unauthorized 401, forbidden 403, not_found 404, conflict 409, and 500 for infrastructure or a code without a kind. The response code and message come from the same code, also behind `fmt.Errorf`. `api.StatusForKind` exposes the mapping.
