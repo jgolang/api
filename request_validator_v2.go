@@ -2,12 +2,13 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/jgolang/api/core"
 	"github.com/jgolang/api/envelope"
+	"github.com/jgolang/errors"
+	"github.com/jgolang/errors/codes"
 )
 
 // RequestReceiverV2 implementation of core.APIRequestReceiver interface
@@ -15,7 +16,9 @@ type RequestReceiverV2 struct{}
 
 // ProcessEncryptedBody reads the encrypted payload from the values data and
 // metadata, taken from the form body or the URL query (r.FormValue). Both are
-// required. A body that cannot be parsed returns the parse error. On any error
+// required; a missing one returns an error with the validation code
+// codes.ValRequired (400 through WriteError). A body that cannot be parsed
+// returns the parse error. On any error
 // the returned value is empty.
 func (receiver RequestReceiverV2) ProcessEncryptedBody(r *http.Request) (*core.RequestEncryptedData, error) {
 	var requestData core.RequestEncryptedData
@@ -27,7 +30,7 @@ func (receiver RequestReceiverV2) ProcessEncryptedBody(r *http.Request) (*core.R
 	metadata := r.FormValue("metadata")
 
 	if data == "" || metadata == "" {
-		return &requestData, fmt.Errorf("does not provide required information")
+		return &requestData, errors.NewC(codes.ValRequired, "does not provide required information")
 	}
 
 	requestData.Data = data

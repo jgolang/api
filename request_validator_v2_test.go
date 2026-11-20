@@ -5,6 +5,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jgolang/errors"
+	"github.com/jgolang/errors/codes"
 )
 
 func encryptedBodyRequest(body string) *http.Request {
@@ -41,8 +44,8 @@ func TestProcessEncryptedBodyRejectsIncompletePayload(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := RequestReceiverV2{}.ProcessEncryptedBody(encryptedBodyRequest(tt.body))
 
-			if err == nil || err.Error() != "does not provide required information" {
-				t.Fatalf("expected the missing-information error, got %v", err)
+			if errors.CodeOf(err) != codes.ValRequired {
+				t.Fatalf("expected the ValRequired code, got %v", err)
 			}
 		})
 	}
