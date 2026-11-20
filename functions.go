@@ -155,6 +155,9 @@ func GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, Response) {
 }
 
 // GetQueryParamValueString gets query param value as string.
+//
+// See also the Query* helpers (QueryString, QueryInt, QueryBool, QueryEnum),
+// which tell an absent parameter from an invalid one.
 func GetQueryParamValueString(queryParamName string, r *http.Request) (string, Response) {
 	value, err := api.GetQueryParamValueString(queryParamName, r)
 	if err != nil {
@@ -169,6 +172,9 @@ func GetQueryParamValueString(queryParamName string, r *http.Request) (string, R
 }
 
 // GetQueryParamValueInt gets query param value as integer.
+//
+// See also the Query* helpers (QueryString, QueryInt, QueryBool, QueryEnum),
+// which tell an absent parameter from an invalid one.
 func GetQueryParamValueInt(queryParamName string, r *http.Request) (int, Response) {
 	value, err := api.GetQueryParamValueInt(queryParamName, r)
 	if err != nil {
@@ -182,6 +188,9 @@ func GetQueryParamValueInt(queryParamName string, r *http.Request) (int, Respons
 }
 
 // GetQueryParamValueInt64 gets query param value as integer 64.
+//
+// See also the Query* helpers (QueryString, QueryInt, QueryBool, QueryEnum),
+// which tell an absent parameter from an invalid one.
 func GetQueryParamValueInt64(queryParamName string, r *http.Request) (int64, Response) {
 	value, err := api.GetQueryParamValueInt64(queryParamName, r)
 	if err != nil {
@@ -195,6 +204,9 @@ func GetQueryParamValueInt64(queryParamName string, r *http.Request) (int64, Res
 }
 
 // GetQueryParamValueFloat64 gets query param value as float 64.
+//
+// See also the Query* helpers (QueryString, QueryInt, QueryBool, QueryEnum),
+// which tell an absent parameter from an invalid one.
 func GetQueryParamValueFloat64(queryParamName string, r *http.Request) (float64, Response) {
 	value, err := api.GetQueryParamValueFloat64(queryParamName, r)
 	if err != nil {
@@ -208,6 +220,9 @@ func GetQueryParamValueFloat64(queryParamName string, r *http.Request) (float64,
 }
 
 // GetQueryParamValueBool gets param value as bool.
+//
+// See also the Query* helpers (QueryString, QueryInt, QueryBool, QueryEnum),
+// which tell an absent parameter from an invalid one.
 func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Response) {
 	value, err := api.GetQueryParamValueBool(queryParamName, r)
 	if err != nil {

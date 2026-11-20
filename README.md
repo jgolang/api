@@ -48,9 +48,11 @@ The `content` part contains the actual data for the specific endpoint request. T
 
 ## Query parameters
 
-`api.QueryInt`, `api.QueryBool`, `api.QueryEnum` and `api.QueryString` read a query parameter and tell absent from invalid. `ok` is false when the parameter is absent; an invalid value returns `ok` true and a validation error (`codes.ValFormat`, or your code through `api.WithQueryCode`), which `api.WriteError` answers with 400.
+`api.QueryInt`, `api.QueryBool`, `api.QueryEnum` and `api.QueryString` read the first value of a query parameter and tell absent from invalid. `ok` is false when the parameter is absent. An invalid value, an empty one for the typed helpers, or a malformed query string that hides the parameter returns `ok` true and a validation error (`codes.ValFormat`), which `api.WriteError` answers with 400. `api.WithQueryCode` sets your own code; give it `codes.KindValidation` to keep the 400.
 
 ```go
+var CodeLimitInvalid = codes.New("PLN-050", "limit must be a number").WithKind(codes.KindValidation)
+
 limit, ok, err := api.QueryInt(r, "limit", api.WithQueryCode(CodeLimitInvalid))
 if err != nil {
 	api.WriteError(w, r, err) // 400
@@ -60,6 +62,8 @@ if !ok {
 	limit = 20
 }
 ```
+
+The older `api.GetQueryParamValue*` helpers return an `api.Response`; prefer the `Query*` helpers in new code.
 
 ## Writing errors
 

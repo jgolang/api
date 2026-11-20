@@ -10,7 +10,9 @@ import (
 )
 
 func queryRequest(rawQuery string) *http.Request {
-	return httptest.NewRequest(http.MethodGet, "/tasks?"+rawQuery, nil)
+	r := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	r.URL.RawQuery = rawQuery
+	return r
 }
 
 func TestQueryInt(t *testing.T) {
@@ -19,83 +21,168 @@ func TestQueryInt(t *testing.T) {
 		query     string
 		wantValue int
 		wantOK    bool
-		wantErr   bool
+		wantCode  codes.Coder
 	}{
 		{name: "present", query: "limit=20", wantValue: 20, wantOK: true},
+		{name: "signed", query: "limit=-5", wantValue: -5, wantOK: true},
 		{name: "absent", query: "", wantOK: false},
-		{name: "empty", query: "limit=", wantOK: true, wantErr: true},
-		{name: "invalid", query: "limit=abc", wantOK: true, wantErr: true},
+		{name: "empty", query: "limit=", wantOK: true, wantCode: codes.ValFormat},
+		{name: "not a number", query: "limit=abc", wantOK: true, wantCode: codes.ValFormat},
+		{name: "first value wins", query: "limit=abc&limit=5", wantOK: true, wantCode: codes.ValFormat},
+		{name: "malformed escape", query: "limit=%zz", wantOK: true, wantCode: codes.ValFormat},
+		{name: "semicolon", query: "a=1;limit=5", wantOK: true, wantCode: codes.ValFormat},
+		{name: "malformed elsewhere", query: "a=%zz&limit=7", wantValue: 7, wantOK: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			value, ok, err := QueryInt(queryRequest(tt.query), "limit")
 
-			if value != tt.wantValue || ok != tt.wantOK || (err != nil) != tt.wantErr {
-				t.Fatalf("QueryInt = %d, %v, %v; want %d, %v, err %v", value, ok, err, tt.wantValue, tt.wantOK, tt.wantErr)
+			if value != tt.wantValue || ok != tt.wantOK || errors.CodeOf(err) != tt.wantCode {
+				t.Fatalf("QueryInt = %d, %v, %v; want %d, %v, code %v", value, ok, err, tt.wantValue, tt.wantOK, tt.wantCode)
 			}
 		})
 	}
 }
 
 func TestQueryBool(t *testing.T) {
-	value, ok, err := QueryBool(queryRequest("in_inbox=true"), "in_inbox")
-	if !value || !ok || err != nil {
-		t.Fatalf("QueryBool = %v, %v, %v", value, ok, err)
+	tests := []struct {
+		name      string
+		query     string
+		wantValue bool
+		wantOK    bool
+		wantErr   bool
+	}{
+		{name: "true", query: "in_inbox=true", wantValue: true, wantOK: true},
+		{name: "absent", query: "", wantOK: false},
+		{name: "empty", query: "in_inbox=", wantOK: true, wantErr: true},
+		{name: "invalid", query: "in_inbox=maybe", wantOK: true, wantErr: true},
 	}
-	if _, ok, err := QueryBool(queryRequest("in_inbox=maybe"), "in_inbox"); !ok || err == nil {
-		t.Fatalf("expected an invalid bool error, got ok=%v err=%v", ok, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, ok, err := QueryBool(queryRequest(tt.query), "in_inbox")
+
+			if value != tt.wantValue || ok != tt.wantOK || (err != nil) != tt.wantErr {
+				t.Fatalf("QueryBool = %v, %v, %v", value, ok, err)
+			}
+		})
 	}
 }
 
 func TestQueryEnum(t *testing.T) {
-	value, ok, err := QueryEnum(queryRequest("in_inbox=true"), "in_inbox", []string{"true"})
-	if value != "true" || !ok || err != nil {
-		t.Fatalf("QueryEnum = %q, %v, %v", value, ok, err)
+	tests := []struct {
+		name      string
+		query     string
+		wantValue string
+		wantOK    bool
+		wantErr   bool
+	}{
+		{name: "allowed", query: "in_inbox=true", wantValue: "true", wantOK: true},
+		{name: "outside the enum", query: "in_inbox=false", wantOK: true, wantErr: true},
+		{name: "absent", query: "", wantOK: false},
 	}
-	if _, ok, err := QueryEnum(queryRequest("in_inbox=false"), "in_inbox", []string{"true"}); !ok || err == nil {
-		t.Fatalf("expected a value outside the enum to be invalid, got ok=%v err=%v", ok, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, ok, err := QueryEnum(queryRequest(tt.query), "in_inbox", []string{"true"})
+
+			if value != tt.wantValue || ok != tt.wantOK || (err != nil) != tt.wantErr {
+				t.Fatalf("QueryEnum = %q, %v, %v", value, ok, err)
+			}
+		})
 	}
-	if _, ok, err := QueryEnum(queryRequest(""), "in_inbox", []string{"true"}); ok || err != nil {
-		t.Fatalf("expected absent, got ok=%v err=%v", ok, err)
+}
+
+func TestQueryEnumErrorNamesTheAllowedValues(t *testing.T) {
+	_, _, err := QueryEnum(queryRequest("status=x"), "status", []string{"open", "done"})
+
+	if err == nil || err.Error() != `[b002](Invalid format.): query parameter "status" must be one of open, done` {
+		t.Fatalf("unexpected error %v", err)
 	}
 }
 
 func TestQueryString(t *testing.T) {
 	tests := []struct {
+		name      string
 		query     string
 		wantValue string
 		wantOK    bool
 	}{
-		{query: "q=tasks", wantValue: "tasks", wantOK: true},
-		{query: "q=", wantValue: "", wantOK: true},
-		{query: "", wantValue: "", wantOK: false},
+		{name: "present", query: "q=tasks", wantValue: "tasks", wantOK: true},
+		{name: "empty", query: "q=", wantValue: "", wantOK: true},
+		{name: "absent", query: "", wantValue: "", wantOK: false},
 	}
+
 	for _, tt := range tests {
-		value, ok := QueryString(queryRequest(tt.query), "q")
-		if value != tt.wantValue || ok != tt.wantOK {
-			t.Fatalf("QueryString(%q) = %q, %v", tt.query, value, ok)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			value, ok, err := QueryString(queryRequest(tt.query), "q")
+
+			if value != tt.wantValue || ok != tt.wantOK || err != nil {
+				t.Fatalf("QueryString = %q, %v, %v", value, ok, err)
+			}
+		})
 	}
 }
 
-func TestQueryErrorIsAValidationCode(t *testing.T) {
+func TestQueryErrorAnswers400(t *testing.T) {
 	_, _, err := QueryInt(queryRequest("limit=abc"), "limit")
 
-	if errors.KindOf(err) != codes.KindValidation || StatusForKind(errors.KindOf(err)) != http.StatusBadRequest {
-		t.Fatalf("expected a validation-kind error answering 400, got %v", err)
-	}
-	if errors.CodeOf(err) != codes.ValFormat {
-		t.Fatalf("expected the default ValFormat code, got %v", errors.CodeOf(err))
+	if StatusForKind(errors.KindOf(err)) != http.StatusBadRequest {
+		t.Fatalf("expected a validation kind answering 400, got %v", errors.KindOf(err))
 	}
 }
 
-func TestQueryErrorCodeCanBeOverriddenPerCall(t *testing.T) {
+func TestWithQueryCodeOverridesTheCode(t *testing.T) {
 	limitInvalid := codes.New("PLN-050", "limit must be a number").WithKind(codes.KindValidation)
 
-	_, _, err := QueryInt(queryRequest("limit=abc"), "limit", WithQueryCode(limitInvalid))
+	tests := []struct {
+		name string
+		call func(QueryOption) error
+	}{
+		{name: "QueryInt", call: func(o QueryOption) error { _, _, err := QueryInt(queryRequest("v=x"), "v", o); return err }},
+		{name: "QueryBool", call: func(o QueryOption) error { _, _, err := QueryBool(queryRequest("v=x"), "v", o); return err }},
+		{name: "QueryEnum", call: func(o QueryOption) error {
+			_, _, err := QueryEnum(queryRequest("v=x"), "v", []string{"y"}, o)
+			return err
+		}},
+	}
 
-	if errors.CodeOf(err) != limitInvalid {
-		t.Fatalf("expected the override code, got %v", errors.CodeOf(err))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := errors.CodeOf(tt.call(WithQueryCode(limitInvalid))); got != limitInvalid {
+				t.Fatalf("expected the override code, got %v", got)
+			}
+		})
+	}
+}
+
+func TestNilQueryOptionsAreIgnored(t *testing.T) {
+	tests := []struct {
+		name string
+		opt  QueryOption
+	}{
+		{name: "nil option", opt: nil},
+		{name: "nil code", opt: WithQueryCode(nil)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := QueryInt(queryRequest("limit=abc"), "limit", tt.opt)
+
+			if errors.CodeOf(err) != codes.ValFormat {
+				t.Fatalf("expected the default code, got %v", err)
+			}
+		})
+	}
+}
+
+func BenchmarkQueryInt(b *testing.B) {
+	r := queryRequest("limit=20&offset=40&in_inbox=true")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, _, err := QueryInt(r, "limit"); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
