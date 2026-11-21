@@ -402,7 +402,8 @@ var MaxLoggedBodyBytes int = 2000
 
 // SensitiveLogKeys defines fields, headers and query parameters that must be
 // redacted in logs: by default authorization, token, password, secret,
-// credential, apikey, api-key, key, cookie and session. A name is sensitive
+// credential, apikey, api-key, key, cookie, session, code, signature and sig
+// (the last three since v1.1.2). A name is sensitive
 // when it contains one of the keys, ignoring case.
 // The default instance reads it at call time and masks the built-in keys
 // plus these, so it can add keys but no longer remove a built-in one; an
@@ -426,6 +427,9 @@ func defaultSensitiveLogKeys() []string {
 		"key",
 		"cookie",
 		"session",
+		"code",
+		"signature",
+		"sig",
 	}
 }
 
