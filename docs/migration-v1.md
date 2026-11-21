@@ -24,7 +24,7 @@ Requests that no `a.Handler` wraps use the default instance. It keeps v0's behav
 - Response codes are lowercased (`e001`, `tsk-001`).
 - The package variables are read at call time: `CurrentRequestMode`, `CurrentResponseMode`, `TraceVisibility`, `TraceIDLength`, `BlankSuccess` and the body-logging variables.
 - The components set with `RegisterNewAPIRequestReceiver`, `RegisterNewAPIResponseFormatter` and `RegisterNewAPIResponseWriter` are used.
-- Logging goes through `Print` and `PrintError` and writes the same lines as v0.11.0. A response that cannot be encoded is answered with 500, as in v0.11.0; `Fatal` is never called.
+- Logging goes through `Print` and `PrintError` and writes the same lines as v0.11.0. A response that cannot be encoded is answered with 500, as in v0.11.0; `Fatal` is never called. That 500 now drops the failed body's `Content-Type`, `Content-Encoding`, `Content-Length` and similar headers, and answers with no body instead of panicking when a registered formatter returns nil.
 - `SensitiveLogKeys` keeps its v0.11.0 list (with `cookie` and `session`) and masking (headers, JSON body fields, query and form values, the user information of the `uri`).
 
 Deprecated names are reported by staticcheck (`SA1019`) and by gopls in your editor. `go vet` does not report them. Fix the routing first (step 2); the deprecations can wait until step 3.
