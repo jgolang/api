@@ -145,7 +145,7 @@ token := rctx.SecurityToken
 
 Request metadata comes from HTTP headers: `X-Request-ID` (else `UUID`) for the request UUID, `SecurityToken` (else `Authorization: Bearer <token>`) for the token, `AppLanguage` (else `Accept-Language`) for the language, and `DeviceType`, `DeviceBrand`, `DeviceModel`, `DeviceOS`, `OSVersion`, `OSTimezone`, `AppVersion`, `AppBuildVersion`, `AppName`, `DeviceSerial`, `DeviceID`, `Latitude`, `Longitude` for the client. In envelope request mode the JSON `header` fills the same fields when the HTTP header is absent.
 
-Route variables are read with `api.GetRouteVar("id", r)`. `stdadapter` matches `{id}` segments itself and stores them with `api.SetRouteVars`, so `r.PathValue` is empty there; an adapter for another router either calls `api.SetRouteVars` or replaces `api.GetRouteVar`.
+Route variables are read with `api.GetRouteVar("id", r)`. `stdadapter` stores the `ServeMux` path values with `api.SetRouteVars`, so `r.PathValue("id")` works there too; an adapter for another router either calls `api.SetRouteVars` or replaces `api.GetRouteVar`.
 
 ## Query parameters
 
@@ -288,13 +288,26 @@ func main() {
 
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
 
+### stdadapter routing
+
+`stdadapter` registers each route as one Go 1.22 `ServeMux` pattern (`GET /tasks/{id}`), so matching, precedence, 404 and 405 come from `net/http`. Compared with earlier versions, which matched routes themselves:
+
+1. The most specific route wins (`/tasks/new` beats `/tasks/{id}`); routes that overlap with equal specificity (`/tasks/{id}` and `/tasks/{name}`) conflict.
+2. A trailing slash is exact: `/tasks/42/` is 404 for `/tasks/{id}`, and a registered `/tasks/` still matches only `/tasks/`.
+3. An escaped `%2F` inside a segment matches a wildcard (`/files/a%2Fb` gives `name` = `a/b` for `/files/{name}`).
+4. Wildcard names must be Go identifiers (`{user_id}`, not `{user-id}`) and whole segments (`/files/{name}`, not `/files/{name}.json`).
+5. 405 is decided by the whole mux and carries an `Allow` header.
+6. A GET route also answers HEAD.
+7. Unclean paths (`//tasks`, `/a/../tasks`) keep ServeMux's redirect to the cleaned path (307); this did not change, though earlier notes said 301.
+8. `GODEBUG=httpmuxgo121=1` turns off `ServeMux` patterns and breaks every route; the adapter requires the Go 1.22 mux.
+
+Registering a route that conflicts with an earlier one (the same method and path, or wildcards in the same place), or an invalid pattern, panics in `Handle` as it does in `http.ServeMux.Handle`; the route is not documented. See [ADR 0002](docs/adr/0002-stdadapter-servemux.md).
+
 ## Security notes
 
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
 - Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
-
-`stdadapter` registers each route as a Go 1.22 `ServeMux` pattern (`GET /tasks/{id}`), so matching, precedence, 404 and 405 come from `net/http`; a GET route also answers HEAD. Paths match exactly (a trailing `/` does not match deeper paths). Registering a route that conflicts with an earlier one keeps the first and reports the conflict through `api.PrintError`. Wildcards must be whole segments (`/files/{name}`, not `/files/{name}.json`).
 
 ## Trace IDs
 

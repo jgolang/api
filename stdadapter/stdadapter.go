@@ -44,17 +44,20 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handle registers handler for method and path and stores its metadata.
-// {name} segments become path variables read with api.GetRouteVar. A path is
-// matched exactly; a trailing slash does not match deeper paths. When a route
-// conflicts with one registered before (the same method and path, or wildcards
-// in the same place), the first one is kept and the conflict is reported
-// through api.PrintError.
+//
+// The route becomes the Go 1.22 ServeMux pattern "METHOD path" and is matched
+// exactly: a trailing slash matches only itself, not the paths below it.
+// {name} segments must be whole segments named by Go identifiers; their values
+// are read with api.GetRouteVar. Precedence, 404, 405 and HEAD for GET routes
+// come from http.ServeMux.
+//
+// Handle panics, as http.ServeMux.Handle does, when path is not a valid pattern
+// or conflicts with a route registered before (the same method and path, or
+// wildcards in the same place). A rejected route is not documented. See
+// docs/adr/0002-stdadapter-servemux.md.
 func (router *Router) Handle(method string, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
-	if router.docs != nil {
-		router.docs.Register(method, path, opts...)
-	}
 	names := pathVarNames(path)
-	router.register(method+" "+exactPattern(path), func(w http.ResponseWriter, r *http.Request) {
+	router.mux.HandleFunc(method+" "+exactPattern(path), func(w http.ResponseWriter, r *http.Request) {
 		if len(names) > 0 {
 			vars := make(map[string]string, len(names))
 			for _, name := range names {
@@ -64,17 +67,9 @@ func (router *Router) Handle(method string, path string, handler http.HandlerFun
 		}
 		handler(w, r)
 	})
-}
-
-// register adds pattern to the mux. ServeMux panics on a conflicting pattern;
-// the first registration is kept, as before ServeMux patterns were used.
-func (router *Router) register(pattern string, handler http.HandlerFunc) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			api.PrintError(fmt.Sprintf("stdadapter: route %q not registered: %v", pattern, recovered))
-		}
-	}()
-	router.mux.HandleFunc(pattern, handler)
+	if router.docs != nil {
+		router.docs.Register(method, path, opts...)
+	}
 }
 
 func normalizePath(path string) string {
