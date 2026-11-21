@@ -9,7 +9,11 @@ import (
 )
 
 // ResponseFormatter implementation of core.APIResponseFormatter interface.
-type ResponseFormatter struct{}
+// The zero value formats with CurrentResponseMode.
+type ResponseFormatter struct {
+	// mode is set by New; empty means the default instance's package variable.
+	mode ResponseMode
+}
 
 // TraceIDLength specifies the number of characters to return from the beginning of the input trace ID.
 var TraceIDLength = 6
@@ -71,7 +75,7 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 		Content: data.Content,
 		Header:  responseInfo,
 	})
-	switch CurrentResponseMode {
+	switch formatter.responseMode() {
 	case ResponseModeNone:
 		body = data.Content
 	case ResponseModePlain:
@@ -93,4 +97,11 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 		Headers:        data.Headers,
 		Body:           body,
 	}
+}
+
+func (formatter ResponseFormatter) responseMode() ResponseMode {
+	if formatter.mode == "" {
+		return CurrentResponseMode
+	}
+	return formatter.mode
 }

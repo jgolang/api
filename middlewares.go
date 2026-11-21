@@ -133,7 +133,7 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if ValidateMethods(keyListMethods, r.Method) {
-				requestData, err := api.ProcessBody(r)
+				requestData, err := instanceFrom(r).core.ProcessBody(r)
 				if err != nil {
 					PrintError(err)
 					Error{
