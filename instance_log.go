@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +17,9 @@ import (
 )
 
 // instanceSensitiveLogKeys returns a fresh list of the keys an instance from
-// New masks: the v0 list, cookie and session, then added.
+// New masks: the default list, then added.
 func instanceSensitiveLogKeys(added []string) []string {
-	keys := append(v0SensitiveLogKeys(), "cookie", "session")
-	return append(keys, added...)
+	return append(v0SensitiveLogKeys(), added...)
 }
 
 // logs reports whether a writes records at level. The default instance and
@@ -117,15 +115,15 @@ func (a *API) logResponse(r *http.Request, eventID string, rec *httptest.Respons
 }
 
 // logPanic logs a panic ProcessRequest recovered. The default instance keeps
-// the v0 PrintError calls; an instance from New logs the panic value, not
-// the request. A panic with http.ErrAbortHandler is a deliberate abort, so it
+// the PrintError calls of v0.11.0, which log the panic value; an instance
+// from New logs the panic value with the event ID. A panic with http.ErrAbortHandler is a deliberate abort, so it
 // is logged at debug level as "handler aborted".
 func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 	if !a.fromNew {
 		if err, ok := recovered.(error); ok {
 			PrintError(err)
 		} else {
-			PrintError("Not response: ", fmt.Sprintf("%v", r))
+			PrintError("Not response: ", fmt.Sprintf("%v", recovered))
 		}
 		return
 	}
@@ -140,76 +138,6 @@ func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 		slog.String("event_id", eventID),
 		slog.Any("panic", recovered),
 	)
-}
-
-// redactURI masks the query values of uri whose key is sensitive and, in an
-// absolute-form URI (scheme://user:pass@host/...), the user information.
-// Path segments are not masked.
-func redactURI(uri string, sensitiveKeys []string) string {
-	// The user information goes first: a raw "?" in a password would
-	// otherwise be taken for the start of the query.
-	path, query, found := strings.Cut(redactUserInfo(uri), "?")
-	if !found || query == "" {
-		if found {
-			return path + "?"
-		}
-		return path
-	}
-	return path + "?" + redactQuery(query, sensitiveKeys)
-}
-
-// redactUserInfo replaces the user information of an absolute-form request
-// target with redactedLogValue: everything from "://" to the last "@" before
-// the first "#", so a raw "/" or "?" in a password is masked too.
-func redactUserInfo(target string) string {
-	scheme, rest, found := strings.Cut(target, "://")
-	if !found || strings.ContainsAny(scheme, "/?#") {
-		return target
-	}
-	beforeFragment, _, _ := strings.Cut(rest, "#")
-	at := strings.LastIndex(beforeFragment, "@")
-	if at < 0 {
-		return target
-	}
-	return scheme + "://" + redactedLogValue + rest[at:]
-}
-
-// redactQuery masks the values of rawQuery whose unescaped key is sensitive,
-// and the values whose key cannot be unescaped. It rebuilds the query part by
-// part, splitting on "&" and ";" and keeping each separator, so the other
-// parameters keep their order and encoding; a part without "=" has no value
-// and is kept.
-func redactQuery(rawQuery string, sensitiveKeys []string) string {
-	if rawQuery == "" {
-		return rawQuery
-	}
-	var redacted strings.Builder
-	redacted.Grow(len(rawQuery))
-	for rawQuery != "" {
-		end := strings.IndexAny(rawQuery, "&;")
-		part, separator := rawQuery, ""
-		if end >= 0 {
-			part, separator = rawQuery[:end], rawQuery[end:end+1]
-			rawQuery = rawQuery[end+1:]
-		} else {
-			rawQuery = ""
-		}
-		redacted.WriteString(redactQueryPart(part, sensitiveKeys))
-		redacted.WriteString(separator)
-	}
-	return redacted.String()
-}
-
-func redactQueryPart(part string, sensitiveKeys []string) string {
-	rawKey, _, hasValue := strings.Cut(part, "=")
-	if !hasValue {
-		return part
-	}
-	key, err := url.QueryUnescape(rawKey)
-	if err != nil || isSensitiveKey(key, sensitiveKeys) {
-		return rawKey + "=" + redactedLogValue
-	}
-	return part
 }
 
 // writeForInstance is the Write of an instance's built-in writer. It encodes

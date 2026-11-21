@@ -35,6 +35,12 @@ var (
 var MiddlewaresChain = core.MiddlewaresChain
 
 // BasicToken validates basic authentication token middleware.
+//
+// With the default validator it answers 401 to every request while
+// Username or Password is empty or "default"; set both (or replace
+// ValidateBasicAuthCredentialsFunc) to use it. After a successful check it
+// copies the user name and the plain password into the Basic-Client and
+// Basic-Secret request headers; do not forward or log those headers.
 func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
@@ -174,6 +180,12 @@ func GenSkipPath(method string, path string) SkipPath {
 }
 
 // ProcessRequest process request information.
+//
+// The proxiedIPAddress info value is the first X-Forwarded-For header line up
+// to its first ", ", which the client sets; trust it only behind a proxy that
+// overwrites the header.
+// The whole request body is read into memory with no size limit; bound it
+// before this middleware runs (http.MaxBytesHandler or http.MaxBytesReader).
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

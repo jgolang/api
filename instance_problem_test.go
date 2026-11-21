@@ -44,7 +44,7 @@ func TestProblemInstanceWritesAnErrorAsProblemDetails(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != problemContentType {
 		t.Fatalf("Content-Type = %q, want %q", got, problemContentType)
 	}
-	want := `{"type":"about:blank","title":"Error response!","status":404,"detail":"task not found","code":"PLN-404","event_id":"evt-123"}`
+	want := `{"type":"about:blank","title":"Not Found","status":404,"detail":"task not found","code":"PLN-404","event_id":"evt-123"}`
 	if got := strings.TrimSpace(rec.Body.String()); got != want {
 		t.Fatalf("body = %s, want %s", got, want)
 	}
@@ -66,43 +66,43 @@ func TestProblemDetailsMembers(t *testing.T) {
 			name:    "no event ID",
 			a:       problemInstance(),
 			handler: writeTaskNotFound,
-			want:    map[string]any{"type": "about:blank", "title": "Error response!", "status": 404.0, "detail": "task not found", "code": "PLN-404"},
+			want:    map[string]any{"type": "about:blank", "title": "Not Found", "status": 404.0, "detail": "task not found", "code": "PLN-404"},
 		},
 		{
 			name:    "lowercase codes",
 			a:       problemInstance(WithLowercaseCodes()),
 			handler: writeTaskNotFound,
-			want:    map[string]any{"type": "about:blank", "title": "Error response!", "status": 404.0, "detail": "task not found", "code": "pln-404"},
+			want:    map[string]any{"type": "about:blank", "title": "Not Found", "status": 404.0, "detail": "task not found", "code": "pln-404"},
 		},
 		{
 			name:    "Error400",
 			a:       problemInstance(),
 			handler: func(w http.ResponseWriter, r *http.Request) { Error400().Write(w, r) },
-			want:    map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 400.0, "detail": DefaultErrorMessage, "code": "E001"},
+			want:    map[string]any{"type": "about:blank", "title": "Bad Request", "status": 400.0, "detail": DefaultErrorMessage, "code": "E001"},
 		},
 		{
 			name:    "Error401",
 			a:       problemInstance(),
 			handler: func(w http.ResponseWriter, r *http.Request) { Error401().Write(w, r) },
-			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 401.0, "detail": UnauthorizedMessage, "code": "B001"},
+			want:    map[string]any{"type": "about:blank", "title": "Unauthorized", "status": 401.0, "detail": UnauthorizedMessage, "code": "B001"},
 		},
 		{
 			name:    "WriteError nil",
 			a:       problemInstance(),
 			handler: func(w http.ResponseWriter, r *http.Request) { WriteError(w, r, nil) },
-			want:    map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 500.0, "detail": InternalServerMessage, "code": "E300"},
+			want:    map[string]any{"type": "about:blank", "title": "Internal Server Error", "status": 500.0, "detail": InternalServerMessage, "code": "E300"},
 		},
 		{
 			name:    "formatter value",
 			a:       problemInstance(WithResponseFormatter(ResponseFormatter{})),
 			handler: writeTaskNotFound,
-			want:    map[string]any{"type": "about:blank", "title": "Error response!", "status": 404.0, "detail": "task not found", "code": "PLN-404"},
+			want:    map[string]any{"type": "about:blank", "title": "Not Found", "status": 404.0, "detail": "task not found", "code": "PLN-404"},
 		},
 		{
 			name:    "formatter pointer",
 			a:       problemInstance(WithResponseFormatter(&ResponseFormatter{})),
 			handler: writeTaskNotFound,
-			want:    map[string]any{"type": "about:blank", "title": "Error response!", "status": 404.0, "detail": "task not found", "code": "PLN-404"},
+			want:    map[string]any{"type": "about:blank", "title": "Not Found", "status": 404.0, "detail": "task not found", "code": "PLN-404"},
 		},
 		{
 			// The rejection comes before ProcessRequest generates an event ID.
@@ -110,38 +110,38 @@ func TestProblemDetailsMembers(t *testing.T) {
 			a:       problemInstance(),
 			handler: ProcessRequest(writeSuccess),
 			body:    `{"title":`,
-			want:    map[string]any{"type": "about:blank", "title": "Invalid request content", "status": 400.0, "detail": "Request content empty json structure", "code": "E002"},
+			want:    map[string]any{"type": "about:blank", "title": "Bad Request", "status": 400.0, "detail": "Request content empty json structure", "code": "E002"},
 		},
 		{
 			name:          "ProcessRequest panic",
 			a:             problemInstance(),
 			handler:       ProcessRequest(func(http.ResponseWriter, *http.Request) { panic("boom") }),
 			ignoreEventID: true,
-			want:          map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 500.0, "detail": InternalServerMessage, "code": "E300"},
+			want:          map[string]any{"type": "about:blank", "title": "Internal Server Error", "status": 500.0, "detail": InternalServerMessage, "code": "E300"},
 		},
 		{
 			name:    "WithKindStatus 410",
 			a:       problemInstance(WithKindStatus(codes.KindNotFound, http.StatusGone)),
 			handler: writeTaskNotFound,
-			want:    map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 410.0, "detail": "task not found", "code": "PLN-404"},
+			want:    map[string]any{"type": "about:blank", "title": "Gone", "status": 410.0, "detail": "task not found", "code": "PLN-404"},
 		},
 		{
 			name:    "WithKindStatus 503",
 			a:       problemInstance(WithKindStatus(codes.KindNotFound, http.StatusServiceUnavailable)),
 			handler: writeTaskNotFound,
-			want:    map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 503.0, "detail": "task not found", "code": "PLN-404"},
+			want:    map[string]any{"type": "about:blank", "title": "Service Unavailable", "status": 503.0, "detail": "task not found", "code": "PLN-404"},
 		},
 		{
 			name:    "BasicToken",
 			a:       problemInstance(),
 			handler: BasicToken(writeSuccess),
-			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 401.0, "detail": DefaultInvalidAuthHeaderMsg, "code": "B001"},
+			want:    map[string]any{"type": "about:blank", "title": "Unauthorized", "status": 401.0, "detail": DefaultInvalidAuthHeaderMsg, "code": "B001"},
 		},
 		{
 			name:    "CustomToken",
 			a:       problemInstance(),
 			handler: CustomToken(writeSuccess),
-			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 401.0, "detail": DefaultInvalidAuthHeaderMsg, "code": "B001"},
+			want:    map[string]any{"type": "about:blank", "title": "Unauthorized", "status": 401.0, "detail": DefaultInvalidAuthHeaderMsg, "code": "B001"},
 		},
 		{
 			name:    "RequestHeaderJSON",
@@ -149,38 +149,38 @@ func TestProblemDetailsMembers(t *testing.T) {
 			handler: RequestHeaderJSON(writeSuccess),
 			body:    `{}`,
 			headers: map[string]string{"Content-Type": "text/plain"},
-			want:    map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 415.0, "detail": "Content-Type not is JSON!", "code": "E002"},
+			want:    map[string]any{"type": "about:blank", "title": "Unsupported Media Type", "status": 415.0, "detail": "Content-Type not is JSON!", "code": "E002"},
 		},
 		{
 			name:    "RequestHeaderSession",
 			a:       problemInstance(),
 			handler: RequestHeaderSession(writeSuccess),
-			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 401.0, "detail": "Invalid session ID", "code": "B001"},
+			want:    map[string]any{"type": "about:blank", "title": "Unauthorized", "status": 401.0, "detail": "Invalid session ID", "code": "B001"},
 		},
 		{
 			name:    "RequestBody",
 			a:       problemInstance(),
 			handler: RequestBody(writeSuccess),
 			body:    `{"title":`,
-			want:    map[string]any{"type": "about:blank", "title": "Invalid request content", "status": 400.0, "detail": "Request content empty json structure", "code": "E002"},
+			want:    map[string]any{"type": "about:blank", "title": "Bad Request", "status": 400.0, "detail": "Request content empty json structure", "code": "E002"},
 		},
 		{
 			name:    "Error403",
 			a:       problemInstance(),
 			handler: func(w http.ResponseWriter, r *http.Request) { Error403().Write(w, r) },
-			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 403.0, "detail": UnauthorizedMessage, "code": "B002"},
+			want:    map[string]any{"type": "about:blank", "title": "Forbidden", "status": 403.0, "detail": UnauthorizedMessage, "code": "B002"},
 		},
 		{
 			name:    "Error500",
 			a:       problemInstance(),
 			handler: func(w http.ResponseWriter, r *http.Request) { Error500().Write(w, r) },
-			want:    map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 500.0, "detail": InternalServerMessage, "code": "E300"},
+			want:    map[string]any{"type": "about:blank", "title": "Internal Server Error", "status": 500.0, "detail": InternalServerMessage, "code": "E300"},
 		},
 		{
 			name:    "Error501",
 			a:       problemInstance(),
 			handler: func(w http.ResponseWriter, r *http.Request) { Error501().Write(w, r) },
-			want:    map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 501.0, "detail": InternalServerMessage, "code": "E001"},
+			want:    map[string]any{"type": "about:blank", "title": "Not Implemented", "status": 501.0, "detail": InternalServerMessage, "code": "E001"},
 		},
 		{
 			// Token, content, actions and info never reach a problem body.
@@ -195,7 +195,7 @@ func TestProblemDetailsMembers(t *testing.T) {
 				response.Write(w, r)
 			},
 			headers: map[string]string{"Authorization": "Bearer t0k3n"},
-			want:    map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 400.0, "detail": DefaultErrorMessage, "code": "E001"},
+			want:    map[string]any{"type": "about:blank", "title": "Bad Request", "status": 400.0, "detail": DefaultErrorMessage, "code": "E001"},
 		},
 		{
 			name: "empty Content-Type in Headers",
@@ -203,7 +203,7 @@ func TestProblemDetailsMembers(t *testing.T) {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				Error{Headers: map[string]string{"Content-Type": ""}}.Write(w, r)
 			},
-			want: map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 400.0, "detail": DefaultErrorMessage, "code": "E001"},
+			want: map[string]any{"type": "about:blank", "title": "Bad Request", "status": 400.0, "detail": DefaultErrorMessage, "code": "E001"},
 		},
 	}
 
@@ -380,7 +380,7 @@ func TestProblemInstanceAnswersProblem500WhenResponseCannotBeEncoded(t *testing.
 	if got := rec.Header().Get("Content-Type"); got != problemContentType {
 		t.Fatalf("Content-Type = %q, want %q", got, problemContentType)
 	}
-	want := map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 500.0, "detail": InternalServerMessage, "code": "E300"}
+	want := map[string]any{"type": "about:blank", "title": "Internal Server Error", "status": 500.0, "detail": InternalServerMessage, "code": "E300"}
 	if got := decodeMembers(t, rec.Body.Bytes()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("members = %v, want %v", got, want)
 	}
@@ -440,6 +440,91 @@ func TestEncodeFailureSendsTheFormattersContentType(t *testing.T) {
 			}
 			if got := rec.Header().Get("X-Trace"); got != "t" {
 				t.Fatalf("X-Trace = %q, want t", got)
+			}
+		})
+	}
+}
+
+// TestProblemTitleIsTheStatusTextUnlessTheServiceSetIt checks owner answer
+// Q39: a problem title is http.StatusText(status) when the response title is
+// one the library sets on its own (RFC 9457 section 4.2.1 for about:blank),
+// and the title a service set otherwise.
+func TestProblemTitleIsTheStatusTextUnlessTheServiceSetIt(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		body    string
+		want    string
+	}{
+		{name: "WriteError default title", handler: writeTaskNotFound, want: "Not Found"},
+		{name: "Error400 default title", handler: func(w http.ResponseWriter, r *http.Request) { Error400().Write(w, r) }, want: "Bad Request"},
+		{name: "empty title", handler: func(w http.ResponseWriter, r *http.Request) { Error{}.Write(w, r) }, want: "Bad Request"},
+		{name: "unauthorized title", handler: func(w http.ResponseWriter, r *http.Request) { Error403().Write(w, r) }, want: "Forbidden"},
+		{name: "internal server title", handler: func(w http.ResponseWriter, r *http.Request) { Error501().Write(w, r) }, want: "Not Implemented"},
+		{name: "rejected body title", handler: ProcessRequest(writeSuccess), body: `{"title":`, want: "Bad Request"},
+		{name: "query param helper title", handler: func(w http.ResponseWriter, r *http.Request) {
+			_, response := GetQueryParamValueInt("page", r)
+			response.Write(w, r)
+		}, want: "Bad Request"},
+		{name: "service title", handler: func(w http.ResponseWriter, r *http.Request) {
+			Error{Title: "Task not found", HTTPStatusCode: http.StatusNotFound}.Write(w, r)
+		}, want: "Task not found"},
+		{name: "unknown status keeps the default title", handler: func(w http.ResponseWriter, r *http.Request) {
+			Error{HTTPStatusCode: 499}.Write(w, r)
+		}, want: DefaultErrorTitle},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serve(problemInstance().Handler(tt.handler), http.MethodPost, tt.body, nil)
+
+			if got := decodeMembers(t, rec.Body.Bytes())["title"]; got != tt.want {
+				t.Fatalf("title = %v, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestProblemTitleOfEveryResponseHelper checks that the title of each
+// Response-returning helper is known as a library title.
+func TestProblemTitleOfEveryResponseHelper(t *testing.T) {
+	helpers := map[string]func(r *http.Request) Response{
+		"GetHeaderValueString":    func(r *http.Request) Response { _, res := GetHeaderValueString("X-Missing", r); return res },
+		"GetHeaderValueInt":       func(r *http.Request) Response { _, res := GetHeaderValueInt("X-Missing", r); return res },
+		"GetHeaderValueInt64":     func(r *http.Request) Response { _, res := GetHeaderValueInt64("X-Missing", r); return res },
+		"GetHeaderValueFloat64":   func(r *http.Request) Response { _, res := GetHeaderValueFloat64("X-Missing", r); return res },
+		"GetHeaderValueBool":      func(r *http.Request) Response { _, res := GetHeaderValueBool("X-Missing", r); return res },
+		"GetRouteVarValueString":  func(r *http.Request) Response { _, res := GetRouteVarValueString("id", r); return res },
+		"GetRouteVarValueInt":     func(r *http.Request) Response { _, res := GetRouteVarValueInt("id", r); return res },
+		"GetRouteVarValueInt64":   func(r *http.Request) Response { _, res := GetRouteVarValueInt64("id", r); return res },
+		"GetRouteVarValueFloat64": func(r *http.Request) Response { _, res := GetRouteVarValueFloat64("id", r); return res },
+		"GetRouteVarValueBool":    func(r *http.Request) Response { _, res := GetRouteVarValueBool("id", r); return res },
+		"GetQueryParamValueString": func(r *http.Request) Response {
+			_, res := GetQueryParamValueString("page", r)
+			return res
+		},
+		"GetQueryParamValueInt":     func(r *http.Request) Response { _, res := GetQueryParamValueInt("page", r); return res },
+		"GetQueryParamValueInt64":   func(r *http.Request) Response { _, res := GetQueryParamValueInt64("page", r); return res },
+		"GetQueryParamValueFloat64": func(r *http.Request) Response { _, res := GetQueryParamValueFloat64("page", r); return res },
+		"GetQueryParamValueBool":    func(r *http.Request) Response { _, res := GetQueryParamValueBool("page", r); return res },
+		"UnmarshalBody":             func(r *http.Request) Response { var v struct{}; return UnmarshalBody(&v, r) },
+	}
+	for name, helper := range helpers {
+		t.Run(name, func(t *testing.T) {
+			var response Response
+			handler := func(w http.ResponseWriter, r *http.Request) {
+				response = helper(r)
+				if response != nil {
+					response.Write(w, r)
+				}
+			}
+
+			rec := serve(problemInstance().Handler(http.HandlerFunc(handler)), http.MethodPost, `{"title":`, nil)
+
+			if response == nil {
+				t.Fatal("helper returned no error response")
+			}
+			if got, want := decodeMembers(t, rec.Body.Bytes())["title"], http.StatusText(rec.Code); got != want {
+				t.Fatalf("title = %v, want %q", got, want)
 			}
 		})
 	}

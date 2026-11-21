@@ -12,10 +12,6 @@ import (
 var (
 	eventIDPattern    = regexp.MustCompile(`event_id="[^"]*"`)
 	durationMsPattern = regexp.MustCompile(`duration_ms=\d+`)
-	// pointerPattern and hexIDPattern normalize the request dump of v0's
-	// non-error panic line: addresses and generated event IDs change per run.
-	pointerPattern = regexp.MustCompile(`0x[0-9a-f]+`)
-	hexIDPattern   = regexp.MustCompile(`\b[0-9a-f]{32}\b`)
 )
 
 // captureDefaultLogLines replaces Print and PrintError for one test and
@@ -27,9 +23,7 @@ func captureDefaultLogLines(t *testing.T) *[]string {
 	lines := []string{}
 	normalize := func(line string) string {
 		line = eventIDPattern.ReplaceAllString(line, `event_id="<id>"`)
-		line = durationMsPattern.ReplaceAllString(line, "duration_ms=<ms>")
-		line = pointerPattern.ReplaceAllString(line, "0x<ptr>")
-		return hexIDPattern.ReplaceAllString(line, "<id>")
+		return durationMsPattern.ReplaceAllString(line, "duration_ms=<ms>")
 	}
 	Print = func(format string, args ...interface{}) {
 		lines = append(lines, "Print: "+normalize(fmt.Sprintf(format, args...)))
@@ -45,7 +39,8 @@ func captureDefaultLogLines(t *testing.T) *[]string {
 
 // TestDefaultInstanceLogLinesMatchV0 pins the lines the default instance
 // writes through Print and PrintError. The wanted lines were captured by
-// running this test on v0.10.0 (ad03d5f).
+// running this test on v0.11.0 (b917197), so the default instance stays
+// byte-identical to the latest v0 release.
 func TestDefaultInstanceLogLinesMatchV0(t *testing.T) {
 	tests := []struct {
 		name string
@@ -54,13 +49,15 @@ func TestDefaultInstanceLogLinesMatchV0(t *testing.T) {
 		next http.HandlerFunc
 		// parseForm parses the form before ProcessRequest runs.
 		parseForm bool
-		want      []string
+		// logRequestBody sets LogRequestBody for the test.
+		logRequestBody bool
+		want           []string
 	}{
 		{
 			name: "success",
 			body: `{"title":"task"}`,
 			want: []string{
-				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"]}`,
+				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2&access_token=[REDACTED]" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"],"Cookie":["[REDACTED]"]}`,
 				`Print: RESPONSE event_id="<id>" status=200 status_text="OK" duration_ms=<ms>`,
 			},
 		},
@@ -75,7 +72,7 @@ func TestDefaultInstanceLogLinesMatchV0(t *testing.T) {
 			name: "error panic",
 			next: func(http.ResponseWriter, *http.Request) { panic(goldenPanicError) },
 			want: []string{
-				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"]}`,
+				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2&access_token=[REDACTED]" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"],"Cookie":["[REDACTED]"]}`,
 				`PrintError: boom`,
 			},
 		},
@@ -83,15 +80,24 @@ func TestDefaultInstanceLogLinesMatchV0(t *testing.T) {
 			name: "non-error panic",
 			next: func(http.ResponseWriter, *http.Request) { panic("boom") },
 			want: []string{
-				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"]}`,
-				`PrintError: Not response: &{POST /tasks?page=2 HTTP/1.1 1 1 map[Appbuildversion:[] Applanguage:[] Appname:[] Appversion:[] Authorization:[Bearer s3cr3t] Content-Type:[application/json] Devicebrand:[] Devicemodel:[] Deviceos:[] Devicetype:[] Eventid:[<id>] Ostimezone:[] Osversion:[] Securitytoken:[s3cr3t] Uuid:[]] {} <nil> 0 [] false example.com map[] map[] <nil> map[] 192.0.2.1:1234 /tasks?page=2 <nil> <nil> <nil>  0x<ptr> <nil> [] map[]}`,
+				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2&access_token=[REDACTED]" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"],"Cookie":["[REDACTED]"]}`,
+				`PrintError: Not response: boom`,
+			},
+		},
+		{
+			name:           "logged body",
+			body:           `{"title":"task","password":"s3cr3t"}`,
+			logRequestBody: true,
+			want: []string{
+				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2&access_token=[REDACTED]" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"],"Cookie":["[REDACTED]"]} body="{\"password\":\"[REDACTED]\",\"title\":\"task\"}"`,
+				`Print: RESPONSE event_id="<id>" status=200 status_text="OK" duration_ms=<ms>`,
 			},
 		},
 		{
 			name:      "parsed form",
 			parseForm: true,
 			want: []string{
-				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2" form="page=2" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"]}`,
+				`Print: REQUEST event_id="<id>" method="POST" uri="/tasks?page=2&access_token=[REDACTED]" form="access_token=[REDACTED]&page=2" headers={"Authorization":["[REDACTED]"],"Content-Type":["application/json"],"Cookie":["[REDACTED]"]}`,
 				`Print: RESPONSE event_id="<id>" status=200 status_text="OK" duration_ms=<ms>`,
 			},
 		},
@@ -99,6 +105,9 @@ func TestDefaultInstanceLogLinesMatchV0(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			lines := captureDefaultLogLines(t)
+			previousLogRequestBody := LogRequestBody
+			LogRequestBody = tt.logRequestBody
+			t.Cleanup(func() { LogRequestBody = previousLogRequestBody })
 			next := tt.next
 			if next == nil {
 				next = func(w http.ResponseWriter, r *http.Request) {
@@ -109,9 +118,10 @@ func TestDefaultInstanceLogLinesMatchV0(t *testing.T) {
 			if tt.parseForm {
 				handler = parseFormFirst(t, handler)
 			}
-			req := httptest.NewRequest(http.MethodPost, "/tasks?page=2", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/tasks?page=2&access_token=s3cr3t", bytes.NewBufferString(tt.body))
 			req.Header.Set("Authorization", "Bearer s3cr3t")
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Cookie", "sid=s3cr3t")
 
 			handler.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -124,7 +134,7 @@ func TestDefaultInstanceLogLinesMatchV0(t *testing.T) {
 
 var goldenPanicError = goldenError("boom")
 
-// goldenError is an error type that exists on v0.10.0 too, so this file
+// goldenError is an error type that exists on v0.11.0 too, so this file
 // compiles there unchanged.
 type goldenError string
 
