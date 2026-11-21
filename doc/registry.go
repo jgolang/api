@@ -50,6 +50,9 @@ type Route struct {
 	// Public marks the operation as not requiring security (security: []),
 	// overriding Security and any default security.
 	Public bool
+	// Hidden keeps the route out of the generated spec; Routes still
+	// returns it.
+	Hidden bool
 }
 
 // RouteResponse describes an HTTP response for an operation.

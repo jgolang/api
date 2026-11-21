@@ -157,6 +157,9 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 		doc.Components.SecuritySchemes[name] = scheme
 	}
 	for _, route := range docs.Routes() {
+		if route.Hidden {
+			continue
+		}
 		path := normalizeOpenAPIPath(route.Path)
 		method := strings.ToLower(route.Method)
 		if doc.Paths[path] == nil {
