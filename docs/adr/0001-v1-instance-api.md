@@ -2,7 +2,7 @@
 
 - Status: Accepted (2026-11-21); implemented step by step through the v1 stories, all in v1.0.0:
   - 5.1 lands the instance, `Handler` and the two mode options (sections 2–3 for the modes; the `Get*Value*` helpers still use the default instance);
-  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7; landed); 5.5 the logger, redaction and an instance writer that never exits (section 6); 5.6 problem details (section 8).
+  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7; landed); 5.5 the logger, redaction and an instance writer that never exits (section 6; landed); 5.6 problem details (section 8).
 - Issues: API-07 (#21), API-02 (#16), API-12 (#26), the v1 part of API-01 (#15).
 - Related: ADR 0002 (stdadapter on ServeMux patterns, lands with story 5.7) will record the routing change planned for the same release (API-08).
 
@@ -112,6 +112,7 @@ sequenceDiagram
 - An instance without `WithLogger` writes no logs.
 - An instance never calls `Fatal` and never exits: a response that cannot be encoded is logged at error level through the instance logger. The default instance keeps v0's `Fatal`.
 - `WithSensitiveLogKeys(keys...)` adds keys to the default list; it cannot remove a default key (security defaults are not weakened).
+- As landed in 5.5: `ProcessRequest` writes two info records, `request` (`event_id`, `method`, `uri`, `form` when parsed, `headers`) and `response` (`event_id`, `method`, `uri`, `status`, `status_text`, `duration_ms`). Errors met while serving a request (a rejected body in `ProcessRequest`/`RequestBody`, a failed `Get*Value*`/`UnmarshalBody` helper) are error records with an `error` attribute; a recovered panic is a `panic recovered` error record with the panic value and `event_id`, never a dump of the request. An instance's key list is the v0 list plus `cookie` and `session` (the default instance's `SensitiveLogKeys` is unchanged); added keys are lowercased and blank ones ignored; matching stays v0's case-insensitive substring match. Query strings in `uri` and the form values are masked by key with the literal `[REDACTED]`, keeping the other parameters' order and encoding. Bodies are never logged (no option, per section 5). The built-in writer of an instance encodes before writing: a body that cannot be encoded is logged as `response cannot be encoded` and answered with 500 and the instance formatter's `Error500()` body (bare 500 if that fails too); `http.ErrBodyNotAllowed` is not logged. An instance never reads `Print`, `PrintError`, `Fatal` or `SensitiveLogKeys`, now deprecated.
 
 ### 7. Errors: kind-to-status override and error hook (API-01)
 

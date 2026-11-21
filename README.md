@@ -246,6 +246,22 @@ a := api.New(
 
 Kinds without an override keep `api.StatusForKind`. Only statuses 400–599 are accepted (others are ignored), and errors without a kind always answer 500. The title follows the decided status as above. The hook runs on the request goroutine with the original error, before anything is written; it is shared by all requests the instance serves and may run concurrently, so it must be safe for concurrent use; a panic in it is not recovered (`api.ProcessRequest` turns it into a logged 500). Only `WriteError` calls the hook, not `Error400`/`Error500`/the other helpers, and the default instance has no overrides and no hook. `ExampleWithKindStatus` and `ExampleWithErrorHook` are the compiled versions.
 
+## Logging
+
+An `api.New` instance writes no logs unless you give it a standard `log/slog` logger, and never writes to stdout/stderr or exits on its own:
+
+```go
+a := api.New(
+	api.WithLogger(slog.New(slog.NewJSONHandler(os.Stderr, nil))),
+	api.WithSensitiveLogKeys("pin"), // adds to the defaults
+)
+// {"level":"INFO","msg":"request","event_id":"…","method":"GET","uri":"/login?access_token=[REDACTED]&page=2","headers":{"Pin":["[REDACTED]"]}}
+```
+
+`api.ProcessRequest` writes a `request` record (`event_id`, `method`, `uri`, `form` when parsed, `headers`) and a `response` record (`event_id`, `method`, `uri`, `status`, `status_text`, `duration_ms`) at info level. A rejected body, a failed `Get*Value*`/`UnmarshalBody` helper, a recovered panic (`panic recovered`, with the panic value) and a response that cannot be encoded are error records with an `error` or `panic` attribute. A response that cannot be encoded (for example a `NaN` in the content) is answered with the `Error500()` body instead. Bodies are never logged. Header, query and form values are masked when their key contains a sensitive key, ignoring case: the default list (`authorization`, `token`, `password`, `secret`, `credential`, `apikey`, `api-key`, `key`, `cookie`, `session`) plus the keys of `api.WithSensitiveLogKeys`, which can only add. `ExampleWithLogger` is the compiled version.
+
+The default instance keeps v0: lines through `api.Print`/`api.PrintError` (the standard `log` package), `api.Fatal` on a response that cannot be encoded, `api.SensitiveLogKeys` without `cookie` and `session`, and the body-logging variables below. These variables are deprecated in favor of the options.
+
 ## Routing and OpenAPI
 
 The package includes a router-agnostic registration layer for OpenAPI 3 and Swagger UI. The native adapter uses only Go's standard `net/http` package, while adapters for Gin, Echo, chi, gorilla/mux, or other routers should live in the application that chooses those routers (`api.RegisterAdapter` and `api.NewRouter` register and build them by name).
@@ -322,7 +338,8 @@ See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, respon
 
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
-- Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
+- An `api.New` instance never logs bodies and masks header, query and form values under its sensitive keys (the defaults, which include `cookie` and `session`, plus `api.WithSensitiveLogKeys`); see [Logging](#logging).
+- On the default instance, request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`. Query strings are not masked there.
 
 ## Trace IDs
 

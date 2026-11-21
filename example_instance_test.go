@@ -3,8 +3,10 @@ package api_test
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/core"
@@ -72,4 +74,27 @@ func ExampleWithLowercaseCodes() {
 	// Output:
 	// PLN-001
 	// pln-001
+}
+
+func ExampleWithLogger() {
+	// Drop the attributes that change on every run, so the output is stable.
+	dropVolatile := func(groups []string, attr slog.Attr) slog.Attr {
+		switch attr.Key {
+		case slog.TimeKey, "event_id", "duration_ms":
+			return slog.Attr{}
+		}
+		return attr
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{ReplaceAttr: dropVolatile}))
+	a := api.New(api.WithLogger(logger), api.WithSensitiveLogKeys("pin"))
+	handler := a.Handler(api.ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
+		api.Success200().Write(w, r)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/login?access_token=placeholder&page=2", nil)
+	req.Header.Set("Pin", "0000")
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	// Output:
+	// level=INFO msg=request method=GET uri="/login?access_token=[REDACTED]&page=2" headers=map[Pin:[[REDACTED]]]
+	// level=INFO msg=response method=GET uri="/login?access_token=[REDACTED]&page=2" status=200 status_text=OK
 }
