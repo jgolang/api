@@ -6,11 +6,36 @@ import (
 	"sync"
 )
 
-// API contains the public API metadata rendered into OpenAPI.
+// API contains the public API metadata rendered into OpenAPI's info object.
+// Contact and License are pointers, so == compares their identity, and each
+// call to Docs.API returns new copies of them.
 type API struct {
-	Title       string `json:"title"`
-	Version     string `json:"version"`
+	Title       string   `json:"title"`
+	Version     string   `json:"version"`
+	Description string   `json:"description,omitempty"`
+	Contact     *Contact `json:"contact,omitempty"`
+	License     *License `json:"license,omitempty"`
+}
+
+// Server is an OpenAPI server: a base URL that clients and try-it-out tools
+// send requests to.
+type Server struct {
+	URL         string `json:"url"`
 	Description string `json:"description,omitempty"`
+}
+
+// Contact is the OpenAPI contact information for the API.
+type Contact struct {
+	Name  string `json:"name,omitempty"`
+	URL   string `json:"url,omitempty"`
+	Email string `json:"email,omitempty"`
+}
+
+// License is the OpenAPI license information for the API. OpenAPI requires
+// Name.
+type License struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
 }
 
 // DataType describes primitive route parameter types.
@@ -80,12 +105,13 @@ type Docs struct {
 	routes          []Route
 	securitySchemes map[string]SecurityScheme
 	defaultSecurity []string
+	servers         []Server
 }
 
 // New creates an OpenAPI documentation collector.
 func New(info API) *Docs {
 	return &Docs{
-		info:            info,
+		info:            cloneAPI(info),
 		securitySchemes: make(map[string]SecurityScheme),
 	}
 }
@@ -97,7 +123,22 @@ func (docs *Docs) API() API {
 	}
 	docs.mu.RLock()
 	defer docs.mu.RUnlock()
-	return docs.info
+	return cloneAPI(docs.info)
+}
+
+// cloneAPI copies the pointers so a caller cannot change the stored
+// metadata through the returned value.
+func cloneAPI(info API) API {
+	clone := info
+	if info.Contact != nil {
+		contact := *info.Contact
+		clone.Contact = &contact
+	}
+	if info.License != nil {
+		license := *info.License
+		clone.License = &license
+	}
+	return clone
 }
 
 // Register stores a route and applies its declarative options.
@@ -173,6 +214,34 @@ func hasName(values []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// SetServers sets the servers written to the spec's top-level servers, in
+// order, so try-it-out tools and generated clients get a base URL. Servers
+// with an empty URL are ignored, since OpenAPI requires one. Each call
+// replaces the previous servers; a call with none clears them.
+func (docs *Docs) SetServers(servers ...Server) {
+	if docs == nil {
+		return
+	}
+	var kept []Server
+	for _, server := range servers {
+		if server.URL != "" {
+			kept = append(kept, server)
+		}
+	}
+	docs.mu.Lock()
+	defer docs.mu.Unlock()
+	docs.servers = kept
+}
+
+func (docs *Docs) serverList() []Server {
+	if docs == nil {
+		return nil
+	}
+	docs.mu.RLock()
+	defer docs.mu.RUnlock()
+	return append([]Server(nil), docs.servers...)
 }
 
 // DefaultSecurity returns the names set with SetDefaultSecurity.

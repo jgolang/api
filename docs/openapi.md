@@ -42,6 +42,7 @@ func main() {
 		Title:   "Tasks API",
 		Version: "1.0.0",
 	})
+	docs.SetServers(doc.Server{URL: "http://localhost:8080"})
 	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
 
 	router := stdadapter.New(http.NewServeMux(), docs)
@@ -132,6 +133,26 @@ These types are for documentation only. They do not change the runtime request o
 In generated OpenAPI documents, inferred Go types are emitted under
 `components.schemas` and referenced with `$ref` to avoid repeating schemas per
 operation.
+
+## API metadata
+
+`doc.API` fills the document's `info` object, and `docs.SetServers` its top-level `servers`:
+
+```go
+docs := doc.New(doc.API{
+	Title:       "Tasks API",
+	Version:     "1.0.0",
+	Description: "Manages tasks.",
+	Contact:     &doc.Contact{Name: "Tasks team", Email: "tasks@example.com"},
+	License:     &doc.License{Name: "MIT", URL: "https://opensource.org/licenses/MIT"},
+})
+docs.SetServers(
+	doc.Server{URL: "https://api.example.com", Description: "Production"},
+	doc.Server{URL: "http://localhost:8080", Description: "Local"},
+)
+```
+
+`docs.SetServers` gives Swagger UI's "Try it out" and generated clients a base URL; without it they call the host that served the document. Each call replaces the previous list, and a server with an empty URL is ignored. `Contact` and `License` are optional and written to `info.contact` and `info.license`. A `doc.API` without them generates the same document as before.
 
 ## Route metadata options
 
