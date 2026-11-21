@@ -158,6 +158,9 @@ func GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, Response) {
 //
 // See also the Query* helpers (QueryString, QueryInt, QueryBool, QueryEnum),
 // which tell an absent parameter from an invalid one.
+//
+// Deprecated: use QueryString, which tells an absent parameter from an invalid
+// one and returns an error that WriteError answers with 400.
 func GetQueryParamValueString(queryParamName string, r *http.Request) (string, Response) {
 	value, err := api.GetQueryParamValueString(queryParamName, r)
 	if err != nil {
@@ -175,6 +178,9 @@ func GetQueryParamValueString(queryParamName string, r *http.Request) (string, R
 //
 // See also the Query* helpers (QueryString, QueryInt, QueryBool, QueryEnum),
 // which tell an absent parameter from an invalid one.
+//
+// Deprecated: use QueryInt, which tells an absent parameter from an invalid
+// one and returns an error that WriteError answers with 400.
 func GetQueryParamValueInt(queryParamName string, r *http.Request) (int, Response) {
 	value, err := api.GetQueryParamValueInt(queryParamName, r)
 	if err != nil {
@@ -223,6 +229,9 @@ func GetQueryParamValueFloat64(queryParamName string, r *http.Request) (float64,
 //
 // See also the Query* helpers (QueryString, QueryInt, QueryBool, QueryEnum),
 // which tell an absent parameter from an invalid one.
+//
+// Deprecated: use QueryBool, which tells an absent parameter from an invalid
+// one and returns an error that WriteError answers with 400.
 func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Response) {
 	value, err := api.GetQueryParamValueBool(queryParamName, r)
 	if err != nil {
