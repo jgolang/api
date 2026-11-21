@@ -11,8 +11,12 @@ import (
 	"github.com/jgolang/errors/codes"
 )
 
-// RequestReceiverV2 implementation of core.APIRequestReceiver interface
-type RequestReceiverV2 struct{}
+// RequestReceiverV2 implementation of core.APIRequestReceiver interface.
+// The zero value parses with CurrentRequestMode.
+type RequestReceiverV2 struct {
+	// mode is set by New; empty means the default instance's package variable.
+	mode RequestMode
+}
 
 // ProcessEncryptedBody reads the encrypted payload from the values data and
 // metadata, taken from the form body or the URL query (r.FormValue). Both are
@@ -69,7 +73,7 @@ func (receiver RequestReceiverV2) ProcessBody(r *http.Request) (*core.RequestDat
 		return &requestData, nil
 	}
 
-	mode := CurrentRequestMode
+	mode := receiver.requestMode()
 	if mode == RequestModeAuto && envelopeRequestBody(rawBody) {
 		mode = RequestModeEnvelope
 	}
@@ -128,6 +132,21 @@ func (receiver RequestReceiverV2) ProcessBody(r *http.Request) (*core.RequestDat
 	}
 	requestData.Content = core.JSONContent(rawBody)
 	return &requestData, nil
+}
+
+// withMode returns receiver bound to mode unless it already has one.
+func (receiver RequestReceiverV2) withMode(mode RequestMode) RequestReceiverV2 {
+	if receiver.mode == "" {
+		receiver.mode = mode
+	}
+	return receiver
+}
+
+func (receiver RequestReceiverV2) requestMode() RequestMode {
+	if receiver.mode == "" {
+		return CurrentRequestMode
+	}
+	return receiver.mode
 }
 
 // GetRouteVar returns the route variables for the current request, if any
