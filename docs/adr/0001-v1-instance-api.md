@@ -41,7 +41,7 @@ func (a *API) Handler(next http.Handler) http.Handler
 - The type is named `API` (it wraps `core.API`; `doc.API` stays the OpenAPI metadata).
 - An instance has no setters. Options are applied once in `New`; there is nothing to drift after start-up. `Option` takes an unexported `options` struct that `New` owns, not the `*API`, so no `Option` value can change an instance after `New` returns.
 - `New` returns `*API` without an error and never panics. An unknown mode value falls back to the default, as `SetRequestMode`/`SetResponseMode` do, and this is documented on the option.
-- `New()` with no options behaves like v0's defaults (plain requests, envelope responses, the same formatter output, trace suffix 1, ID length 6, blank successes), except: codes as declared (section 4), no logging (section 6), a 10 MiB body limit (section 9) and no request token echo (section 10).
+- `New()` with no options behaves like v0's defaults (plain requests, envelope responses, the same formatter output, trace suffix 1, ID length 6, blank successes), except: codes as declared (section 4), no logging (section 6), a 10 MiB body limit (section 9) and no request token echo in bodies or in `RequestHeaderSession`'s response header (section 10).
 
 Options (one exported function each):
 
@@ -147,7 +147,7 @@ sequenceDiagram
 - `Success.Write`, `Error.Write`, `Warning.Write` and `Informative.Write` (and so `WriteError` and the library's own rejections) leave an empty `SecurityToken` empty on an instance from `New`: the request token (`SecurityToken` header, `Authorization: Bearer`, the envelope `header.token` read by `ProcessRequest`) never reaches the response bodies written under its `Handler`. A middleware placed outside `a.Handler` (a token middleware, `ProcessRequest`) runs with the default instance and still echoes it. Plain bodies send `"token":""`, envelope bodies omit `header.token`, problem bodies never had it. The rule sits before the formatter, so it holds for custom formatters too. A token the handler sets on the response is sent as before.
 - The default instance keeps the v0 echo (wire unchanged for v0 programs, like codes in section 4).
 - No option restores the echo on an instance: nothing in this ADR or the migration guide needs it, and a handler that wants to return a token sets `SecurityToken` (for example from `rctx.SecurityToken`) in one line (YAGNI-01). A consumer need would be a new proposal.
-- `RequestHeaderSession` copying the `SecurityToken` request header into the response header is unchanged; it is the middleware's session contract, not a body echo. After `ProcessRequest` that header holds the request token, which in envelope request mode can come from the body's `header.token`.
+- `RequestHeaderSession` does not copy the `SecurityToken` request header into the response header on an instance from `New` (owner decision, 2026-11-21): the header echoes the same request token as the bodies did. It still answers 401 when the header is empty. A handler that wants to return a token sets the header itself; no option restores the copy (YAGNI-01). Outside `a.Handler`, and on the default instance, it keeps copying it as in v0; after `ProcessRequest` that header holds the request token, which in envelope request mode can come from the body's `header.token`.
 
 ## What stays package-level in v1
 

@@ -118,7 +118,13 @@ func RequestHeaderJSON(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// RequestHeaderSession validates that session ID is valid.
+// RequestHeaderSession checks that the request carries a session ID.
+//
+// It answers 401 when the SecurityTokenHeaderKey request header is empty.
+// On the default instance it copies that header into the response header,
+// as in v0. On an instance from New it does not, so the request token is
+// never echoed (SEC-08); a handler that wants to return a token sets the
+// header itself.
 func RequestHeaderSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID := r.Header.Get(SecurityTokenHeaderKey)
@@ -128,7 +134,9 @@ func RequestHeaderSession(next http.HandlerFunc) http.HandlerFunc {
 			response.Write(w, r)
 			return
 		}
-		w.Header().Set(SecurityTokenHeaderKey, sessionID)
+		if !instanceFrom(r).fromNew {
+			w.Header().Set(SecurityTokenHeaderKey, sessionID)
+		}
 		next.ServeHTTP(w, r)
 	}
 }
