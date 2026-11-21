@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -137,5 +138,32 @@ func TestDefaultInstanceStillEchoesTheRequestToken(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestRequestHeaderSessionResponseHeader(t *testing.T) {
+	writeSuccess := func(w http.ResponseWriter, r *http.Request) { Success200().Write(w, r) }
+	setRenewedToken := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(SecurityTokenHeaderKey, "renewed-token")
+		Success200().Write(w, r)
+	}
+	tests := []struct {
+		name    string
+		handler http.Handler
+		want    []string
+	}{
+		{name: "instance does not copy the token", handler: New().Handler(RequestHeaderSession(writeSuccess)), want: nil},
+		{name: "default instance copies the token", handler: RequestHeaderSession(writeSuccess), want: []string{"request-token"}},
+		// A guard for the documented way to return a token on an instance.
+		{name: "instance keeps a token the handler sets", handler: New().Handler(RequestHeaderSession(setRenewedToken)), want: []string{"renewed-token"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serve(tt.handler, http.MethodGet, "", map[string]string{SecurityTokenHeaderKey: "request-token"})
+
+			if got := rec.Header().Values(SecurityTokenHeaderKey); fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Fatalf("%s response header = %q, want %q", SecurityTokenHeaderKey, got, tt.want)
+			}
+		})
 	}
 }
