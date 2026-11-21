@@ -8,6 +8,8 @@ go get github.com/jgolang/api
 
 The JSON envelope with device metadata in the request `header` (`device_type`, `device_brand`, `lat`, `lon`, `token`, …) is still supported, but it is no longer the default. It is documented in [docs/legacy.md](docs/legacy.md).
 
+Upgrading a v0 program? [docs/migration-v1.md](docs/migration-v1.md) takes it to v1 step by step: routing changes, the `api.New` instance, and every deprecated name with its replacement.
+
 ## Quick start
 
 ```go
@@ -53,6 +55,7 @@ func createTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	a := api.New()
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
 	router := stdadapter.New(http.NewServeMux(), docs)
 
@@ -66,11 +69,11 @@ func main() {
 	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
 	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
 
-	http.ListenAndServe(":8080", router)
+	http.ListenAndServe(":8080", a.Handler(router))
 }
 ```
 
-With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`) and answers with the response envelope:
+`a.Handler(router)` serves every route with the instance `a`; see [Request and response modes](#request-and-response-modes). With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`) and answers with the response envelope (an empty title answers 400 with code `TSK-001`, as declared):
 
 ```json
 {
@@ -87,9 +90,9 @@ With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`
 
 1. **Route registration.** `api.Get`, `api.Post`, `api.Put`, `api.Patch` and `api.Delete` register a handler on any `api.Router` and record its `doc.RouteOption`s for the OpenAPI document. `stdadapter` is the `net/http` router; see [Routing and OpenAPI](#routing-and-openapi).
 2. **`api.ProcessRequest`.** Wrap a handler with this middleware to get the full flow. It:
-   - reads the body and parses it according to the [request mode](#request-and-response-modes); an invalid JSON body answers 400 with code `e002`;
+   - reads the body and parses it according to the [request mode](#request-and-response-modes); an invalid JSON body answers 400 with code `E002` on an `api.New` instance (`e002` on the default instance);
    - collects request metadata from HTTP headers (see [Reading the request](#reading-the-request));
-   - assigns an [event ID](#trace-ids) and logs the request and the response;
+   - assigns an [event ID](#trace-ids) and logs the request and the response (on an `api.New` instance only through its `api.WithLogger` logger, and nothing without one; see [Logging](#logging));
    - stores the request context, replaces `r.Body` with the endpoint content, and answers 500 if the handler panics.
 
    Use `api.MiddlewaresChain(...)` to compose it with your own middlewares. `api.AddSkipPath(api.GenSkipPath(method, path), true)` makes it pass a route through untouched.
@@ -140,7 +143,7 @@ An unknown value falls back to the default (`api.RequestModePlain`, `api.Respons
 
 `api.ResponseModeProblem` is accepted only by `api.WithResponseMode`, for the built-in formatter; `api.SetResponseMode` treats it as unknown, so the default instance never writes problem details. In a problem body `title` is the HTTP status phrase (`Not Found`) when the response title is empty or a library default (`Error response!`, `Sorry!`, `Unauthorized!`, the helpers' titles), and the title the service set otherwise (the check is by text: a service title equal to a library default also becomes the status phrase, and a default reassigned through `api.DefaultErrorTitle` and its siblings is kept); `detail` is the public message without the trace suffix, and `code` and `event_id` are extension members; `type` is always `about:blank`, and content, token, actions and info are not sent. The built-in response writer sends `Content-Type: application/json` unless the response `Headers` set a non-empty `Content-Type`, which always wins, in every mode (one set on `w.Header()` by the handler does not count) (a fix: v0 discarded a `Content-Type` the service set); the 500 sent for a body that cannot be encoded, by the default instance or an instance, carries the error body's `Content-Type` and drops the failed body's other headers (`Content-Encoding`, `Content-Length`, `ETag`, …).
 
-Requests that are not wrapped by an instance's `Handler` use the default instance, which reads the package variables `api.CurrentRequestMode` and `api.CurrentResponseMode` (set with `api.SetRequestMode` and `api.SetResponseMode`). These four names are deprecated: they affect only the default instance, for the whole process. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
+Requests that are not wrapped by an instance's `Handler` use the default instance, which reads the package variables `api.CurrentRequestMode` and `api.CurrentResponseMode` (set with `api.SetRequestMode` and `api.SetResponseMode`). These four names are deprecated: they affect only the default instance, for the whole process. [docs/migration-v1.md](docs/migration-v1.md) lists every deprecated name with its option. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
 
 ## Reading the request
 
