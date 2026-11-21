@@ -146,8 +146,9 @@ func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 // absolute-form URI (scheme://user:pass@host/...), the user information.
 // Path segments are not masked.
 func redactURI(uri string, sensitiveKeys []string) string {
-	path, query, found := strings.Cut(uri, "?")
-	path = redactUserInfo(path)
+	// The user information goes first: a raw "?" in a password would
+	// otherwise be taken for the start of the query.
+	path, query, found := strings.Cut(redactUserInfo(uri), "?")
 	if !found || query == "" {
 		if found {
 			return path + "?"
@@ -158,22 +159,19 @@ func redactURI(uri string, sensitiveKeys []string) string {
 }
 
 // redactUserInfo replaces the user information of an absolute-form request
-// target with redactedLogValue.
+// target with redactedLogValue: everything from "://" to the last "@" before
+// the first "#", so a raw "/" or "?" in a password is masked too.
 func redactUserInfo(target string) string {
 	scheme, rest, found := strings.Cut(target, "://")
-	if !found || strings.Contains(scheme, "/") {
+	if !found || strings.ContainsAny(scheme, "/?#") {
 		return target
 	}
-	authority, path, _ := strings.Cut(rest, "/")
-	at := strings.LastIndex(authority, "@")
+	beforeFragment, _, _ := strings.Cut(rest, "#")
+	at := strings.LastIndex(beforeFragment, "@")
 	if at < 0 {
 		return target
 	}
-	redacted := scheme + "://" + redactedLogValue + authority[at:]
-	if len(rest) > len(authority) {
-		redacted += "/" + path
-	}
-	return redacted
+	return scheme + "://" + redactedLogValue + rest[at:]
 }
 
 // redactQuery masks the values of rawQuery whose unescaped key is sensitive,
@@ -229,11 +227,14 @@ func (writer ResponseWriter) writeForInstance(response *core.ResponseFormatted, 
 }
 
 // writeEncodeFailure answers 500 with the internal server error body built by
-// the instance's formatter, keeping the response headers. The body carries no
-// event ID or token, since the request is not available here. If the
-// formatter returns no body, or it cannot be encoded either, it answers 500
-// with no body, still with the response headers.
+// the instance's formatter, keeping the response headers except their
+// Content-Type, which described the failed body; the error body's own
+// Content-Type applies. The body carries no event ID or token, since the
+// request is not available here. If the formatter returns no body, or it
+// cannot be encoded either, it answers 500 with no body and no Content-Type,
+// still with the other response headers.
 func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
+	headers = withoutContentType(headers)
 	failure := Error500()
 	formatted := writer.formatter.Format(core.ResponseData{
 		Title:          failure.Title,
@@ -252,27 +253,57 @@ func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w htt
 		writer.writeBare500(headers, w)
 		return
 	}
+	if contentType := formattedContentType(formatted.Headers); contentType != "" {
+		headers["Content-Type"] = contentType
+	}
 	writer.writeEncoded(headers, http.StatusInternalServerError, body.Bytes(), w)
 }
 
 func (writer ResponseWriter) writeBare500(headers map[string]string, w http.ResponseWriter) {
 	setHeaders(headers, w)
+	w.Header().Del("Content-Type")
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
-// writeEncoded writes an encoded body. Content-Type defaults to
-// application/json but a formatted Content-Type is kept. http.ErrBodyNotAllowed
-// is not logged: Warning and Informative default to status 100, and the
-// recorder that ProcessRequest writes into returns it for their body.
+// writeEncoded writes an encoded body. Its Content-Type comes only from the
+// formatted headers, application/json when they set none: one the handler
+// put on w.Header() earlier (say text/html) must never label a JSON body.
+// http.ErrBodyNotAllowed is not logged: Warning and Informative default to
+// status 100, and the recorder that ProcessRequest writes into returns it for
+// their body.
 func (writer ResponseWriter) writeEncoded(headers map[string]string, status int, body []byte, w http.ResponseWriter) {
 	setHeaders(headers, w)
-	if w.Header().Get("Content-Type") == "" {
-		w.Header().Set("Content-Type", "application/json")
+	contentType := formattedContentType(headers)
+	if contentType == "" {
+		contentType = "application/json"
 	}
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil && !errors.Is(err, http.ErrBodyNotAllowed) {
 		writer.logError("response cannot be written", err)
 	}
+}
+
+// formattedContentType returns the Content-Type set in headers, whatever the
+// key's case, or "" when they set none.
+func formattedContentType(headers map[string]string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, "Content-Type") {
+			return value
+		}
+	}
+	return ""
+}
+
+// withoutContentType returns a copy of headers without their Content-Type.
+func withoutContentType(headers map[string]string) map[string]string {
+	kept := make(map[string]string, len(headers)+1)
+	for key, value := range headers {
+		if !strings.EqualFold(key, "Content-Type") {
+			kept[key] = value
+		}
+	}
+	return kept
 }
 
 func setHeaders(headers map[string]string, w http.ResponseWriter) {

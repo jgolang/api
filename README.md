@@ -338,7 +338,7 @@ See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, respon
 
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
-- An `api.New` instance never logs bodies or the parsed form and masks header and query values under its sensitive keys (path segments are not masked) (the defaults, which include `cookie` and `session`, plus `api.WithSensitiveLogKeys`); see [Logging](#logging).
+- An `api.New` instance never logs bodies or the parsed form and masks header and query values under its sensitive keys: the defaults, which include `cookie` and `session`, plus `api.WithSensitiveLogKeys`. Path segments are not masked. See [Logging](#logging).
 - On the default instance, request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`. Query strings are not masked there.
 
 ## Trace IDs
