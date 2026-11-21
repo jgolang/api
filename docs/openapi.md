@@ -174,7 +174,7 @@ Supported tags:
 Adapters for third-party routers live outside this module, so `github.com/jgolang/api` never depends on them. An adapter does four things:
 
 1. registers a factory with `api.RegisterAdapter`, so `api.NewRouter("gin", engine, docs)` works;
-2. calls `docs.Register` in `Handle`, so the route appears in `/openapi.json`;
+2. calls `docs.Register` in `Handle` after registering the route on the router, so the route appears in `/openapi.json` and a route the router rejects is not documented;
 3. converts `{id}` path variables to the router's syntax (`:id` for Gin);
 4. copies the router's path parameters into `api.SetRouteVars`, so `api.GetRouteVar` works in handlers.
 
@@ -211,11 +211,8 @@ type Router struct {
 	docs   *doc.Docs
 }
 
-// Handle documents the route and registers it on Gin.
+// Handle registers the route on Gin, then documents it.
 func (router *Router) Handle(method string, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
-	if router.docs != nil {
-		router.docs.Register(method, path, opts...)
-	}
 	router.engine.Handle(method, ginPath(path), func(c *gin.Context) {
 		r := c.Request
 		if len(c.Params) > 0 {
@@ -227,6 +224,9 @@ func (router *Router) Handle(method string, path string, handler http.HandlerFun
 		}
 		handler(c.Writer, r)
 	})
+	if router.docs != nil {
+		router.docs.Register(method, path, opts...)
+	}
 }
 
 // ServeHTTP lets the adapter be passed to http.ListenAndServe.

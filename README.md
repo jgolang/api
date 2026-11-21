@@ -168,7 +168,7 @@ token := rctx.SecurityToken
 
 Request metadata comes from HTTP headers: `X-Request-ID` (else `UUID`) for the request UUID, `SecurityToken` (else `Authorization: Bearer <token>`) for the token, `AppLanguage` (else `Accept-Language`) for the language, and `DeviceType`, `DeviceBrand`, `DeviceModel`, `DeviceOS`, `OSVersion`, `OSTimezone`, `AppVersion`, `AppBuildVersion`, `AppName`, `DeviceSerial`, `DeviceID`, `Latitude`, `Longitude` for the client. In envelope request mode the JSON `header` fills the same fields when the HTTP header is absent.
 
-Route variables are read with `api.GetRouteVar("id", r)`. `stdadapter` matches `{id}` segments itself and stores them with `api.SetRouteVars`, so `r.PathValue` is empty there; an adapter for another router either calls `api.SetRouteVars` or replaces `api.GetRouteVar`.
+Route variables are read with `api.GetRouteVar("id", r)`. `stdadapter` stores the `ServeMux` path values with `api.SetRouteVars`, so `r.PathValue("id")` works there too; an adapter for another router either calls `api.SetRouteVars` or replaces `api.GetRouteVar`.
 
 ## Query parameters
 
@@ -340,6 +340,25 @@ func main() {
 
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
 
+### stdadapter routing
+
+`stdadapter` registers each route as one Go 1.22 `ServeMux` pattern (`GET /tasks/{id}`), so matching, precedence, 404 and 405 come from `net/http`. Compared with earlier versions, which matched routes themselves:
+
+- **Precedence:** The most specific route wins (`/tasks/new` beats `/tasks/{id}`). Two routes conflict when some request path matches both and neither is more specific: `/tasks/{id}` and `/tasks/{name}`, or crossing routes such as `/tasks/{id}/notes` and `/tasks/new/{kind}`. A catch-all `/` already on the `*http.ServeMux` you pass to `stdadapter.New` still answers every path no route matches.
+- **Trailing slash:** A trailing slash is exact: `/tasks/42/` is 404 for `/tasks/{id}`.
+- **Escaped slash:** An escaped `%2F` inside a segment matches a wildcard: `/files/a%2Fb` gives `name` = `a/b` for `/files/{name}`, and `/files/..%2F..%2Fetc` gives `../../etc` (see [Security notes](#security-notes)).
+- **Wildcards:** Wildcard names must be Go identifiers (`{user_id}`, not `{user-id}`) and whole segments (`/files/{name}`, not `/files/{name}.json`). `{name}` is the only supported wildcard; `{name...}` and `{$}` panic.
+- **405:** 405 is decided by the whole mux and carries an `Allow` header. A catch-all `/` on the mux you pass in takes those requests instead, so they get its answer, not 405.
+- **HEAD:** A GET route also answers HEAD. Method-keyed logic sees `HEAD`: a skip path `GET:/health` (`api.GenSkipPath`) does not cover `HEAD /health`.
+- **Method:** `Handle` panics unless the method is an upper-case RFC 9110 token (`GET`, not `get` or `""`).
+- **GODEBUG:** `GODEBUG=httpmuxgo121=1` turns off `ServeMux` patterns and breaks every route; it also turns off the conflict panic. It can be set in the environment, by a `//go:debug httpmuxgo121=1` directive, or by a `godebug` line in your `go.mod`. The adapter requires the Go 1.22 mux.
+
+A route that conflicts with an earlier one, or an invalid method or pattern, panics in `Handle`, as `http.ServeMux.Handle` does; the route is neither served nor documented. A conflict is a bug in the route table, found at start-up.
+
+Unchanged: a registered `/tasks/` matches only `/tasks/`, and `GET /tasks` redirects to it; unclean paths (`//tasks`, `/a/../tasks`) are redirected to the cleaned path.
+
+See [ADR 0002](docs/adr/0002-stdadapter-servemux.md).
+
 ## Security notes
 
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
@@ -348,6 +367,7 @@ See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, respon
 - An `api.New` instance never logs bodies or the parsed form. It masks, by its sensitive keys (the `api.SensitiveLogKeys` defaults plus `api.WithSensitiveLogKeys`), header values and query parameter values in `uri`, and the user information of the `uri`, with the same rules as the default instance below. See [Logging](#logging).
 - On the default instance, request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
 - The default instance's request log masks, by the keys in `api.SensitiveLogKeys` (a name matches when it contains a key, ignoring case; the defaults include `authorization`, `token`, `password`, `key`, `cookie` and `session`): header values, JSON body fields, query parameter values in `uri` (names are found by splitting on `&` and `;`, and a masked value runs to the next `&`; a name that cannot be unescaped is masked too), and `form` values. It also masks the user information of an absolute-form, `//host` or CONNECT authority-form `uri` (`http://[REDACTED]@host/...`), up to the last `@`, so an `@` in the path or query hides the host and path too. Path segments are not masked. Masking is by name: a secret under a non-sensitive name (such as a URL with credentials in `?next=`) is logged as sent. A request body that is not JSON (form, XML, text) is logged as `[non-JSON body, N bytes]` unless `api.PrintFullEvent` is true.
+- With `stdadapter`, a route variable can contain `/` and `..` (`/files/..%2F..%2Fetc` gives `name` = `../../etc`). Validate it before using it in a file path or another lookup that trusts it.
 - `api.ProcessRequest` stores the value of the `X-Forwarded-For` header up to its first `", "` as the `proxiedIPAddress` info value (and, when the request has no device UUID, as the event ID input). Only the first `X-Forwarded-For` header line is read. That value is set by the client: trust it only behind a proxy that overwrites the header, and do not use it on its own for rate limits, allow lists or audit.
 - The package sets no limit on the request body size: `api.ProcessRequest` and the request receivers read the whole body into memory. Bound it before they run, with `http.MaxBytesHandler` (or `http.MaxBytesReader` in a middleware) or a proxy limit:
 
