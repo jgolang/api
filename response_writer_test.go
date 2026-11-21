@@ -3,11 +3,15 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/jgolang/api/core"
 )
 
 func TestResponseWriterAnswers500WhenBodyCannotBeEncoded(t *testing.T) {
@@ -64,46 +68,113 @@ func TestResponseWriterKeepsStatusAndHeadersOnSuccess(t *testing.T) {
 	}
 }
 
-// Warning and Informative default to status 100, which allows no body, so
-// writing the body fails. The failure must be reported, not exit the process.
-func TestResponseWriterReportsWriteFailureForDefaultStatus(t *testing.T) {
+// Warning and Informative default to status 100. A real server sends it as an
+// informational status and delivers the body with 200; the recorder that
+// ProcessRequest writes into rejects the body with http.ErrBodyNotAllowed,
+// which must neither exit the process nor be logged.
+func TestDefaultInformationalStatusReachesClientWithoutFatal(t *testing.T) {
 	tests := []struct {
 		name     string
-		response Response
+		handler  http.HandlerFunc
+		wantType string
 	}{
-		{name: "Warning", response: Warning{}},
-		{name: "Informative", response: Informative{}},
-		{name: "Warning under ProcessRequest", response: processedResponse{Warning{}}},
+		{name: "Warning", handler: func(w http.ResponseWriter, r *http.Request) { Warning{}.Write(w, r) }, wantType: "warning"},
+		{name: "Informative", handler: func(w http.ResponseWriter, r *http.Request) { Informative{}.Write(w, r) }, wantType: "info"},
+		{name: "Warning under ProcessRequest", handler: ProcessRequest(func(w http.ResponseWriter, r *http.Request) { Warning{}.Write(w, r) }), wantType: "warning"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			previousFatal, previousPrintError := Fatal, PrintError
+			var mu sync.Mutex
 			var fatalCalled bool
 			var logged string
-			Fatal = func(...interface{}) { fatalCalled = true }
-			PrintError = func(args ...interface{}) { logged += fmt.Sprintln(args...) }
+			Fatal = func(...interface{}) { mu.Lock(); fatalCalled = true; mu.Unlock() }
+			PrintError = func(args ...interface{}) { mu.Lock(); logged += fmt.Sprintln(args...); mu.Unlock() }
+			server := httptest.NewServer(tt.handler)
 			defer func() { Fatal, PrintError = previousFatal, previousPrintError }()
+			defer server.Close()
 
-			req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
-			res := httptest.NewRecorder()
-			tt.response.Write(res, req)
+			res, err := http.Get(server.URL + "/tasks")
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			body, err := io.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				t.Fatalf("reading body failed: %v", err)
+			}
+			server.Close()
 
+			mu.Lock()
+			defer mu.Unlock()
 			if fatalCalled {
 				t.Fatal("expected Fatal not to be called")
 			}
-			if res.Code != http.StatusContinue {
-				t.Fatalf("expected the default status 100 to be kept, got %d", res.Code)
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("expected the client to get status 200, got %d", res.StatusCode)
 			}
-			if !strings.Contains(logged, http.ErrBodyNotAllowed.Error()) {
-				t.Fatalf("expected the write error to be logged, got %q", logged)
+			if !strings.Contains(string(body), `"type":"`+tt.wantType+`"`) {
+				t.Fatalf("expected a %s body, got %q", tt.wantType, body)
+			}
+			if logged != "" {
+				t.Fatalf("expected nothing logged, got %q", logged)
 			}
 		})
 	}
 }
 
-// processedResponse writes its response from a handler run by ProcessRequest.
-type processedResponse struct{ response Response }
+// errorMarkerFormatter formats like the default formatter but replaces error
+// bodies, to show which formatter built the 500 body.
+type errorMarkerFormatter struct{}
 
-func (p processedResponse) Write(w http.ResponseWriter, r *http.Request) {
-	ProcessRequest(func(w http.ResponseWriter, r *http.Request) { p.response.Write(w, r) })(w, r)
+func (errorMarkerFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
+	formatted := ResponseFormatter{}.Format(data)
+	if data.ResponseType == ErrorType {
+		formatted.Body = map[string]string{"marker": "registered formatter", "code": string(data.ResponseCode)}
+	}
+	return formatted
+}
+
+func TestResponseWriterBuildsFailureWithRegisteredFormatterAndHeaders(t *testing.T) {
+	previousPrintError := PrintError
+	PrintError = func(...interface{}) {}
+	RegisterNewAPIResponseFormatter(errorMarkerFormatter{})
+	defer func() {
+		PrintError = previousPrintError
+		RegisterNewAPIResponseFormatter(ResponseFormatter{})
+	}()
+
+	res := httptest.NewRecorder()
+	Success{
+		Content: map[string]float64{"ratio": math.NaN()},
+		Headers: map[string]string{"X-Custom": "value"},
+	}.Write(res, httptest.NewRequest(http.MethodGet, "/ratio", nil))
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", res.Code)
+	}
+	if !strings.Contains(res.Body.String(), "registered formatter") {
+		t.Fatalf("expected the registered formatter to build the body, got %q", res.Body.String())
+	}
+	if got := res.Header().Get("X-Custom"); got != "value" {
+		t.Fatalf("expected the response headers to be kept, got %q", got)
+	}
+}
+
+func TestResponseWriterFailureAfterStatusWrittenKeepsEarlierStatus(t *testing.T) {
+	previousPrintError := PrintError
+	PrintError = func(...interface{}) {}
+	defer func() { PrintError = previousPrintError }()
+
+	res := httptest.NewRecorder()
+	res.WriteHeader(http.StatusAccepted)
+	SuccessWithContent(map[string]float64{"ratio": math.NaN()}).Write(res, httptest.NewRequest(http.MethodGet, "/ratio", nil))
+
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("expected the earlier status 202 to stay, got %d", res.Code)
+	}
+	wantCode := strings.ToLower(string(ResponseCodes.InternalServerEerror))
+	if !strings.Contains(res.Body.String(), `"code":"`+wantCode+`"`) {
+		t.Fatalf("expected the internal server error body, got %q", res.Body.String())
+	}
 }

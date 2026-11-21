@@ -27,9 +27,13 @@ const MethodPutKey = "put"
 // MethodPatchKey PATCH http method key ..
 const MethodPatchKey = "patch"
 
+// responseFormatter is the formatter registered in api, kept here because
+// core.API does not expose it; ResponseWriter formats its 500 body with it.
+var responseFormatter core.APIResponseFormatter = ResponseFormatter{}
+
 var api = core.New(
 	RequestReceiver{},
-	ResponseFormatter{},
+	responseFormatter,
 	ResponseWriter{},
 	&SecurityGuaranter{},
 	&mapMethods,
@@ -63,6 +67,7 @@ func ProcessBody(r *http.Request) (*RequestContext, error) {
 // RegisterNewAPIResponseFormatter inject a new implementation in the
 // APIResponseFormatter interface.
 func RegisterNewAPIResponseFormatter(formatter core.APIResponseFormatter) {
+	responseFormatter = formatter
 	api.RegisterNewAPIResponseFormatter(formatter)
 }
 
