@@ -32,8 +32,12 @@ func (guaranter *SecurityGuaranter) ValidateBasicToken(token string) (client, se
 	return pair[0], pair[1], true
 }
 
-// ValidateCustomToken validate token with a custom method.
+// ValidateCustomToken validate token with a custom method. A nil validator
+// accepts no token.
 func (guaranter *SecurityGuaranter) ValidateCustomToken(token string, validator core.CustomTokenValidator) (json.RawMessage, bool) {
+	if validator == nil {
+		return nil, false
+	}
 	return validator(token)
 }
 
@@ -53,6 +57,8 @@ func ValidateCustomToken(token string) (json.RawMessage, bool) {
 type ValidateCredentials func(string, string) bool
 
 // CustomTokenValidatorFunc define custom function to validate custom token.
+// While it is nil (the default), every token is invalid and CustomToken
+// answers 401.
 var CustomTokenValidatorFunc core.CustomTokenValidator
 
 // ValidateBasicAuthCredentialsFunc define custom function for validate basic authentication credential.
