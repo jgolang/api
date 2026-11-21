@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/jgolang/api/core"
@@ -131,7 +132,8 @@ type problemDetails struct {
 }
 
 // formatProblem formats data in ResponseModeProblem: an error as problem
-// details, any other response as its content alone. Content, token, actions
+// details, any other response as its content alone. The title is the HTTP
+// status text unless a service set it (see problemTitle). Content, token, actions
 // and info never reach a problem body. Detail has no trace suffix, since
 // code and event_id carry it.
 func (formatter ResponseFormatter) formatProblem(data core.ResponseData) *core.ResponseFormatted {
@@ -147,13 +149,55 @@ func (formatter ResponseFormatter) formatProblem(data core.ResponseData) *core.R
 		Headers:        problemHeaders(data.Headers),
 		Body: problemDetails{
 			Type:    "about:blank",
-			Title:   data.Title,
+			Title:   problemTitle(data.Title, data.HTTPStatusCode),
 			Status:  data.HTTPStatusCode,
 			Detail:  data.Message,
 			Code:    formatter.responseCode(data.ResponseCode),
 			EventID: data.EventID,
 		},
 	}
+}
+
+// libraryErrorTitles are the titles the library puts on error responses on
+// its own: the shipped values of DefaultErrorTitle, InternalServerTitle and
+// UnauthorizedTitle, and the titles of its helpers and middlewares. A title
+// reassigned through those variables is the service's.
+var libraryErrorTitles = map[string]bool{
+	"Error response!":                          true,
+	"Sorry!":                                   true,
+	"Unauthorized!":                            true,
+	"Invalid request content":                  true,
+	"Request info error!":                      true,
+	"Not unmarshal JSON struct!":               true,
+	"Error getting header value!":              true,
+	"Error getting header value type Int!":     true,
+	"Error getting header value type Int64!":   true,
+	"Error getting header value type Float64!": true,
+	"Error getting header value type Bool!":    true,
+	"Error getting route var!":                 true,
+	"Error getting route var type Int":         true,
+	"Error getting route var type Int64":       true,
+	"Error getting route var type Float64":     true,
+	"Error getting route var type Bool":        true,
+	"Error getting query param!":               true,
+	"Error getting query param type Int!":      true,
+	"Error getting query param type Int64!":    true,
+	"Error getting query param type Float64!":  true,
+	"Error getting query param type Bool!":     true,
+}
+
+// problemTitle returns the problem title for an error with title and
+// status: http.StatusText(status), as RFC 9457 section 4.2.1 advises for
+// about:blank, when title is empty or one the library set on its own
+// (owner answer Q39); title otherwise, or when status has no text.
+func problemTitle(title string, status int) string {
+	if title != "" && !libraryErrorTitles[title] {
+		return title
+	}
+	if text := http.StatusText(status); text != "" {
+		return text
+	}
+	return title
 }
 
 // problemHeaders returns a copy of headers with the problem Content-Type,

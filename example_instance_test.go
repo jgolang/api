@@ -59,7 +59,7 @@ func ExampleWithResponseMode_problem() {
 	fmt.Printf("%s | %s | %d | %s | %q | %s\n", problem.Type, problem.Title, problem.Status, problem.Detail, problem.Instance, problem.Code)
 	// Output:
 	// application/problem+json
-	// about:blank | Error response! | 404 | task not found | "" | PLN-404
+	// about:blank | Not Found | 404 | task not found | "" | PLN-404
 }
 
 // statusOnlyWriter writes the status code and no body.
