@@ -1,6 +1,6 @@
 # Migrating to v1
 
-This guide takes a v0 program (v0.11.x) to `github.com/jgolang/api` v1. The design is recorded in [ADR 0001](adr/0001-v1-instance-api.md) (the instance) and [ADR 0002](adr/0002-stdadapter-servemux.md) (routing; it lands with PR #38).
+This guide takes a v0 program (v0.11.x) to `github.com/jgolang/api` v1. The design is recorded in [ADR 0001](adr/0001-v1-instance-api.md) (the instance) and [ADR 0002](adr/0002-stdadapter-servemux.md) (routing).
 
 ## Summary
 
