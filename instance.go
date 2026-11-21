@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"maps"
 	"net/http"
 
 	"github.com/jgolang/api/core"
@@ -71,7 +70,7 @@ func New(opts ...Option) *API {
 			&mapMethods,
 			sharedParamValidator,
 		),
-		kindStatus: maps.Clone(o.kindStatus),
+		kindStatus: o.kindStatus, // built by WithKindStatus inside New; nothing else holds it
 		errorHook:  o.errorHook,
 	}
 }
@@ -169,14 +168,16 @@ func WithLowercaseCodes() Option {
 
 // WithKindStatus makes WriteError answer errors whose code has kind with
 // status instead of StatusForKind(kind). Repeat it to override more kinds;
-// a later call for the same kind wins, and kinds without an override keep
-// StatusForKind. Only error statuses (400 to 599) are accepted: any other
-// status is ignored, so an error never answers 2xx or 3xx. The empty kind is
-// ignored too, so errors without a kind, and nil errors, always answer 500.
-// The response title follows the status as in WriteError.
+// a later valid call for the same kind wins, and kinds without an override
+// keep StatusForKind. Only error statuses (400 to 599) are accepted: any
+// other status is ignored, so an error never answers 2xx or 3xx. The empty
+// kind is ignored too, so errors without a kind, and nil errors, always
+// answer 500. An ignored call leaves any earlier override in place. The
+// response title follows the status as in WriteError: the internal title
+// for any 5xx, the unauthorized title for 401 and 403.
 func WithKindStatus(kind codes.Kind, status int) Option {
 	return func(o *options) {
-		if kind == "" || status < http.StatusBadRequest || status > 599 {
+		if kind == "" || status < http.StatusBadRequest || status > maxErrorStatus {
 			return
 		}
 		if o.kindStatus == nil {
@@ -186,12 +187,19 @@ func WithKindStatus(kind codes.Kind, status int) Option {
 	}
 }
 
+// maxErrorStatus is the highest status WithKindStatus accepts.
+const maxErrorStatus = 599
+
 // WithErrorHook sets fn to observe every error the instance's WriteError
 // writes, for example to log or count it. fn receives the request, the
-// error exactly as passed to WriteError (nil included) and the status about
-// to be written. It runs synchronously on the request goroutine, after the
-// status is decided and before anything is written. The other error helpers
-// (Error400, Error500, ...) do not call it. A panic in fn is not recovered:
+// error exactly as passed to WriteError (nil included) and the status
+// WriteError decided. That status may differ from the one sent when the
+// handler already wrote a header or a custom formatter or writer changes it.
+// It runs synchronously on the request goroutine, after the status is
+// decided and before anything is written. Only WriteError calls fn: the
+// other error helpers (Error400, Error500, ...) and the library's own
+// rejections (body-parse failures in RequestBody and ProcessRequest, the
+// token middlewares' 401s, ProcessRequest's panic 500) do not. A panic in fn is not recovered:
 // it propagates out of WriteError with nothing written. fn is shared by all
 // requests the instance serves and may run concurrently, so it must be safe
 // for concurrent use. A later WithErrorHook replaces an earlier one, and nil
