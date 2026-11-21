@@ -8,6 +8,8 @@ go get github.com/jgolang/api
 
 The JSON envelope with device metadata in the request `header` (`device_type`, `device_brand`, `lat`, `lon`, `token`, …) is still supported, but it is no longer the default. It is documented in [docs/legacy.md](docs/legacy.md).
 
+Upgrading a v0 program? [docs/migration-v1.md](docs/migration-v1.md) takes it to v1 step by step: routing changes, the `api.New` instance, and every deprecated name with its replacement.
+
 ## Quick start
 
 ```go
@@ -53,6 +55,7 @@ func createTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	a := api.New()
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
 	router := stdadapter.New(http.NewServeMux(), docs)
 
@@ -66,11 +69,11 @@ func main() {
 	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
 	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
 
-	http.ListenAndServe(":8080", router)
+	http.ListenAndServe(":8080", a.Handler(router))
 }
 ```
 
-With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`) and answers with the response envelope:
+`a.Handler(router)` serves every route with the instance `a`; see [Request and response modes](#request-and-response-modes). With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`) and answers with the response envelope (an empty title answers 400 with code `TSK-001`, as declared):
 
 ```json
 {
@@ -140,7 +143,7 @@ An unknown value falls back to the default (`api.RequestModePlain`, `api.Respons
 
 `api.ResponseModeProblem` is accepted only by `api.WithResponseMode`, for the built-in formatter; `api.SetResponseMode` treats it as unknown, so the default instance never writes problem details. In a problem body `title` is the response title, `detail` the public message without the trace suffix, and `code` and `event_id` are extension members; `type` is always `about:blank`, and content, token, actions and info are not sent. The built-in response writer sends `Content-Type: application/json` unless the response `Headers` set a `Content-Type`, which always wins, in every mode (before v1 it was overwritten); the 500 an instance sends for a body that cannot be encoded keeps the formatter's `Content-Type`.
 
-Requests that are not wrapped by an instance's `Handler` use the default instance, which reads the package variables `api.CurrentRequestMode` and `api.CurrentResponseMode` (set with `api.SetRequestMode` and `api.SetResponseMode`). These four names are deprecated: they affect only the default instance, for the whole process. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
+Requests that are not wrapped by an instance's `Handler` use the default instance, which reads the package variables `api.CurrentRequestMode` and `api.CurrentResponseMode` (set with `api.SetRequestMode` and `api.SetResponseMode`). These four names are deprecated: they affect only the default instance, for the whole process. [docs/migration-v1.md](docs/migration-v1.md) lists every deprecated name with its option. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
 
 ## Reading the request
 
