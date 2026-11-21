@@ -186,10 +186,17 @@ func bodyTooLargeError() Error {
 	}
 }
 
+// SkipPath identifies a route that ProcessRequest passes through untouched,
+// as "METHOD:path" (see GenSkipPath).
 type SkipPath string
 
+// SkipPaths holds the routes ProcessRequest skips: a request whose method and
+// URL path match a key is not parsed and goes straight to the next handler.
+// Only presence counts; the bool value is ignored.
 var SkipPaths map[SkipPath]bool
 
+// AddSkipPath adds path to SkipPaths. ProcessRequest skips path whatever skip
+// is, because only the key's presence is checked.
 func AddSkipPath(path SkipPath, skip bool) {
 	if SkipPaths == nil {
 		SkipPaths = make(map[SkipPath]bool)
@@ -197,6 +204,8 @@ func AddSkipPath(path SkipPath, skip bool) {
 	SkipPaths[path] = skip
 }
 
+// DeleteSkipPath removes path from SkipPaths, so ProcessRequest parses its
+// requests again.
 func DeleteSkipPath(path SkipPath) {
 	if SkipPaths == nil {
 		SkipPaths = make(map[SkipPath]bool)
@@ -204,6 +213,8 @@ func DeleteSkipPath(path SkipPath) {
 	delete(SkipPaths, path)
 }
 
+// GenSkipPath returns the SkipPath of method and path, as matched against the
+// request method and URL path (no query).
 func GenSkipPath(method string, path string) SkipPath {
 	return SkipPath(fmt.Sprintf("%s:%s", method, path))
 }

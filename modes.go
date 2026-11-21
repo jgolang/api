@@ -9,19 +9,37 @@ import (
 // RequestMode controls how request payloads are parsed.
 type RequestMode string
 
+// Request modes of the built-in receivers. An unknown value falls back to
+// RequestModePlain.
 const (
-	RequestModeNone     RequestMode = "none"
-	RequestModePlain    RequestMode = "plain"
+	// RequestModeNone does not unwrap the body; it is read as plain JSON.
+	RequestModeNone RequestMode = "none"
+	// RequestModePlain reads the body as the endpoint content (the default).
+	RequestModePlain RequestMode = "plain"
+	// RequestModeEnvelope reads the body as {"header": ..., "content": ...};
+	// the header fills request metadata the HTTP headers did not set.
+	// RequestReceiverV2 skips the device serial, device ID and location
+	// fields.
 	RequestModeEnvelope RequestMode = "envelope"
-	RequestModeAuto     RequestMode = "auto"
+	// RequestModeAuto reads an envelope when the body looks like one (a JSON
+	// object with one or two keys, one of them header or content) and plain
+	// JSON otherwise.
+	RequestModeAuto RequestMode = "auto"
 )
 
 // ResponseMode controls how response payloads are formatted.
 type ResponseMode string
 
+// Response modes of the built-in formatter. An unknown value falls back to
+// ResponseModeEnvelope.
 const (
-	ResponseModeNone     ResponseMode = "none"
-	ResponseModePlain    ResponseMode = "plain"
+	// ResponseModeNone writes only the content, as is.
+	ResponseModeNone ResponseMode = "none"
+	// ResponseModePlain writes the header fields at the top level, next to
+	// content.
+	ResponseModePlain ResponseMode = "plain"
+	// ResponseModeEnvelope writes {"header": ..., "content": ...} (the
+	// default).
 	ResponseModeEnvelope ResponseMode = "envelope"
 
 	// ResponseModeProblem writes error responses as RFC 9457 problem details

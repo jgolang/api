@@ -328,6 +328,10 @@ func RContext(ctx context.Context) (*RequestContext, error) {
 	return nil, fmt.Errorf("context requestData not found")
 }
 
+// Context returns the request data of ctx: the RequestContext itself, or the
+// one ProcessRequest stored in a request context. Otherwise, including a nil
+// ctx, it returns an empty RequestContext over ctx (context.Background for
+// nil). It returns nil only for a typed nil *RequestContext.
 func Context(ctx context.Context) *RequestContext {
 	switch v := ctx.(type) {
 	case nil:
@@ -663,6 +667,8 @@ func generateEventID(ctx context.Context, prefix, uri string) string {
 	return fmt.Sprintf("%x", md5.Sum(buf))
 }
 
+// ParamValidatorV0 is the built-in param validator: it accepts every value.
+// Register a real one with RegisterParamValidator.
 func ParamValidatorV0(v any) (string, error) {
 	// not validate any param by default
 	return "", nil

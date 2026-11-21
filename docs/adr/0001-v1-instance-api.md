@@ -2,9 +2,9 @@
 
 - Status: Accepted (2026-11-21); implemented step by step through the v1 stories, all in v1.0.0:
   - 5.1 lands the instance, `Handler` and the two mode options (sections 2–3 for the modes; the `Get*Value*` helpers still use the default instance);
-  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7; landed); 5.5 the logger, redaction and a built-in instance writer that never exits (section 6; built, unmerged); 5.6 problem details (section 8; built, unmerged).
+  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7; landed); 5.5 the logger, redaction and a built-in instance writer that never exits (section 6; landed); 5.6 problem details (section 8; landed). Every section has landed for v1.0.0.
 - Issues: API-07 (#21), API-02 (#16), API-12 (#26), the v1 part of API-01 (#15).
-- Related: ADR 0002 (stdadapter on ServeMux patterns, lands with story 5.7) will record the routing change planned for the same release (API-08).
+- Related: [ADR 0002](0002-stdadapter-servemux.md) (stdadapter on ServeMux patterns) records the routing change of the same release (API-08).
 
 ## Context
 
@@ -103,7 +103,7 @@ sequenceDiagram
 
 ### 5. The deprecated default instance
 
-- The package keeps one unexported default instance. Unlike instances from `New`, it reads the deprecated package variables at call time (`CurrentRequestMode`, `CurrentResponseMode`, `TraceVisibility`, `TraceIDLength`, `BlankSuccess`, `Print`/`PrintError`/`Fatal`, `SensitiveLogKeys`, body-logging flags) and the implementations set with `RegisterNew*`. v0 code compiles and behaves as in v0.11.0, the last v0 release (except the routing change planned in ADR 0002 (stdadapter on ServeMux patterns, lands with story 5.7), which will apply to every program that uses `stdadapter`).
+- The package keeps one unexported default instance. Unlike instances from `New`, it reads the deprecated package variables at call time (`CurrentRequestMode`, `CurrentResponseMode`, `TraceVisibility`, `TraceIDLength`, `BlankSuccess`, `Print`/`PrintError`/`Fatal`, `SensitiveLogKeys`, body-logging flags) and the implementations set with `RegisterNew*`. v0 code compiles and behaves as in v0.11.0, the last v0 release (except the routing change in [ADR 0002](0002-stdadapter-servemux.md) (stdadapter on ServeMux patterns), which applies to every program that uses `stdadapter`).
 - `RegisterNew*`, `SetRequestMode`, `SetResponseMode` and the variables listed in the options table only affect the default instance; their doc comments say so and point at the option.
 - `TraceVisibility`, `TraceIDLength`, `BlankSuccess`, `PrintFullEvent`, `LogRequestBody`, `LogResponseBody`, `MaxLoggedBodyBytes` get no instance option (no present need). Instances use the v0 defaults (1, 6, true, bodies not logged). They stay, not deprecated, documented as default-instance-only, because a deprecation needs a replacement in the same release.
 
@@ -162,7 +162,7 @@ Not deprecated, shared by every instance, and listed as the narrowed `FUNC-04` d
 - Two binaries of one service configure their own instance; tests stop sharing state.
 - One extra context lookup per response.
 - Instances read no package variables for what they own; the `FUNC-04` deviation shrinks to the shared list above instead of disappearing.
-- Programs that stay on the package-level API see no wire change in v1 except the routing change planned in ADR 0002 (stdadapter on ServeMux patterns, lands with story 5.7) (and section 8's `Content-Type` note).
+- Programs that stay on the package-level API see no wire change in v1 except the routing change in [ADR 0002](0002-stdadapter-servemux.md) (stdadapter on ServeMux patterns) (and section 8's `Content-Type` note).
 - v1 doubles some surface (option + deprecated name) until a v2 removes the deprecated names.
 
 ## Alternatives considered
