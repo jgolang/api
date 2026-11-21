@@ -8,8 +8,8 @@
 // writers and middlewares then use that instance for the request.
 //
 // Without an instance, the package-level functions use a default instance
-// that answers like New() with its defaults. It logs through Print and
-// PrintError, and the deprecated package variables and RegisterNew*
-// functions still configure its modes, sensitive keys and components; see
+// that behaves like New() with its defaults. It logs through slog.Default,
+// and the deprecated package variables and RegisterNew* functions still
+// configure its modes, sensitive keys and components; see
 // docs/migration-v1.md for the move to New.
 package api

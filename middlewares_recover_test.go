@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,10 +8,8 @@ import (
 )
 
 func TestProcessRequestLogsPanicValueWithoutRequest(t *testing.T) {
-	previousPrintError := PrintError
-	var logged string
-	PrintError = func(args ...interface{}) { logged += fmt.Sprintln(args...) }
-	defer func() { PrintError = previousPrintError }()
+	buf := captureDefaultLogger(t)
+	failOnPackageLoggers(t)
 
 	handler := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
 		panic("handler panic value")
@@ -23,6 +20,7 @@ func TestProcessRequestLogsPanicValueWithoutRequest(t *testing.T) {
 	res := httptest.NewRecorder()
 
 	handler.ServeHTTP(res, req)
+	logged := buf.String()
 
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", res.Code)

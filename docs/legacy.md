@@ -131,7 +131,7 @@ Two exported implementations of `core.APIRequestReceiver` exist. Both follow the
 
 ### `api.Response`-returning helpers
 
-These helpers predate `api.WriteError` and the `Query*` helpers. They return a ready-to-write `api.Response` (an `api.Error`) instead of an `error`, and log the underlying error: with `api.PrintError` on the default instance, through the `api.WithLogger` logger (or not at all) on an `api.New` instance.
+These helpers predate `api.WriteError` and the `Query*` helpers. They return a ready-to-write `api.Response` (an `api.Error`) instead of an `error`, and log the underlying error: through `slog.Default` on the default instance, through the `api.WithLogger` logger (or not at all) on an `api.New` instance.
 
 | Helper | Prefer in new code |
 | --- | --- |

@@ -15,24 +15,27 @@ import (
 	"github.com/jgolang/api/core"
 )
 
-// PrintError wrapper function. It affects only the default instance; an
-// instance from New logs errors through its WithLogger logger.
+// PrintError wrapper function. Since v1.0.0 the package no longer calls it:
+// the default instance logs errors through slog.Default and an instance from
+// New through its WithLogger logger.
 //
-// Deprecated: use api.New(api.WithLogger(...)) instead.
+// Deprecated: it is ignored; use api.New(api.WithLogger(...)) or
+// slog.SetDefault instead.
 var PrintError func(...interface{}) = log.Print
 
-// Print wrapper function. It affects only the default instance; an instance
-// from New logs requests and responses through its WithLogger logger.
+// Print wrapper function. Since v1.0.0 only the deprecated LogRequest,
+// LogResponse and LogResponseWithDuration call it: the default instance logs
+// requests and responses through slog.Default and an instance from New
+// through its WithLogger logger.
 //
-// Deprecated: use api.New(api.WithLogger(...)) instead.
+// Deprecated: use api.New(api.WithLogger(...)) or slog.SetDefault instead.
 var Print func(string, ...interface{}) = log.Printf
 
 // Fatal wrapper function. The package no longer calls it: a response that
-// cannot be encoded is reported through PrintError and answered with 500 on
-// the default instance, and through the WithLogger logger on an instance
-// from New.
+// cannot be encoded is logged and answered with 500.
 //
-// Deprecated: use api.New(api.WithLogger(...)) instead.
+// Deprecated: it is ignored; use api.New(api.WithLogger(...)) or
+// slog.SetDefault instead.
 var Fatal func(...interface{}) = log.Fatal
 
 // GetHeaderValueString gets header value as string.
@@ -374,24 +377,37 @@ const redactedLogValue = "[REDACTED]"
 
 // PrintFullEvent set true value for allow print full event request. It also
 // logs a non-JSON request body as is instead of its size.
+//
+// Deprecated: it affects only the deprecated LogRequest, LogResponse and
+// LogResponseWithDuration; ProcessRequest never logs bodies.
 var PrintFullEvent bool = false
 
 // LogRequestBody enables request body logging.
+//
+// Deprecated: it affects only the deprecated LogRequest; ProcessRequest
+// never logs bodies.
 var LogRequestBody bool = false
 
 // LogResponseBody enables response body logging.
+//
+// Deprecated: it affects only the deprecated LogResponse and
+// LogResponseWithDuration; ProcessRequest never logs bodies.
 var LogResponseBody bool = false
 
 // MaxLoggedBodyBytes limits logged request and response bodies when PrintFullEvent is false.
+//
+// Deprecated: it affects only the deprecated LogRequest, LogResponse and
+// LogResponseWithDuration; ProcessRequest never logs bodies.
 var MaxLoggedBodyBytes int = 2000
 
 // SensitiveLogKeys defines fields, headers and query parameters that must be
 // redacted in logs: by default authorization, token, password, secret,
 // credential, apikey, api-key, key, cookie and session. A name is sensitive
 // when it contains one of the keys, ignoring case.
-// It affects only the default instance, which reads it at call time; an
-// instance from New masks the default keys plus the keys added with
-// WithSensitiveLogKeys.
+// The default instance reads it at call time and masks the built-in keys
+// plus these, so it can add keys but no longer remove a built-in one; an
+// instance from New masks the built-in keys plus the keys added with
+// WithSensitiveLogKeys. The deprecated LogRequest masks only these keys.
 //
 // Deprecated: use api.New(api.WithSensitiveLogKeys(...)) instead.
 var SensitiveLogKeys = defaultSensitiveLogKeys()
@@ -417,8 +433,8 @@ func defaultSensitiveLogKeys() []string {
 // JSON body fields, query parameters in uri and form fields are masked (see
 // SensitiveLogKeys), as is the user information of an absolute-form uri. A
 // request body that is not JSON is logged as its size unless PrintFullEvent
-// is true. It writes only the default instance's lines; an instance from New
-// logs through its WithLogger logger.
+// is true. The package no longer calls it: ProcessRequest logs through
+// slog.Default, or through the instance's WithLogger logger.
 //
 // Deprecated: use api.New(api.WithLogger(...)) instead.
 func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody []byte) {
@@ -439,8 +455,9 @@ func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody 
 	Print(format, args...)
 }
 
-// LogResponse prints API response in log. It writes only the default
-// instance's lines; an instance from New logs through its WithLogger logger.
+// LogResponse prints API response in log. The package no longer calls it:
+// ProcessRequest logs through slog.Default, or through the instance's
+// WithLogger logger.
 //
 // Deprecated: use api.New(api.WithLogger(...)) instead.
 func LogResponse(eventID string, res *httptest.ResponseRecorder) {
@@ -448,8 +465,8 @@ func LogResponse(eventID string, res *httptest.ResponseRecorder) {
 }
 
 // LogResponseWithDuration prints API response in log including request
-// duration. It writes only the default instance's lines; an instance from New
-// logs through its WithLogger logger.
+// duration. The package no longer calls it: ProcessRequest logs through
+// slog.Default, or through the instance's WithLogger logger.
 //
 // Deprecated: use api.New(api.WithLogger(...)) instead.
 func LogResponseWithDuration(eventID string, res *httptest.ResponseRecorder, duration time.Duration) {

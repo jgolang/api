@@ -1,7 +1,11 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	stderrors "errors"
+	"log"
+	"log/slog"
 	"maps"
 	"math"
 	"net/http"
@@ -15,17 +19,20 @@ import (
 	"github.com/jgolang/errors/codes"
 )
 
-// countPackageErrorLogs replaces Print and PrintError with no-ops for one
-// test and returns how many times PrintError was called. The default
-// instance still logs through them until it moves to slog.
-func countPackageErrorLogs(t *testing.T) *int {
+// captureDefaultLogger makes slog.Default write JSON records into the
+// returned buffer for one test. It also restores the standard logger's
+// output and flags, which slog.SetDefault redirects.
+func captureDefaultLogger(t *testing.T) *bytes.Buffer {
 	t.Helper()
-	previousPrint, previousPrintError := Print, PrintError
-	calls := 0
-	Print = func(string, ...interface{}) {}
-	PrintError = func(...interface{}) { calls++ }
-	t.Cleanup(func() { Print, PrintError = previousPrint, previousPrintError })
-	return &calls
+	previous, previousOutput, previousFlags := slog.Default(), log.Writer(), log.Flags()
+	logger, buf := newRecordingLogger()
+	slog.SetDefault(logger)
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(previousOutput)
+		log.SetFlags(previousFlags)
+	})
+	return buf
 }
 
 // sameAsNewEventIDs matches what differs between two runs of one request:
@@ -37,7 +44,7 @@ var sameAsNewEventIDs = regexp.MustCompile(`"event_id":"[0-9a-f]+"|\([0-9a-f]*-`
 // apart from event IDs.
 func TestDefaultInstanceAnswersLikeNew(t *testing.T) {
 	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
-	countPackageErrorLogs(t)
+	captureDefaultLogger(t)
 	declared := codes.New("PLN-001", "plan not found").WithKind(codes.KindNotFound)
 	tests := []struct {
 		name    string
@@ -99,7 +106,7 @@ func TestDefaultInstanceAnswersLikeNew(t *testing.T) {
 // instance in the same request mode.
 func TestDefaultInstanceInEnvelopeRequestModeAnswersLikeNew(t *testing.T) {
 	usePackageModes(t, RequestModeEnvelope, ResponseModeEnvelope)
-	countPackageErrorLogs(t)
+	captureDefaultLogger(t)
 	body := `{"header":{"token":"s3cr3t"},"content":{"title":"task"}}`
 	handler := ProcessRequest(okHandler)
 
@@ -187,23 +194,24 @@ func TestDefaultRequestHeaderSessionDoesNotCopyTheToken(t *testing.T) {
 
 func TestDefaultInstanceBoundsBodiesAtTheLibraryReadPoints(t *testing.T) {
 	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
-	errorLogs := countPackageErrorLogs(t)
+	buf := captureDefaultLogger(t)
 	tests := []struct {
-		name    string
-		handler http.Handler
+		name       string
+		handler    http.Handler
+		wantLogged string
 	}{
-		{name: "ProcessRequest", handler: ProcessRequest(okHandler)},
-		{name: "RequestBody", handler: RequestBody(okHandler)},
+		{name: "ProcessRequest", handler: ProcessRequest(okHandler), wantLogged: "request body rejected"},
+		{name: "RequestBody", handler: RequestBody(okHandler), wantLogged: "request body rejected"},
 		{name: "UnmarshalBody", handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var payload map[string]any
 			if response := UnmarshalBody(&payload, r); response != nil {
 				response.Write(w, r)
 			}
-		})},
+		}), wantLogged: "request body not unmarshaled"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			*errorLogs = 0
+			buf.Reset()
 
 			rec := serve(tt.handler, http.MethodPost, jsonBodyOfSize(defaultMaxBodyBytes+1), nil)
 
@@ -213,9 +221,7 @@ func TestDefaultInstanceBoundsBodiesAtTheLibraryReadPoints(t *testing.T) {
 			if title, code := envelopeHeader(t, rec.Body.Bytes()); title != "Request content too large" || code != string(ResponseCodes.InvalidJSON) {
 				t.Fatalf("title, code = %q, %q, want the too-large title and %s", title, code, ResponseCodes.InvalidJSON)
 			}
-			if *errorLogs != 1 {
-				t.Fatalf("PrintError called %d times, want 1", *errorLogs)
-			}
+			recordNamed(t, decodeRecords(t, buf), tt.wantLogged)
 		})
 	}
 }
@@ -262,5 +268,258 @@ func TestSetResponseModeProblemWritesProblemDetails(t *testing.T) {
 	}
 	if members := decodeMembers(t, rec.Body.Bytes()); members["type"] != "about:blank" || members["status"] != float64(http.StatusNotFound) {
 		t.Fatalf("members = %v, want a 404 problem", members)
+	}
+}
+
+// TestDefaultInstanceLogsThroughSlogDefault pins, as golden records, what the
+// default ProcessRequest writes: request and response through slog.Default, with
+// sensitive headers and query values masked and no body or form even when
+// the deprecated body-logging flags are on. Print and PrintError are never
+// called.
+func TestDefaultInstanceLogsThroughSlogDefault(t *testing.T) {
+	failOnPackageLoggers(t)
+	previousLogRequestBody, previousLogResponseBody := LogRequestBody, LogResponseBody
+	LogRequestBody, LogResponseBody = true, true
+	t.Cleanup(func() { LogRequestBody, LogResponseBody = previousLogRequestBody, previousLogResponseBody })
+	tests := []struct {
+		name      string
+		body      string
+		next      http.HandlerFunc
+		parseForm bool
+		want      []string
+	}{
+		{
+			name: "success",
+			body: `{"title":"task","password":"bodysecret"}`,
+			want: []string{
+				`{"event_id":"<id>","headers":{"Authorization":["[REDACTED]"],"Cookie":["[REDACTED]"]},"level":"INFO","method":"POST","msg":"request","uri":"/tasks?page=2&access_token=[REDACTED]"}`,
+				`{"duration_ms":"<ms>","event_id":"<id>","level":"INFO","method":"POST","msg":"response","status":200,"status_text":"OK","uri":"/tasks?page=2&access_token=[REDACTED]"}`,
+			},
+		},
+		{
+			name: "parsed form",
+			body: "note=formvalue&secret=formsecret",
+			next: okHandler, parseForm: true,
+			want: []string{
+				`{"event_id":"<id>","headers":{"Authorization":["[REDACTED]"],"Content-Type":["application/x-www-form-urlencoded"],"Cookie":["[REDACTED]"]},"level":"INFO","method":"POST","msg":"request","uri":"/tasks?page=2&access_token=[REDACTED]"}`,
+				`{"duration_ms":"<ms>","event_id":"<id>","level":"INFO","method":"POST","msg":"response","status":200,"status_text":"OK","uri":"/tasks?page=2&access_token=[REDACTED]"}`,
+			},
+		},
+		{
+			name: "bad json",
+			body: `{"title":`,
+			want: []string{`{"error":"unexpected EOF","level":"ERROR","msg":"request body rejected"}`},
+		},
+		{
+			name: "panic",
+			next: func(http.ResponseWriter, *http.Request) { panic("boom") },
+			want: []string{
+				`{"event_id":"<id>","headers":{"Authorization":["[REDACTED]"],"Cookie":["[REDACTED]"]},"level":"INFO","method":"POST","msg":"request","uri":"/tasks?page=2&access_token=[REDACTED]"}`,
+				`{"event_id":"<id>","level":"ERROR","msg":"panic recovered","panic":"boom"}`,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := captureDefaultLogger(t)
+			next := tt.next
+			if next == nil {
+				next = okHandler
+			}
+			handler := ProcessRequest(next)
+			if tt.parseForm {
+				handler = parseFormFirst(t, handler)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/tasks?page=2&access_token=s3cr3t", strings.NewReader(tt.body))
+			req.Header.Set("Authorization", "Bearer s3cr3t")
+			req.Header.Set("Cookie", "sid=s3cr3t")
+			if tt.parseForm {
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			records := decodeRecords(t, buf)
+			var got []string
+			for _, record := range records {
+				got = append(got, goldenRecord(t, record))
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("records =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(tt.want, "\n"))
+			}
+			for _, secret := range []string{"s3cr3t", "bodysecret", "formvalue", "formsecret"} {
+				if strings.Contains(buf.String(), secret) {
+					t.Fatalf("records contain %s: %s", secret, buf)
+				}
+			}
+			for _, record := range records {
+				if record["msg"] == "request" && record["uri"] != "/tasks?page=2&access_token=[REDACTED]" {
+					t.Fatalf("request uri = %v, want the token masked", record["uri"])
+				}
+			}
+		})
+	}
+}
+
+func TestDefaultGetValueHelperFailuresAreRecorded(t *testing.T) {
+	tests := []struct {
+		name      string
+		target    string
+		headers   map[string]string
+		read      func(r *http.Request) Response
+		wantMsg   string
+		wantKey   string
+		wantError string
+		secret    string
+	}{
+		{
+			name:      "header",
+			headers:   map[string]string{"X-Count": "many"},
+			read:      func(r *http.Request) Response { _, response := GetHeaderValueInt("X-Count", r); return response },
+			wantMsg:   "header value not obtained",
+			wantKey:   "X-Count",
+			wantError: `strconv.Atoi: parsing "many": invalid syntax`,
+		},
+		{
+			name:      "sensitive header",
+			headers:   map[string]string{"X-Api-Key": "supersecret"},
+			read:      func(r *http.Request) Response { _, response := GetHeaderValueInt("X-Api-Key", r); return response },
+			wantMsg:   "header value not obtained",
+			wantKey:   "X-Api-Key",
+			wantError: "invalid syntax",
+			secret:    "supersecret",
+		},
+		{
+			name:   "sensitive query param",
+			target: "/?access_token=supersecret",
+			read: func(r *http.Request) Response {
+				_, response := GetQueryParamValueInt("access_token", r)
+				return response
+			},
+			wantMsg:   "query param not obtained",
+			wantKey:   "access_token",
+			wantError: "invalid syntax",
+			secret:    "supersecret",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := captureDefaultLogger(t)
+			failOnPackageLoggers(t)
+			target := tt.target
+			if target == "" {
+				target = "/"
+			}
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			for key, value := range tt.headers {
+				req.Header.Set(key, value)
+			}
+
+			if response := tt.read(req); response == nil {
+				t.Fatal("helper succeeded, want a failure")
+			}
+
+			records := decodeRecords(t, buf)
+			if len(records) != 1 {
+				t.Fatalf("records = %d, want 1 (%s)", len(records), buf)
+			}
+			record := records[0]
+			if record["level"] != "ERROR" || record["msg"] != tt.wantMsg || record["key"] != tt.wantKey || record["error"] != tt.wantError {
+				t.Fatalf("record = %v, want ERROR %q key %q error %q", record, tt.wantMsg, tt.wantKey, tt.wantError)
+			}
+			if tt.secret != "" && strings.Contains(buf.String(), tt.secret) {
+				t.Fatalf("records contain the value: %s", buf)
+			}
+		})
+	}
+}
+
+// goldenRecord returns record as JSON without its time, with the event ID
+// and the duration normalized, so runs can be compared.
+func goldenRecord(t *testing.T, record logRecord) string {
+	t.Helper()
+	delete(record, "time")
+	if _, ok := record["event_id"]; ok {
+		record["event_id"] = "<id>"
+	}
+	if _, ok := record["duration_ms"]; ok {
+		record["duration_ms"] = "<ms>"
+	}
+	var golden bytes.Buffer
+	encoder := json.NewEncoder(&golden)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(record); err != nil {
+		t.Fatalf("encoding record %v: %v", record, err)
+	}
+	return strings.TrimSpace(golden.String())
+}
+
+func TestDefaultSensitiveLogKeysOnlyAdd(t *testing.T) {
+	buf := captureDefaultLogger(t)
+	previous := SensitiveLogKeys
+	SensitiveLogKeys = []string{"pin"}
+	t.Cleanup(func() { SensitiveLogKeys = previous })
+	req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	req.Header.Set("Pin", "1234")
+	req.Header.Set("Authorization", "Bearer s3cr3t")
+
+	ProcessRequest(okHandler).ServeHTTP(httptest.NewRecorder(), req)
+
+	headers := recordNamed(t, decodeRecords(t, buf), "request")["headers"].(map[string]any)
+	for _, key := range []string{"Pin", "Authorization"} {
+		if got := headers[key].([]any)[0]; got != redactedLogValue {
+			t.Errorf("header %s = %v, want %s", key, got, redactedLogValue)
+		}
+	}
+}
+
+func TestDefaultWriterAnswers500WhenResponseCannotBeEncoded(t *testing.T) {
+	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
+	buf := captureDefaultLogger(t)
+	failOnPackageLoggers(t)
+
+	rec := serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		SuccessWithContent(math.NaN()).Write(w, r)
+	}), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if title, code := envelopeHeader(t, rec.Body.Bytes()); title != InternalServerTitle || code != string(internalServerErrorCode()) {
+		t.Fatalf("title, code = %q, %q, want the Error500 body", title, code)
+	}
+	recordNamed(t, decodeRecords(t, buf), "response cannot be encoded")
+}
+
+func TestDefaultWriterAnswersBare500WhenTheFormatterReturnsNoBody(t *testing.T) {
+	captureDefaultLogger(t)
+	RegisterNewAPIResponseFormatter(nanFormatter{})
+	t.Cleanup(func() { RegisterNewAPIResponseFormatter(ResponseFormatter{}) })
+
+	rec := serve(http.HandlerFunc(okHandler), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusInternalServerError || rec.Body.Len() != 0 {
+		t.Fatalf("status, body = %d, %q, want a bare 500", rec.Code, rec.Body)
+	}
+}
+
+func TestNewWithoutLoggerStaysSilentUnderACapturingDefault(t *testing.T) {
+	buf := captureDefaultLogger(t)
+
+	serve(New().Handler(ProcessRequest(okHandler)), http.MethodPost, `{"title":`, nil)
+	serve(New().Handler(ProcessRequest(okHandler)), http.MethodPost, `{"title":"task"}`, nil)
+
+	if buf.Len() != 0 {
+		t.Fatalf("New() without WithLogger logged: %s", buf)
+	}
+}
+
+// parseFormFirst parses the request form before next runs.
+func parseFormFirst(t *testing.T, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parsing form: %v", err)
+		}
+		next(w, r)
 	}
 }

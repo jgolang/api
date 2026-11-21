@@ -22,18 +22,21 @@ import (
 //
 // Requests that carry no instance are served by the default instance, which
 // behaves like New() with its defaults: codes as declared, no request token
-// echo and request bodies bounded at 10 MiB where the library reads them.
-// It takes its modes, formatter settings and components from the deprecated
-// package-level setters, and logs through Print and PrintError, masking
-// SensitiveLogKeys. A zero or nil API is the default instance.
+// echo, request bodies bounded at 10 MiB where the library reads them, and
+// slog records instead of Print and PrintError. It differs from New() only
+// in where its configuration comes from: it logs through slog.Default (read
+// at call time), masks the default sensitive keys plus SensitiveLogKeys, and
+// takes its modes, formatter settings and components from the deprecated
+// package-level setters. A zero or nil API is the default instance.
 type API struct {
 	core       *core.API
 	kindStatus map[codes.Kind]int
 	errorHook  func(r *http.Request, err error, status int)
-	// fromNew is true for an API from New; false is the default instance,
-	// which logs through the v0 package variables.
-	fromNew          bool
-	logger           *slog.Logger
+	// logger is nil only on the default instance, which logs through
+	// slog.Default; New always sets one.
+	logger *slog.Logger
+	// sensitiveLogKeys is nil only on the default instance, which masks the
+	// default keys plus SensitiveLogKeys.
 	sensitiveLogKeys []string
 	maxBodyBytes     int64
 }
@@ -80,6 +83,9 @@ func New(opts ...Option) *API {
 			opt(&o)
 		}
 	}
+	if o.logger == nil {
+		o.logger = slog.New(slog.DiscardHandler)
+	}
 	formatter := o.responseFormatter()
 	return &API{
 		core: core.New(
@@ -92,7 +98,6 @@ func New(opts ...Option) *API {
 		),
 		kindStatus:       o.kindStatus, // built by WithKindStatus inside New; nothing else holds it
 		errorHook:        o.errorHook,
-		fromNew:          true,
 		logger:           o.logger,
 		sensitiveLogKeys: instanceSensitiveLogKeys(o.sensitiveLogKeys),
 		maxBodyBytes:     o.maxBodyBytes,
@@ -164,7 +169,7 @@ func (o options) bindFormatter(formatter ResponseFormatter) ResponseFormatter {
 func (o options) responseWriter(formatter core.APIResponseFormatter) core.APIResponseWriter {
 	switch o.writer.(type) {
 	case nil, ResponseWriter, *ResponseWriter:
-		return ResponseWriter{fromNew: true, logger: o.logger, formatter: formatter}
+		return ResponseWriter{logger: o.logger, formatter: formatter}
 	default:
 		return o.writer
 	}
@@ -347,7 +352,7 @@ func WithResponseFormatter(formatter core.APIResponseFormatter) Option {
 // with the instance formatter's body. A custom writer alone decides how it
 // writes and is used as given, including a typed nil pointer. A type that
 // embeds ResponseWriter is custom: its promoted Write keeps the default
-// instance's behavior (PrintError and the registered formatter).
+// instance's behavior (slog.Default and the registered formatter).
 func WithResponseWriter(writer core.APIResponseWriter) Option {
 	return func(o *options) {
 		o.writer = writer
@@ -406,7 +411,7 @@ type instanceKey struct{}
 
 // defaultInstance serves requests that carry no instance. It wraps the
 // package-level core, so RegisterNew* and the package mode variables
-// configure it.
+// configure it; its nil logger and sensitive keys are resolved at call time.
 var defaultInstance = &API{core: api, maxBodyBytes: defaultMaxBodyBytes}
 
 // instanceFrom returns the instance stored in r's context by Handler, or the

@@ -98,7 +98,7 @@ func Example_migrationOptions() {
 		api.WithRequestReceiver(api.RequestReceiver{}),     // RegisterNewAPIRequestReceiver
 		api.WithResponseFormatter(api.ResponseFormatter{}), // RegisterNewAPIResponseFormatter
 		api.WithResponseWriter(api.ResponseWriter{}),       // RegisterNewAPIResponseWriter
-		api.WithLogger(logger),                             // Print, PrintError, Fatal, Log*
+		api.WithLogger(logger),                             // slog.Default; Print, PrintError, Fatal, Log*
 		api.WithSensitiveLogKeys("pin"),                    // SensitiveLogKeys
 	)
 
