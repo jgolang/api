@@ -240,8 +240,12 @@ func WithErrorHook(fn func(r *http.Request, err error, status int)) Option {
 // "request" and a "response" info record per request, and errors met while
 // serving one (a rejected body, a failed Get*Value* helper, a recovered
 // panic, a response that cannot be encoded) are written as error records.
-// Request and response bodies are never logged. Header, query and form
-// values whose key is sensitive (see WithSensitiveLogKeys) are masked.
+// Request and response bodies and the parsed form are never logged. Header
+// and query values whose key is sensitive (see WithSensitiveLogKeys) are
+// masked, as is the user information of an absolute-form URI; a failed
+// Get*Value* helper logs the name as "key" and, for a sensitive name, only
+// the kind of error, never the value. A panic with http.ErrAbortHandler is a
+// "handler aborted" debug record instead of an error record.
 // The built-in writer's records carry no request context or event_id, since
 // core.APIResponseWriter.Write receives no request.
 // Without it, or with nil, the instance writes no logs. A later WithLogger
@@ -252,9 +256,10 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// WithSensitiveLogKeys adds keys to the ones whose header, query and form
-// values the instance masks in its records. A key matches any name that
-// contains it, ignoring case. The defaults (the v0 SensitiveLogKeys list,
+// WithSensitiveLogKeys adds keys to the ones whose header and query values
+// the instance masks in its records, and whose Get*Value* helper errors are
+// logged without the value. A key matches any name that contains it,
+// ignoring case. Secrets in path segments (/reset/{token}) are not masked. The defaults (the v0 SensitiveLogKeys list,
 // cookie and session) are always kept: this option only adds. Keys are
 // trimmed and lowercased, blank keys are ignored; repeat it to add more.
 func WithSensitiveLogKeys(keys ...string) Option {

@@ -3,14 +3,17 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -171,6 +174,10 @@ func TestRedactQuery(t *testing.T) {
 		{name: "escaped key", raw: "access%5Ftoken=T", want: "access%5Ftoken=[REDACTED]"},
 		{name: "key without value", raw: "token&page=2", want: "token&page=2"},
 		{name: "empty value", raw: "token=", want: "token=[REDACTED]"},
+		{name: "semicolon separator", raw: "page=2;token=T&q=x", want: "page=2;token=[REDACTED]&q=x"},
+		{name: "only semicolons", raw: "a=1;password=p", want: "a=1;password=[REDACTED]"},
+		{name: "percent-encoded key", raw: "%74oken=T&page=2", want: "%74oken=[REDACTED]&page=2"},
+		{name: "key that cannot be unescaped", raw: "bad%zz=V&page=2", want: "bad%zz=[REDACTED]&page=2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -187,6 +194,10 @@ func TestRedactURI(t *testing.T) {
 		{uri: "/tasks", want: "/tasks"},
 		{uri: "/tasks?", want: "/tasks?"},
 		{uri: "/login?password=p&next=%2F", want: "/login?password=[REDACTED]&next=%2F"},
+		{uri: "http://example.com/tasks", want: "http://example.com/tasks"},
+		{uri: "http://user:pass@example.com/tasks?token=T", want: "http://[REDACTED]@example.com/tasks?token=[REDACTED]"},
+		{uri: "https://user@example.com", want: "https://[REDACTED]@example.com"},
+		{uri: "/redirect?to=http://a@b", want: "/redirect?to=http://a@b"},
 	}
 	for _, tt := range tests {
 		if got := redactURI(tt.uri, keys); got != tt.want {
@@ -195,8 +206,9 @@ func TestRedactURI(t *testing.T) {
 	}
 }
 
-// TestInstanceRedactsFormParsedBeforeProcessRequest masks the form that a
-// middleware parsed before ProcessRequest.
+// TestInstanceRedactsFormParsedBeforeProcessRequest checks that a form
+// parsed before ProcessRequest is never logged: bodies are not logged, and
+// query values appear only, masked, in uri.
 func TestInstanceRedactsFormParsedBeforeProcessRequest(t *testing.T) {
 	logger, buf := newRecordingLogger()
 	a := New(WithLogger(logger))
@@ -208,12 +220,23 @@ func TestInstanceRedactsFormParsedBeforeProcessRequest(t *testing.T) {
 			next.ServeHTTP(w, r)
 		})
 	}
-	req := httptest.NewRequest(http.MethodGet, "/tasks?token=T&page=2", nil)
+	req := httptest.NewRequest(http.MethodPost, "/tasks?token=T&page=2", strings.NewReader("note=postedvalue&secret=postedsecret"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	a.Handler(parseForm(ProcessRequest(okHandler))).ServeHTTP(httptest.NewRecorder(), req)
 
-	if got := recordNamed(t, decodeRecords(t, buf), "request")["form"]; got != "page=2&token=[REDACTED]" {
-		t.Fatalf("form = %v, want the token masked", got)
+	records := decodeRecords(t, buf)
+	request := recordNamed(t, records, "request")
+	if _, ok := request["form"]; ok {
+		t.Fatalf("request record has a form attribute: %v", request)
+	}
+	if request["uri"] != "/tasks?token=[REDACTED]&page=2" {
+		t.Fatalf("uri = %v, want the token masked", request["uri"])
+	}
+	for _, value := range []string{"postedvalue", "postedsecret", "=T"} {
+		if strings.Contains(buf.String(), value) {
+			t.Fatalf("records contain %q: %s", value, buf)
+		}
 	}
 }
 
@@ -280,6 +303,22 @@ func TestInstanceWithoutLoggerIsSilent(t *testing.T) {
 			}
 		})},
 		{name: "request body failure", handler: RequestBody(okHandler), body: `{"title":`},
+		{name: "query helper failure", handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, response := GetQueryParamValueInt("page", r); response != nil {
+				response.Write(w, r)
+			}
+		})},
+		{name: "route var helper failure", handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, response := GetRouteVarValueInt("id", r); response != nil {
+				response.Write(w, r)
+			}
+		})},
+		{name: "unmarshal body failure", handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var payload struct{}
+			if response := UnmarshalBody(&payload, r); response != nil {
+				response.Write(w, r)
+			}
+		}), body: `{"title":`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -297,37 +336,50 @@ func TestInstanceWithoutLoggerIsSilent(t *testing.T) {
 }
 
 func TestInstanceAnswers500WhenResponseCannotBeEncoded(t *testing.T) {
-	failOnPackageLoggers(t)
-	logger, buf := newRecordingLogger()
-	a := New(WithLogger(logger))
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		SuccessWithContent(math.NaN()).Write(w, r)
-	})
+	tests := []struct {
+		name string
+		opts []Option
+	}{
+		{name: "no writer option"},
+		{name: "nil writer", opts: []Option{WithResponseWriter(nil)}},
+		{name: "ResponseWriter value", opts: []Option{WithResponseWriter(ResponseWriter{})}},
+		{name: "ResponseWriter pointer", opts: []Option{WithResponseWriter(&ResponseWriter{})}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failOnPackageLoggers(t)
+			logger, buf := newRecordingLogger()
+			a := New(append(tt.opts, WithLogger(logger))...)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				SuccessWithContent(math.NaN()).Write(w, r)
+			})
 
-	rec := serve(a.Handler(handler), http.MethodGet, "", nil)
+			rec := serve(a.Handler(handler), http.MethodGet, "", nil)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rec.Code)
-	}
-	failure := Error500()
-	instanceFormatter := options{responseMode: ResponseModeEnvelope}.responseFormatter()
-	want := instanceFormatter.Format(core.ResponseData{
-		Title:          failure.Title,
-		Message:        failure.Message,
-		ResponseCode:   failure.ResponseCode,
-		HTTPStatusCode: failure.HTTPStatusCode,
-		ResponseType:   ErrorType,
-	})
-	wantBody, err := json.Marshal(want.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(rec.Body.String()); got != string(wantBody) {
-		t.Fatalf("body = %s, want %s", got, wantBody)
-	}
-	record := recordNamed(t, decodeRecords(t, buf), "response cannot be encoded")
-	if record["level"] != "ERROR" || record["error"] == nil || record["error"] == "" {
-		t.Fatalf("record = %v, want an error record with the error", record)
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500", rec.Code)
+			}
+			failure := Error500()
+			instanceFormatter := options{responseMode: ResponseModeEnvelope}.responseFormatter()
+			want := instanceFormatter.Format(core.ResponseData{
+				Title:          failure.Title,
+				Message:        failure.Message,
+				ResponseCode:   failure.ResponseCode,
+				HTTPStatusCode: failure.HTTPStatusCode,
+				ResponseType:   ErrorType,
+			})
+			wantBody, err := json.Marshal(want.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(rec.Body.String()); got != string(wantBody) {
+				t.Fatalf("body = %s, want %s", got, wantBody)
+			}
+			record := recordNamed(t, decodeRecords(t, buf), "response cannot be encoded")
+			if record["level"] != "ERROR" || record["error"] == nil || record["error"] == "" {
+				t.Fatalf("record = %v, want an error record with the error", record)
+			}
+		})
 	}
 }
 
@@ -335,7 +387,7 @@ func TestInstanceAnswers500WhenResponseCannotBeEncoded(t *testing.T) {
 type nanFormatter struct{}
 
 func (nanFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
-	return &core.ResponseFormatted{Body: math.NaN(), HTTPStatusCode: data.HTTPStatusCode}
+	return &core.ResponseFormatted{Body: math.NaN(), HTTPStatusCode: data.HTTPStatusCode, Headers: map[string]string{"X-Trace": "t"}}
 }
 
 func TestInstanceAnswersBare500WhenTheErrorBodyCannotBeEncoded(t *testing.T) {
@@ -347,6 +399,9 @@ func TestInstanceAnswersBare500WhenTheErrorBodyCannotBeEncoded(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError || rec.Body.Len() != 0 {
 		t.Fatalf("response = %d %q, want a bare 500", rec.Code, rec.Body)
+	}
+	if rec.Header().Get("X-Trace") != "t" {
+		t.Fatalf("headers = %v, want the response headers kept", rec.Header())
 	}
 	if records := decodeRecords(t, buf); len(records) != 2 {
 		t.Fatalf("records = %v, want both encode failures", records)
@@ -389,6 +444,10 @@ func TestInstanceLogsRecoveredPanic(t *testing.T) {
 	if record["event_id"] != recordNamed(t, records, "request")["event_id"] {
 		t.Fatalf("event_id = %v, want the request's", record["event_id"])
 	}
+	keys := slices.Sorted(maps.Keys(record))
+	if want := []string{"event_id", "level", "msg", "panic", "time"}; !slices.Equal(keys, want) {
+		t.Fatalf("panic record keys = %q, want %q", keys, want)
+	}
 	if strings.Contains(buf.String(), "Not response") || strings.Contains(buf.String(), "&{") {
 		t.Fatalf("records dump the request: %s", buf)
 	}
@@ -422,19 +481,164 @@ func TestInstanceLogsRejectedBody(t *testing.T) {
 }
 
 func TestInstanceLogsHelperFailure(t *testing.T) {
-	failOnPackageLoggers(t)
-	logger, buf := newRecordingLogger()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, response := GetHeaderValueInt("X-Count", r); response != nil {
-			response.Write(w, r)
+	tests := []struct {
+		name    string
+		target  string
+		body    string
+		headers map[string]string
+		read    func(r *http.Request) Response
+		msg     string
+		key     string
+	}{
+		{
+			name:    "header",
+			target:  "/tasks",
+			headers: map[string]string{"X-Count": "many"},
+			read: func(r *http.Request) Response {
+				_, response := GetHeaderValueInt("X-Count", r)
+				return response
+			},
+			msg: "header value not obtained",
+			key: "X-Count",
+		},
+		{
+			name:   "query param",
+			target: "/tasks?page=many",
+			read: func(r *http.Request) Response {
+				_, response := GetQueryParamValueInt("page", r)
+				return response
+			},
+			msg: "query param not obtained",
+			key: "page",
+		},
+		{
+			name:   "route var",
+			target: "/tasks",
+			read: func(r *http.Request) Response {
+				_, response := GetRouteVarValueInt("id", r)
+				return response
+			},
+			msg: "route var not obtained",
+			key: "id",
+		},
+		{
+			name:   "unmarshal body",
+			target: "/tasks",
+			body:   `{"title":`,
+			read: func(r *http.Request) Response {
+				var payload struct{}
+				return UnmarshalBody(&payload, r)
+			},
+			msg: "request body not unmarshaled",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failOnPackageLoggers(t)
+			logger, buf := newRecordingLogger()
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if response := tt.read(r); response != nil {
+					response.Write(w, r)
+				}
+			})
+			req := httptest.NewRequest(http.MethodPost, tt.target, strings.NewReader(tt.body))
+			for key, value := range tt.headers {
+				req.Header.Set(key, value)
+			}
+
+			New(WithLogger(logger)).Handler(handler).ServeHTTP(httptest.NewRecorder(), req)
+
+			records := decodeRecords(t, buf)
+			if len(records) != 1 || records[0]["msg"] != tt.msg || records[0]["level"] != "ERROR" || records[0]["error"] == nil {
+				t.Fatalf("records = %v, want one error record %q with the error", records, tt.msg)
+			}
+			if tt.key != "" && records[0]["key"] != tt.key {
+				t.Fatalf("key = %v, want %q", records[0]["key"], tt.key)
+			}
+		})
+	}
+}
+
+func TestInstanceHelperErrorsHideSensitiveValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		target  string
+		headers map[string]string
+		read    func(r *http.Request) Response
+		key     string
+	}{
+		{
+			name:    "header",
+			target:  "/tasks",
+			headers: map[string]string{"X-Api-Key": "supersecret"},
+			read: func(r *http.Request) Response {
+				_, response := GetHeaderValueInt("X-Api-Key", r)
+				return response
+			},
+			key: "X-Api-Key",
+		},
+		{
+			name:   "query param",
+			target: "/tasks?access_token=supersecret",
+			read: func(r *http.Request) Response {
+				_, response := GetQueryParamValueInt64("access_token", r)
+				return response
+			},
+			key: "access_token",
+		},
+		{
+			name:   "string query param",
+			target: "/tasks",
+			read: func(r *http.Request) Response {
+				_, response := GetQueryParamValueString("password", r)
+				return response
+			},
+			key: "password",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, buf := newRecordingLogger()
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if response := tt.read(r); response != nil {
+					response.Write(w, r)
+				}
+			})
+
+			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
+			for key, value := range tt.headers {
+				req.Header.Set(key, value)
+			}
+
+			New(WithLogger(logger)).Handler(handler).ServeHTTP(httptest.NewRecorder(), req)
+
+			if strings.Contains(buf.String(), "supersecret") {
+				t.Fatalf("records contain the value: %s", buf)
+			}
+			records := decodeRecords(t, buf)
+			if len(records) != 1 || records[0]["key"] != tt.key || records[0]["error"] == nil || records[0]["error"] == "" {
+				t.Fatalf("records = %v, want one record with key %q and an error", records, tt.key)
+			}
+		})
+	}
+}
+
+func TestLogSafeHelperError(t *testing.T) {
+	_, numErr := strconv.Atoi("supersecret")
+	_, rangeErr := strconv.ParseInt("99999999999999999999", 10, 64)
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "syntax", err: numErr, want: "invalid syntax"},
+		{name: "range", err: rangeErr, want: "value out of range"},
+		{name: "other", err: fmt.Errorf("The password key header has not been obtained"), want: "invalid value"},
+	}
+	for _, tt := range tests {
+		if got := sensitiveValueError(tt.err); got != tt.want {
+			t.Errorf("%s: sensitiveValueError = %q, want %q", tt.name, got, tt.want)
 		}
-	})
-
-	serve(New(WithLogger(logger)).Handler(handler), http.MethodGet, "", map[string]string{"X-Count": "many"})
-
-	records := decodeRecords(t, buf)
-	if len(records) != 1 || records[0]["level"] != "ERROR" || records[0]["error"] == nil {
-		t.Fatalf("records = %v, want one error record with the error", records)
 	}
 }
 
@@ -491,5 +695,166 @@ func TestDefaultInstanceCallsFatalOnEncodeFailure(t *testing.T) {
 
 	if fatalCalls != 1 {
 		t.Fatalf("Fatal calls = %d, want 1", fatalCalls)
+	}
+}
+
+func TestInstanceDefaultSensitiveLogKeys(t *testing.T) {
+	want := []string{"authorization", "token", "password", "secret", "credential", "apikey", "api-key", "key", "cookie", "session"}
+
+	if got := New().sensitiveLogKeys; !slices.Equal(got, want) {
+		t.Fatalf("instance keys = %q, want %q", got, want)
+	}
+}
+
+func TestInstanceIgnoresPackageSensitiveLogKeys(t *testing.T) {
+	previous := SensitiveLogKeys
+	SensitiveLogKeys = nil
+	t.Cleanup(func() { SensitiveLogKeys = previous })
+	logger, buf := newRecordingLogger()
+	req := httptest.NewRequest(http.MethodGet, "/tasks?token=T", nil)
+	req.Header.Set("Authorization", "Bearer s3cr3t")
+
+	New(WithLogger(logger)).Handler(ProcessRequest(okHandler)).ServeHTTP(httptest.NewRecorder(), req)
+
+	if strings.Contains(buf.String(), "s3cr3t") || strings.Contains(buf.String(), "token=T") {
+		t.Fatalf("records not masked with SensitiveLogKeys = nil: %s", buf)
+	}
+}
+
+func TestWithSensitiveLogKeysRepeatedKey(t *testing.T) {
+	logger, buf := newRecordingLogger()
+	a := New(WithLogger(logger), WithSensitiveLogKeys("pin", "PIN"), WithSensitiveLogKeys("pin"))
+	req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	req.Header.Set("Pin", "1234")
+
+	a.Handler(ProcessRequest(okHandler)).ServeHTTP(httptest.NewRecorder(), req)
+
+	if strings.Contains(buf.String(), "1234") {
+		t.Fatalf("Pin not masked: %s", buf)
+	}
+	if !slices.Equal(a.sensitiveLogKeys[:10], instanceSensitiveLogKeys(nil)) {
+		t.Fatalf("keys = %q, want the defaults first", a.sensitiveLogKeys)
+	}
+}
+
+func TestInstanceNeverLogsBodiesWhateverThePackageFlags(t *testing.T) {
+	previousRequest, previousResponse, previousFull := LogRequestBody, LogResponseBody, PrintFullEvent
+	LogRequestBody, LogResponseBody, PrintFullEvent = true, true, true
+	t.Cleanup(func() {
+		LogRequestBody, LogResponseBody, PrintFullEvent = previousRequest, previousResponse, previousFull
+	})
+	failOnPackageLoggers(t)
+	logger, buf := newRecordingLogger()
+	handler := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
+		SuccessWithContent(map[string]string{"answer": "responsevalue"}).Write(w, r)
+	})
+
+	serve(New(WithLogger(logger)).Handler(handler), http.MethodPost, `{"title":"requestvalue"}`, nil)
+
+	for _, value := range []string{"requestvalue", "responsevalue"} {
+		if strings.Contains(buf.String(), value) {
+			t.Fatalf("records contain body value %q: %s", value, buf)
+		}
+	}
+}
+
+func TestInstanceProcessRequestCopiesResponseHeaders(t *testing.T) {
+	handler := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Custom", "kept")
+		Success201().Write(w, r)
+	})
+
+	rec := serve(New().Handler(handler), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusCreated || rec.Header().Get("X-Custom") != "kept" {
+		t.Fatalf("response = %d %v, want 201 with X-Custom", rec.Code, rec.Header())
+	}
+}
+
+// headerFormatter formats like the instance's built-in formatter and adds
+// headers to every response; a nil error body makes it return nil for errors.
+type headerFormatter struct {
+	headers      map[string]string
+	nilErrorBody bool
+}
+
+func (f headerFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
+	if f.nilErrorBody && data.ResponseType == ErrorType {
+		return nil
+	}
+	formatted := options{responseMode: ResponseModeEnvelope}.responseFormatter().Format(data)
+	formatted.Headers = f.headers
+	return formatted
+}
+
+func TestInstanceAnswersBare500WhenTheFormatterReturnsNoErrorBody(t *testing.T) {
+	a := New(WithResponseFormatter(headerFormatter{headers: map[string]string{"X-Trace": "t"}, nilErrorBody: true}))
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		SuccessWithContent(math.NaN()).Write(w, r)
+	})
+
+	rec := serve(a.Handler(handler), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusInternalServerError || rec.Body.Len() != 0 || rec.Header().Get("X-Trace") != "t" {
+		t.Fatalf("response = %d %q %v, want a bare 500 with the headers", rec.Code, rec.Body, rec.Header())
+	}
+}
+
+func TestInstanceKeepsResponseHeadersOnEncodeFailure(t *testing.T) {
+	a := New(WithResponseFormatter(headerFormatter{headers: map[string]string{"X-Trace": "t"}}))
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		SuccessWithContent(math.NaN()).Write(w, r)
+	})
+
+	rec := serve(a.Handler(handler), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusInternalServerError || rec.Body.Len() == 0 || rec.Header().Get("X-Trace") != "t" {
+		t.Fatalf("response = %d %q %v, want a 500 body with the headers", rec.Code, rec.Body, rec.Header())
+	}
+}
+
+func TestInstanceWriterKeepsFormattedContentType(t *testing.T) {
+	formatter := headerFormatter{headers: map[string]string{"content-type": "application/problem+json"}}
+	tests := []struct {
+		name   string
+		writer core.APIResponseWriter
+		want   string
+	}{
+		{name: "instance", writer: options{}.responseWriter(formatter), want: "application/problem+json"},
+		{name: "default", writer: ResponseWriter{}, want: "application/json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+
+			tt.writer.Write(formatter.Format(core.ResponseData{HTTPStatusCode: http.StatusOK}), rec)
+
+			if got := rec.Header().Get("Content-Type"); got != tt.want {
+				t.Fatalf("Content-Type = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInstanceLogsAbortedHandlerAtDebug(t *testing.T) {
+	failOnPackageLoggers(t)
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	handler := ProcessRequest(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) })
+
+	rec := serve(New(WithLogger(logger)).Handler(handler), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 as for other panics", rec.Code)
+	}
+	records := decodeRecords(t, &buf)
+	record := recordNamed(t, records, "handler aborted")
+	if record["level"] != "DEBUG" || record["event_id"] == nil || record["panic"] == nil {
+		t.Fatalf("record = %v, want a debug record with event_id and panic", record)
+	}
+	for _, r := range records {
+		if r["level"] == "ERROR" {
+			t.Fatalf("unexpected error record %v", r)
+		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,10 +44,40 @@ func (a *API) logError(r *http.Request, msg string, err error) {
 	a.logger.LogAttrs(r.Context(), slog.LevelError, msg, slog.Any("error", err))
 }
 
+// logNamedError reports err from reading the value of the header, query
+// parameter or route variable called name. The default instance passes it to
+// PrintError as v0 does. An instance from New adds the name as "key"; when
+// the name is sensitive it logs only the kind of error, since errors such as
+// strconv's quote the value.
+func (a *API) logNamedError(r *http.Request, msg, name string, err error) {
+	if !a.fromNew {
+		PrintError(err)
+		return
+	}
+	if !a.logs(r.Context(), slog.LevelError) {
+		return
+	}
+	errAttr := slog.Any("error", err)
+	if isSensitiveKey(name, a.sensitiveLogKeys) {
+		errAttr = slog.String("error", sensitiveValueError(err))
+	}
+	a.logger.LogAttrs(r.Context(), slog.LevelError, msg, slog.String("key", name), errAttr)
+}
+
+// sensitiveValueError describes err without the value it was reading: the
+// reason of a strconv.NumError, never its Num, and a fixed text otherwise.
+func sensitiveValueError(err error) string {
+	var numErr *strconv.NumError
+	if errors.As(err, &numErr) && numErr.Err != nil {
+		return numErr.Err.Error()
+	}
+	return "invalid value"
+}
+
 // logRequest logs the request ProcessRequest received. The default instance
 // writes the v0 line through LogRequest, body included when LogRequestBody
-// is set; an instance from New never logs the body and masks the query and
-// form values whose key is sensitive.
+// is set; an instance from New never logs the body or the parsed form (it
+// may come from the body) and masks the query values whose key is sensitive.
 func (a *API) logRequest(r *http.Request, eventID string, rawBody []byte) {
 	if !a.fromNew {
 		LogRequest(r.Method, r.RequestURI, eventID, r.Form.Encode(), r.Header, rawBody)
@@ -59,9 +90,6 @@ func (a *API) logRequest(r *http.Request, eventID string, rawBody []byte) {
 		slog.String("event_id", eventID),
 		slog.String("method", r.Method),
 		slog.String("uri", redactURI(r.RequestURI, a.sensitiveLogKeys)),
-	}
-	if form := r.Form.Encode(); form != "" {
-		attrs = append(attrs, slog.String("form", redactQuery(form, a.sensitiveLogKeys)))
 	}
 	if len(r.Header) != 0 {
 		attrs = append(attrs, slog.Any("headers", redactHeaders(r.Header, a.sensitiveLogKeys)))
@@ -90,7 +118,8 @@ func (a *API) logResponse(r *http.Request, eventID string, rec *httptest.Respons
 
 // logPanic logs a panic ProcessRequest recovered. The default instance keeps
 // the v0 PrintError calls; an instance from New logs the panic value, not
-// the request.
+// the request. A panic with http.ErrAbortHandler is a deliberate abort, so it
+// is logged at debug level as "handler aborted".
 func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 	if !a.fromNew {
 		if err, ok := recovered.(error); ok {
@@ -100,46 +129,89 @@ func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 		}
 		return
 	}
-	if !a.logs(r.Context(), slog.LevelError) {
+	level, msg := slog.LevelError, "panic recovered"
+	if err, ok := recovered.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+		level, msg = slog.LevelDebug, "handler aborted"
+	}
+	if !a.logs(r.Context(), level) {
 		return
 	}
-	a.logger.LogAttrs(r.Context(), slog.LevelError, "panic recovered",
+	a.logger.LogAttrs(r.Context(), level, msg,
 		slog.String("event_id", eventID),
 		slog.Any("panic", recovered),
 	)
 }
 
-// redactURI masks the query values of uri whose key is sensitive.
+// redactURI masks the query values of uri whose key is sensitive and, in an
+// absolute-form URI (scheme://user:pass@host/...), the user information.
+// Path segments are not masked.
 func redactURI(uri string, sensitiveKeys []string) string {
 	path, query, found := strings.Cut(uri, "?")
+	path = redactUserInfo(path)
 	if !found || query == "" {
-		return uri
+		if found {
+			return path + "?"
+		}
+		return path
 	}
 	return path + "?" + redactQuery(query, sensitiveKeys)
 }
 
-// redactQuery masks the values of rawQuery whose unescaped key is sensitive.
-// It rebuilds the query part by part, so the other parameters keep their
-// order and encoding; a part without "=" has no value and is kept.
+// redactUserInfo replaces the user information of an absolute-form request
+// target with redactedLogValue.
+func redactUserInfo(target string) string {
+	scheme, rest, found := strings.Cut(target, "://")
+	if !found || strings.Contains(scheme, "/") {
+		return target
+	}
+	authority, path, _ := strings.Cut(rest, "/")
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
+		return target
+	}
+	redacted := scheme + "://" + redactedLogValue + authority[at:]
+	if len(rest) > len(authority) {
+		redacted += "/" + path
+	}
+	return redacted
+}
+
+// redactQuery masks the values of rawQuery whose unescaped key is sensitive,
+// and the values whose key cannot be unescaped. It rebuilds the query part by
+// part, splitting on "&" and ";" and keeping each separator, so the other
+// parameters keep their order and encoding; a part without "=" has no value
+// and is kept.
 func redactQuery(rawQuery string, sensitiveKeys []string) string {
 	if rawQuery == "" {
 		return rawQuery
 	}
-	parts := strings.Split(rawQuery, "&")
-	for i, part := range parts {
-		rawKey, _, hasValue := strings.Cut(part, "=")
-		if !hasValue {
-			continue
+	var redacted strings.Builder
+	redacted.Grow(len(rawQuery))
+	for rawQuery != "" {
+		end := strings.IndexAny(rawQuery, "&;")
+		part, separator := rawQuery, ""
+		if end >= 0 {
+			part, separator = rawQuery[:end], rawQuery[end:end+1]
+			rawQuery = rawQuery[end+1:]
+		} else {
+			rawQuery = ""
 		}
-		key, err := url.QueryUnescape(rawKey)
-		if err != nil {
-			key = rawKey
-		}
-		if isSensitiveKey(key, sensitiveKeys) {
-			parts[i] = rawKey + "=" + redactedLogValue
-		}
+		redacted.WriteString(redactQueryPart(part, sensitiveKeys))
+		redacted.WriteString(separator)
 	}
-	return strings.Join(parts, "&")
+	return redacted.String()
+}
+
+func redactQueryPart(part string, sensitiveKeys []string) string {
+	rawKey, _, hasValue := strings.Cut(part, "=")
+	if !hasValue {
+		return part
+	}
+	key, err := url.QueryUnescape(rawKey)
+	if err != nil || isSensitiveKey(key, sensitiveKeys) {
+		return rawKey + "=" + redactedLogValue
+	}
+	return part
 }
 
 // writeForInstance is the Write of an instance's built-in writer. It encodes
@@ -158,8 +230,9 @@ func (writer ResponseWriter) writeForInstance(response *core.ResponseFormatted, 
 
 // writeEncodeFailure answers 500 with the internal server error body built by
 // the instance's formatter, keeping the response headers. The body carries no
-// event ID or token, since the request is not available here. If that body
-// cannot be encoded either, it answers 500 with no body.
+// event ID or token, since the request is not available here. If the
+// formatter returns no body, or it cannot be encoded either, it answers 500
+// with no body, still with the response headers.
 func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
 	failure := Error500()
 	formatted := writer.formatter.Format(core.ResponseData{
@@ -169,26 +242,42 @@ func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w htt
 		HTTPStatusCode: failure.HTTPStatusCode,
 		ResponseType:   ErrorType,
 	})
+	if formatted == nil {
+		writer.writeBare500(headers, w)
+		return
+	}
 	var body bytes.Buffer
 	if err := json.NewEncoder(&body).Encode(formatted.Body); err != nil {
 		writer.logError("response cannot be encoded", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		writer.writeBare500(headers, w)
 		return
 	}
 	writer.writeEncoded(headers, http.StatusInternalServerError, body.Bytes(), w)
 }
 
-// writeEncoded writes an encoded body. http.ErrBodyNotAllowed is not logged:
-// Warning and Informative default to status 100, and the recorder that
-// ProcessRequest writes into returns it for their body.
+func (writer ResponseWriter) writeBare500(headers map[string]string, w http.ResponseWriter) {
+	setHeaders(headers, w)
+	w.WriteHeader(http.StatusInternalServerError)
+}
+
+// writeEncoded writes an encoded body. Content-Type defaults to
+// application/json but a formatted Content-Type is kept. http.ErrBodyNotAllowed
+// is not logged: Warning and Informative default to status 100, and the
+// recorder that ProcessRequest writes into returns it for their body.
 func (writer ResponseWriter) writeEncoded(headers map[string]string, status int, body []byte, w http.ResponseWriter) {
-	for key := range headers {
-		w.Header().Set(key, headers[key])
+	setHeaders(headers, w)
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil && !errors.Is(err, http.ErrBodyNotAllowed) {
 		writer.logError("response cannot be written", err)
+	}
+}
+
+func setHeaders(headers map[string]string, w http.ResponseWriter) {
+	for key := range headers {
+		w.Header().Set(key, headers[key])
 	}
 }
 
