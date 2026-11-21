@@ -23,8 +23,8 @@ import (
 // WriteError answers with the instance's WithKindStatus overrides and calls
 // its WithErrorHook; the default instance has neither.
 // An API from New logs only through its WithLogger logger and masks the keys
-// of WithSensitiveLogKeys; the default instance logs through Print,
-// PrintError and Fatal and masks SensitiveLogKeys.
+// of WithSensitiveLogKeys; the default instance logs through Print and
+// PrintError and masks SensitiveLogKeys.
 // A zero or nil API is the default instance.
 type API struct {
 	core       *core.API
@@ -150,7 +150,8 @@ func (o options) bindFormatter(formatter ResponseFormatter) ResponseFormatter {
 
 // responseWriter returns the writer New uses. The built-in ResponseWriter,
 // as a value or pointer, or nil, is bound to the instance's logger and
-// formatter, so it never calls Fatal; a custom writer is used as is.
+// formatter, so it logs through the instance logger; a custom writer is used
+// as is.
 func (o options) responseWriter(formatter core.APIResponseFormatter) core.APIResponseWriter {
 	switch o.writer.(type) {
 	case nil, ResponseWriter, *ResponseWriter:
@@ -268,7 +269,8 @@ func WithLogger(logger *slog.Logger) Option {
 // the instance masks in its records, and whose Get*Value* helper errors are
 // logged without the value. A key matches any name that contains it,
 // ignoring case. Secrets in path segments (/reset/{token}) are not masked.
-// The defaults (the v0 SensitiveLogKeys list, cookie and session) are always
+// The defaults (the default SensitiveLogKeys list, which includes cookie and
+// session since v0.11.0) are always
 // kept: this option only adds. Keys are trimmed and lowercased, blank keys
 // are ignored; repeat it to add more.
 func WithSensitiveLogKeys(keys ...string) Option {
@@ -312,10 +314,11 @@ func WithResponseFormatter(formatter core.APIResponseFormatter) Option {
 // WithResponseWriter sets the writer that sends the instance's formatted
 // responses. The built-in ResponseWriter, as a value, a pointer or a nil
 // interface value, is bound to the instance's logger and formatter: it logs a
-// body that cannot be encoded and answers 500 instead of calling Fatal. A
-// custom writer alone decides how it writes and is used as given, including a
-// typed nil pointer. A type that embeds ResponseWriter is custom: its promoted
-// Write keeps the v0 behavior and can call Fatal.
+// body that cannot be encoded through the instance logger and answers 500
+// with the instance formatter's body. A custom writer alone decides how it
+// writes and is used as given, including a typed nil pointer. A type that
+// embeds ResponseWriter is custom: its promoted Write keeps the default
+// instance's behavior (PrintError and the registered formatter).
 func WithResponseWriter(writer core.APIResponseWriter) Option {
 	return func(o *options) {
 		o.writer = writer
