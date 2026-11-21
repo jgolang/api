@@ -261,9 +261,9 @@ func WithErrorHook(fn func(r *http.Request, err error, status int)) Option {
 // panic, a response that cannot be encoded) are written as error records.
 // Request and response bodies and the parsed form are never logged. Header
 // and query values whose key is sensitive (see WithSensitiveLogKeys) are
-// masked, as is the user information of an absolute-form URI, and header
-// values that carry a URL are masked as the URI is; a failed
-// Get*Value* helper logs the name as "key" and, for a sensitive name, only
+// masked, as is the user information of an absolute-form URI; other header
+// values have the query values after each "?" masked the same way, and the
+// user information too when they carry a URL; a failed Get*Value* helper logs the name as "key" and, for a sensitive name, only
 // the kind of error, never the value. A recovered panic logs its Go type as
 // "panic_type" and its value only for a runtime.Error. A panic with
 // http.ErrAbortHandler is a "handler aborted" debug record instead of an

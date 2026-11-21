@@ -212,14 +212,18 @@ func TestHeaderMaskingAgreesWithTheDefaultInstance(t *testing.T) {
 		header string
 		values []string
 		want   []string
+		secret string
 	}{
-		{name: "referer with token", header: "Referer", values: []string{"https://app.example/cb?token=T&page=2"}, want: []string{"https://app.example/cb?token=[REDACTED]&page=2"}},
-		{name: "origin with user info", header: "Origin", values: []string{"https://u:p@app.example"}, want: []string{"https://[REDACTED]@app.example"}},
-		{name: "origin-form", header: "X-Original-Url", values: []string{"/login?password=P"}, want: []string{"/login?password=[REDACTED]"}},
-		{name: "network-path", header: "X-Forwarded-Uri", values: []string{"//u:p@host/p?code=1"}, want: []string{"//[REDACTED]@host/p?code=1"}},
-		{name: "link", header: "Link", values: []string{`<https://api.example/items?page=2&api_key=K>; rel="next"`}, want: []string{"<https://api.example/items?page=2&api_key=[REDACTED]"}},
-		{name: "query-only value", header: "X-Search", values: []string{"q?token=T"}, want: []string{"q?token=[REDACTED]"}},
-		{name: "several values", header: "Referer", values: []string{"https://a.example/?token=T1", "https://b.example/?token=T2"}, want: []string{"https://a.example/?token=[REDACTED]", "https://b.example/?token=[REDACTED]"}},
+		{name: "referer with token", header: "Referer", values: []string{"https://app.example/cb?token=referer-secret&page=2"}, want: []string{"https://app.example/cb?token=[REDACTED]&page=2"}, secret: "referer-secret"},
+		{name: "origin with user info", header: "Origin", values: []string{"https://u:origin-secret@app.example"}, want: []string{"https://[REDACTED]@app.example"}, secret: "origin-secret"},
+		{name: "origin-form", header: "X-Original-Url", values: []string{"/login?password=original-secret"}, want: []string{"/login?password=[REDACTED]"}, secret: "original-secret"},
+		{name: "network-path", header: "X-Forwarded-Uri", values: []string{"//u:forwarded-secret@host/p?code=1"}, want: []string{"//[REDACTED]@host/p?code=1"}, secret: "forwarded-secret"},
+		{name: "link", header: "Link", values: []string{`<https://api.example/items?page=2&api_key=link-secret>; rel="next"`}, want: []string{"<https://api.example/items?page=2&api_key=[REDACTED]"}, secret: "link-secret"},
+		{name: "query-only value", header: "X-Search", values: []string{"q?token=search-secret"}, want: []string{"q?token=[REDACTED]"}, secret: "search-secret"},
+		{name: "several values", header: "Referer", values: []string{"https://a.example/?token=first-secret", "https://b.example/?token=first-secret"}, want: []string{"https://a.example/?token=[REDACTED]", "https://b.example/?token=[REDACTED]"}, secret: "first-secret"},
+		{name: "link list", header: "Link", values: []string{`<https://api.example/items?page=2>; rel="next", <https://u:link-pass@api.example/items?api_key=list-secret>; rel="last"`}, want: []string{`<https://[REDACTED]@api.example/items?api_key=[REDACTED]`}, secret: "list-secret"},
+		{name: "comma in a query value", header: "Referer", values: []string{"https://app.example/?ids=1,2&token=comma-secret"}, want: []string{"https://app.example/?ids=1,2&token=[REDACTED]"}, secret: "comma-secret"},
+		{name: "url in a query value", header: "Referer", values: []string{"https://app.example/?next=/cb?token=nested-secret"}, want: []string{"https://app.example/?next=/cb?token=[REDACTED]"}, secret: "nested-secret"},
 		{name: "user agent", header: "User-Agent", values: []string{"Mozilla/5.0 (X11; Linux) Firefox/120.0"}, want: []string{"Mozilla/5.0 (X11; Linux) Firefox/120.0"}},
 		{name: "accept", header: "Accept", values: []string{"text/html;q=0.9"}, want: []string{"text/html;q=0.9"}},
 		{name: "from", header: "From", values: []string{"ops@example.com"}, want: []string{"ops@example.com"}},
@@ -247,6 +251,9 @@ func TestHeaderMaskingAgreesWithTheDefaultInstance(t *testing.T) {
 				}
 				if !slices.Equal(got, tt.want) {
 					t.Errorf("%s %s = %q, want %q", name, tt.header, got, tt.want)
+				}
+				if tt.secret != "" && strings.Contains(records.String(), tt.secret) {
+					t.Errorf("%s records contain %q: %s", name, tt.secret, records)
 				}
 			}
 		})

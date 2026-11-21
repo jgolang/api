@@ -432,10 +432,10 @@ func defaultSensitiveLogKeys() []string {
 // LogRequest prints API request in log. The values of sensitive headers,
 // JSON body fields, query parameters in uri and form fields are masked (see
 // SensitiveLogKeys), as is the user information of an absolute-form uri.
-// Header values that carry a URL (Referer, Origin, X-Original-URL, ...) are
-// masked as uri is. A
-// request body that is not JSON is logged as its size unless PrintFullEvent
-// is true. The package no longer calls it: ProcessRequest logs through
+// Other header values have the query values after each "?" masked the same
+// way, and the user information too when they carry a URL (Referer, Origin,
+// X-Original-URL, ...). A request body that is not JSON is logged as its
+// size unless PrintFullEvent is true. The package no longer calls it: ProcessRequest logs through
 // slog.Default, or through the instance's WithLogger logger.
 //
 // Deprecated: use api.New(api.WithLogger(...)) instead.
@@ -594,19 +594,32 @@ func redactURI(uri string, sensitiveKeys []string) string {
 
 // redactHeaderValue masks a header value that carries a URL as uri is
 // masked. The shape decides, not the header name, so custom proxy headers
-// (X-Original-URI, X-Envoy-Original-Path, ...) are covered too: a value that
-// starts with "/" or contains "://" is masked by redactURI, and any other
-// value with a "?" has the part after its first "?" masked as a query. A
-// non-URL value that matches is over-masked, the safe direction; an "@"
-// alone (From: ops@example.com) is kept.
+// (X-Original-URI, X-Envoy-Original-Path, ...) are covered too. Every "?"
+// starts a query that runs to the next "?", so each URL of a value that holds
+// several (a Link list) has its sensitive query values masked; a value that
+// starts with "/" or contains "://" also has its user information masked, as
+// in uri. A value with neither "?" nor "@" is kept as is, and so is an "@"
+// without URL shape (From: ops@example.com). A non-URL value with "?" or
+// "://" may be over-masked, the safe direction.
 func redactHeaderValue(value string, sensitiveKeys []string) string {
+	if !strings.ContainsAny(value, "?@") {
+		return value
+	}
+	redacted := redactEveryQuery(value, sensitiveKeys)
 	if strings.HasPrefix(value, "/") || strings.Contains(value, "://") {
-		return redactURI(value, sensitiveKeys)
+		return redactUserInfo(redacted, value)
 	}
-	if before, query, found := strings.Cut(value, "?"); found {
-		return before + "?" + redactQuery(query, sensitiveKeys)
+	return redacted
+}
+
+// redactEveryQuery masks, with redactQuery, the text after each "?" of value
+// up to the next "?".
+func redactEveryQuery(value string, sensitiveKeys []string) string {
+	parts := strings.Split(value, "?")
+	for i := 1; i < len(parts); i++ {
+		parts[i] = redactQuery(parts[i], sensitiveKeys)
 	}
-	return value
+	return strings.Join(parts, "?")
 }
 
 // redactUserInfo replaces the user information of target with
