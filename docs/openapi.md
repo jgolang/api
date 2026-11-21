@@ -74,6 +74,35 @@ func main() {
 
 The `doc` subpackage contains the OpenAPI metadata helpers, schema generation, reusable security schemes, and HTTP handlers for documentation.
 
+## Docs page title and icon
+
+`doc.SwaggerUIHandler` serves a page titled `API Docs` with a generic inline icon, so the browser tab never shows its blank-page globe. Pass options to make each service's docs tab recognizable:
+
+```go
+router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json",
+	doc.WithTitle("Orders API"),
+	doc.WithFavicon("/static/orders-icon.png"),
+))
+```
+
+`WithTitle` sets the `<title>`. `WithFavicon` replaces the default icon with a URL or a `data:` URI (PNG, SVG, ICO). Both values are HTML-escaped; an empty value keeps the default. Percent-encode (`url.PathEscape`) or base64-encode an SVG `data:` URI: a raw `#` (as in `fill="#fff"`) starts a URL fragment and cuts the image.
+
+The built-in `"swagger"` exporter (`doc.ExporterByName("swagger")`) always serves the defaults. To pass options through the exporter registry, register an exporter of your own:
+
+```go
+type ordersExporter struct{}
+
+func (ordersExporter) Handler(openAPIURL string) http.HandlerFunc {
+	return doc.SwaggerUIHandler(openAPIURL, doc.WithTitle("Orders API"), doc.WithFavicon("/static/orders-icon.png"))
+}
+
+func init() {
+	doc.RegisterExporter("orders-swagger", ordersExporter{})
+}
+```
+
+Registering under `"swagger"` instead replaces the built-in exporter for the whole process.
+
 ## Request and response wrappers
 
 Runtime requests use `api.JSONRequest`, whose `content` field is `json.RawMessage` for backward compatibility. For OpenAPI documentation, use typed wrappers so the generator can infer the payload schema:

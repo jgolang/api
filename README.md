@@ -336,7 +336,16 @@ func main() {
 }
 ```
 
-`GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it. Document the body in the shape the request mode expects: the content type itself in plain mode (`doc.Body(CreateTaskRequest{})`), or `doc.Body(envelope.Request[CreateTaskRequest]())` in envelope mode. `envelope.Success[T]()` and `envelope.Error()` document the envelope response mode.
+`GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it. The docs page is titled `API Docs` and ships a generic icon; `doc.WithTitle("Orders API")` and `doc.WithFavicon("/static/orders-icon.png")` set your own (see [Docs page title and icon](docs/openapi.md#docs-page-title-and-icon), which also shows how to pass them through the exporter registry).
+
+```go
+router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json",
+	doc.WithTitle("Orders API"),
+	doc.WithFavicon("/static/orders-icon.png"),
+))
+```
+
+Document the body in the shape the request mode expects: the content type itself in plain mode (`doc.Body(CreateTaskRequest{})`), or `doc.Body(envelope.Request[CreateTaskRequest]())` in envelope mode. `envelope.Success[T]()` and `envelope.Error()` document the envelope response mode.
 
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
 
