@@ -6,11 +6,14 @@ Nothing on this page has been removed. Names marked deprecated in the Go docs ke
 
 ## Enabling the legacy envelope
 
-The default request mode is plain JSON. Turn the envelope back on at startup:
+The default request mode is plain JSON. Turn the envelope back on with an instance and wrap the router with its `Handler`:
 
 ```go
-api.SetRequestMode(api.RequestModeEnvelope) // or api.RequestModeAuto to accept both
-api.SetResponseMode(api.ResponseModeEnvelope) // the default
+a := api.New(
+	api.WithRequestMode(api.RequestModeEnvelope),   // or api.RequestModeAuto to accept both
+	api.WithResponseMode(api.ResponseModeEnvelope), // the default
+)
+http.ListenAndServe(":8080", a.Handler(router))
 ```
 
 ## Request structure

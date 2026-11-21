@@ -100,12 +100,17 @@ A handler that is not wrapped by `api.ProcessRequest` still works: it reads the 
 
 ## Request and response modes
 
-Two package-level settings in `modes.go` control the wire format. Set them once at startup, before serving requests.
+Two modes control the wire format. Set them on an instance with `api.New` and wrap the router with its `Handler`:
 
 ```go
-api.SetRequestMode(api.RequestModeAuto)
-api.SetResponseMode(api.ResponseModePlain)
+a := api.New(
+	api.WithRequestMode(api.RequestModeAuto),
+	api.WithResponseMode(api.ResponseModePlain),
+)
+http.ListenAndServe(":8080", a.Handler(router))
 ```
+
+`a.Handler` stores the instance in the request context, so `api.ProcessRequest`, `api.RequestBody`, the token middlewares, `Write(w, r)` on every response type (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) and `api.WriteError` use its modes; handler code does not change. Wrap the outermost chain: middlewares outside `a.Handler` (and the package-level `api.Write(data, w)`, which takes no request) use the default instance; with nested instances the innermost one wins. An instance is immutable after `api.New`, and two instances in one process (two services, or two tests) do not see each other's modes. `api.New()` with no options parses plain requests and writes envelope responses. An instance uses the built-in request receiver, response formatter and response writer: `api.RegisterNewAPIRequestReceiver`, `api.RegisterNewAPIResponseFormatter` and `api.RegisterNewAPIResponseWriter` affect only the default instance (per-instance options come later).
 
 | Request mode | Body parsing |
 | --- | --- |
@@ -120,7 +125,9 @@ api.SetResponseMode(api.ResponseModePlain)
 | `api.ResponseModePlain` | The same fields at the top level, with `content` next to them: `{"type": "success", "code": "0000", ..., "content": ...}`. Every field is present. |
 | `api.ResponseModeNone` | Only the content, as is. |
 
-An unknown value resets the mode to its default. The modes are plain package variables (`api.CurrentRequestMode`, `api.CurrentResponseMode`), so they apply to the whole process. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
+An unknown value falls back to the default (`api.RequestModePlain`, `api.ResponseModeEnvelope`).
+
+Requests that are not wrapped by an instance's `Handler` use the default instance, which reads the package variables `api.CurrentRequestMode` and `api.CurrentResponseMode` (set with `api.SetRequestMode` and `api.SetResponseMode`). These four names are deprecated: they affect only the default instance, for the whole process. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
 
 ## Reading the request
 

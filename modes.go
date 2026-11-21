@@ -25,29 +25,62 @@ const (
 	ResponseModeEnvelope ResponseMode = "envelope"
 )
 
-// CurrentRequestMode defines the active request parsing mode.
+// CurrentRequestMode defines the active request parsing mode of the default
+// instance, the one that serves requests not wrapped by (*API).Handler.
+//
+// Deprecated: use api.New(api.WithRequestMode(...)) instead. It affects only
+// the default instance. A service that registers a custom receiver,
+// formatter or writer keeps using the default instance until the With*
+// options for them land.
 var CurrentRequestMode = RequestModePlain
 
-// CurrentResponseMode defines the active response formatting mode.
+// CurrentResponseMode defines the active response formatting mode of the
+// default instance, the one that serves requests not wrapped by
+// (*API).Handler.
+//
+// Deprecated: use api.New(api.WithResponseMode(...)) instead. It affects only
+// the default instance. A service that registers a custom receiver,
+// formatter or writer keeps using the default instance until the With*
+// options for them land.
 var CurrentResponseMode = ResponseModeEnvelope
 
-// SetRequestMode updates the request parsing mode.
+// SetRequestMode updates the request parsing mode of the default instance.
+// An unknown mode resets it to RequestModePlain.
+//
+// Deprecated: use api.New(api.WithRequestMode(...)) instead. It affects only
+// the default instance. A service that registers a custom receiver,
+// formatter or writer keeps using the default instance until the With*
+// options for them land.
 func SetRequestMode(mode RequestMode) {
+	CurrentRequestMode = normalizeRequestMode(mode)
+}
+
+// SetResponseMode updates the response formatting mode of the default
+// instance. An unknown mode resets it to ResponseModeEnvelope.
+//
+// Deprecated: use api.New(api.WithResponseMode(...)) instead. It affects only
+// the default instance. A service that registers a custom receiver,
+// formatter or writer keeps using the default instance until the With*
+// options for them land.
+func SetResponseMode(mode ResponseMode) {
+	CurrentResponseMode = normalizeResponseMode(mode)
+}
+
+func normalizeRequestMode(mode RequestMode) RequestMode {
 	switch mode {
 	case RequestModeNone, RequestModePlain, RequestModeEnvelope, RequestModeAuto:
-		CurrentRequestMode = mode
+		return mode
 	default:
-		CurrentRequestMode = RequestModePlain
+		return RequestModePlain
 	}
 }
 
-// SetResponseMode updates the response formatting mode.
-func SetResponseMode(mode ResponseMode) {
+func normalizeResponseMode(mode ResponseMode) ResponseMode {
 	switch mode {
 	case ResponseModeNone, ResponseModePlain, ResponseModeEnvelope:
-		CurrentResponseMode = mode
+		return mode
 	default:
-		CurrentResponseMode = ResponseModeEnvelope
+		return ResponseModeEnvelope
 	}
 }
 

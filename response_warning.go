@@ -42,5 +42,5 @@ func (warning Warning) Write(w http.ResponseWriter, r *http.Request) {
 	if warning.SecurityToken == "" {
 		warning.SecurityToken = getSecurityToken(r)
 	}
-	api.Write(core.ResponseData(warning), w)
+	instanceFrom(r).core.Write(core.ResponseData(warning), w)
 }
