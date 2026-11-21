@@ -149,11 +149,9 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataC
 	return &requestData, nil
 }
 
-// withMode returns receiver bound to mode unless it already has one.
+// withMode returns receiver bound to mode.
 func (receiver RequestReceiver) withMode(mode RequestMode) RequestReceiver {
-	if receiver.mode == "" {
-		receiver.mode = mode
-	}
+	receiver.mode = mode
 	return receiver
 }
 

@@ -66,7 +66,9 @@ func ProcessBody(r *http.Request) (*RequestContext, error) {
 // APIResponseFormatter interface.
 //
 // Deprecated: use api.New(api.WithResponseFormatter(...)) instead. It affects only the
-// default instance.
+// default instance. The package-level Write(data, w) and the middlewares
+// outside (*API).Handler always use the default instance's formatter and
+// writer.
 func RegisterNewAPIResponseFormatter(formatter core.APIResponseFormatter) {
 	api.RegisterNewAPIResponseFormatter(formatter)
 }
@@ -75,7 +77,9 @@ func RegisterNewAPIResponseFormatter(formatter core.APIResponseFormatter) {
 // core.APIResponseWriter interface.
 //
 // Deprecated: use api.New(api.WithResponseWriter(...)) instead. It affects only the
-// default instance.
+// default instance. The package-level Write(data, w) and the middlewares
+// outside (*API).Handler always use the default instance's formatter and
+// writer.
 func RegisterNewAPIResponseWriter(writer core.APIResponseWriter) {
 	api.RegisterNewAPIResponseWriter(writer)
 }
