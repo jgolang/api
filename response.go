@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/jgolang/api/core"
@@ -43,13 +44,22 @@ func getEventID(r *http.Request) string {
 }
 
 // ResponseWriter implementation of core.APIResponseWriter interface.
-type ResponseWriter struct{}
+// The zero value is the default instance's writer, described on Write; New
+// binds its logger and formatter to it, so an instance's built-in writer
+// logs through the instance logger and builds the 500 body with the
+// instance formatter instead.
+type ResponseWriter struct {
+	// fromNew is set by New; false is the default instance's v0 behavior.
+	fromNew   bool
+	logger    *slog.Logger
+	formatter core.APIResponseFormatter
+}
 
-// Write the API response in screen. The body is encoded before anything is
-// written. A body that cannot be encoded (e.g. a NaN float) is reported
-// through PrintError and answered with 500 and the internal server error
-// body, built by the registered response formatter, with the response
-// headers kept. The error body carries no event ID or token, since the
+// Write the API response in screen. On the default instance, the body is
+// encoded before anything is written. A body that cannot be encoded (e.g. a
+// NaN float) is reported through PrintError and answered with 500 and the
+// internal server error body, built by the registered response formatter,
+// with the response headers kept. The error body carries no event ID or token, since the
 // request is not available here. If the handler already wrote a status, that
 // status stays and the error body is written under it.
 //
@@ -58,6 +68,10 @@ type ResponseWriter struct{}
 // before delivering the body with 200, while the recorder that ProcessRequest
 // writes into returns this error.
 func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.ResponseWriter) {
+	if writer.fromNew {
+		writer.writeForInstance(response, w)
+		return
+	}
 	var body bytes.Buffer
 	if err := json.NewEncoder(&body).Encode(response.Body); err != nil {
 		PrintError(err)

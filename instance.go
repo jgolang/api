@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/jgolang/api/core"
 	"github.com/jgolang/errors/codes"
@@ -19,24 +21,34 @@ import (
 // unless built with WithLowercaseCodes; the default instance lowercases them.
 // WriteError answers with the instance's WithKindStatus overrides and calls
 // its WithErrorHook; the default instance has neither.
+// An API from New logs only through its WithLogger logger and masks the keys
+// of WithSensitiveLogKeys; the default instance logs through Print and
+// PrintError and masks SensitiveLogKeys.
 // A zero or nil API is the default instance.
 type API struct {
 	core       *core.API
 	kindStatus map[codes.Kind]int
 	errorHook  func(r *http.Request, err error, status int)
+	// fromNew is true for an API from New; false is the default instance,
+	// which logs through the v0 package variables.
+	fromNew          bool
+	logger           *slog.Logger
+	sensitiveLogKeys []string
 }
 
 // options collects what the Option values passed to New set. New owns it, so
 // an Option cannot reach an API after New returns.
 type options struct {
-	requestMode    RequestMode
-	responseMode   ResponseMode
-	lowercaseCodes bool
-	receiver       core.APIRequestReceiver
-	formatter      core.APIResponseFormatter
-	writer         core.APIResponseWriter
-	kindStatus     map[codes.Kind]int
-	errorHook      func(r *http.Request, err error, status int)
+	requestMode      RequestMode
+	responseMode     ResponseMode
+	lowercaseCodes   bool
+	receiver         core.APIRequestReceiver
+	formatter        core.APIResponseFormatter
+	writer           core.APIResponseWriter
+	kindStatus       map[codes.Kind]int
+	errorHook        func(r *http.Request, err error, status int)
+	logger           *slog.Logger
+	sensitiveLogKeys []string
 }
 
 // Option configures an API in New. New skips a nil Option.
@@ -51,6 +63,8 @@ type Option func(*options)
 // the default instance: RegisterNewAPISecurityGuarantor and
 // RegisterParamValidator apply to every instance. WriteError has no kind
 // overrides and no error hook unless WithKindStatus or WithErrorHook set them.
+// It writes no logs unless WithLogger sets a logger, and its built-in
+// response writer never exits; a custom writer owns its behavior.
 func New(opts ...Option) *API {
 	o := options{
 		requestMode:  RequestModePlain,
@@ -61,17 +75,21 @@ func New(opts ...Option) *API {
 			opt(&o)
 		}
 	}
+	formatter := o.responseFormatter()
 	return &API{
 		core: core.New(
 			o.requestReceiver(),
-			o.responseFormatter(),
-			o.responseWriter(),
+			formatter,
+			o.responseWriter(formatter),
 			sharedSecurityGuarantor{},
 			&mapMethods,
 			sharedParamValidator,
 		),
-		kindStatus: o.kindStatus, // built by WithKindStatus inside New; nothing else holds it
-		errorHook:  o.errorHook,
+		kindStatus:       o.kindStatus, // built by WithKindStatus inside New; nothing else holds it
+		errorHook:        o.errorHook,
+		fromNew:          true,
+		logger:           o.logger,
+		sensitiveLogKeys: instanceSensitiveLogKeys(o.sensitiveLogKeys),
 	}
 }
 
@@ -129,11 +147,17 @@ func (o options) bindFormatter(formatter ResponseFormatter) ResponseFormatter {
 	return formatter
 }
 
-func (o options) responseWriter() core.APIResponseWriter {
-	if o.writer == nil {
-		return ResponseWriter{}
+// responseWriter returns the writer New uses. The built-in ResponseWriter,
+// as a value or pointer, or nil, is bound to the instance's logger and
+// formatter, so it logs through the instance logger; a custom writer is used
+// as is.
+func (o options) responseWriter(formatter core.APIResponseFormatter) core.APIResponseWriter {
+	switch o.writer.(type) {
+	case nil, ResponseWriter, *ResponseWriter:
+		return ResponseWriter{fromNew: true, logger: o.logger, formatter: formatter}
+	default:
+		return o.writer
 	}
-	return o.writer
 }
 
 // WithRequestMode sets how the instance's built-in request receiver parses
@@ -199,14 +223,57 @@ const maxErrorStatus = 599
 // decided and before anything is written. Only WriteError calls fn: the
 // other error helpers (Error400, Error500, ...) and the library's own
 // rejections (body-parse failures in RequestBody and ProcessRequest, the
-// token middlewares' 401s, ProcessRequest's panic 500) do not. A panic in fn is not recovered:
-// it propagates out of WriteError with nothing written. fn is shared by all
+// token middlewares' 401s, ProcessRequest's panic 500) do not. A panic in fn
+// is not recovered: it propagates out of WriteError with nothing written.
+// Under ProcessRequest it answers 500 and is logged, with the panic value,
+// through the instance's WithLogger logger; nothing is logged without one.
+// fn is shared by all
 // requests the instance serves and may run concurrently, so it must be safe
 // for concurrent use. A later WithErrorHook replaces an earlier one, and nil
 // means no hook.
 func WithErrorHook(fn func(r *http.Request, err error, status int)) Option {
 	return func(o *options) {
 		o.errorHook = fn
+	}
+}
+
+// WithLogger makes the instance log through logger: ProcessRequest writes a
+// "request" and a "response" info record per request, and errors met while
+// serving one (a rejected body, a failed Get*Value* helper, a recovered
+// panic, a response that cannot be encoded) are written as error records.
+// Request and response bodies and the parsed form are never logged. Header
+// and query values whose key is sensitive (see WithSensitiveLogKeys) are
+// masked, as is the user information of an absolute-form URI; a failed
+// Get*Value* helper logs the name as "key" and, for a sensitive name, only
+// the kind of error, never the value. A panic with http.ErrAbortHandler is a
+// "handler aborted" debug record instead of an error record.
+// The built-in writer's records carry no request context or event_id, since
+// core.APIResponseWriter.Write receives no request.
+// Without it, or with nil, the instance writes no logs. A later WithLogger
+// replaces an earlier one.
+func WithLogger(logger *slog.Logger) Option {
+	return func(o *options) {
+		o.logger = logger
+	}
+}
+
+// WithSensitiveLogKeys adds keys to the ones whose header and query values
+// the instance masks in its records, and whose Get*Value* helper errors are
+// logged without the value. A key matches any name that contains it,
+// ignoring case. Secrets in path segments (/reset/{token}) are not masked.
+// The defaults (the shipped SensitiveLogKeys list, which includes cookie and
+// session since v0.11.0; changes to the variable do not apply) are always
+// kept: this option only adds. Keys are trimmed and lowercased, blank keys
+// are ignored; repeat it to add more.
+func WithSensitiveLogKeys(keys ...string) Option {
+	return func(o *options) {
+		for _, key := range keys {
+			key = strings.ToLower(strings.TrimSpace(key))
+			if key == "" {
+				continue
+			}
+			o.sensitiveLogKeys = append(o.sensitiveLogKeys, key)
+		}
 	}
 }
 
@@ -237,8 +304,13 @@ func WithResponseFormatter(formatter core.APIResponseFormatter) Option {
 }
 
 // WithResponseWriter sets the writer that sends the instance's formatted
-// responses. A nil interface value keeps the built-in ResponseWriter; a
-// typed nil pointer to a custom writer is used as given.
+// responses. The built-in ResponseWriter, as a value, a pointer or a nil
+// interface value, is bound to the instance's logger and formatter: it logs a
+// body that cannot be encoded through the instance logger and answers 500
+// with the instance formatter's body. A custom writer alone decides how it
+// writes and is used as given, including a typed nil pointer. A type that
+// embeds ResponseWriter is custom: its promoted Write keeps the default
+// instance's behavior (PrintError and the registered formatter).
 func WithResponseWriter(writer core.APIResponseWriter) Option {
 	return func(o *options) {
 		o.writer = writer

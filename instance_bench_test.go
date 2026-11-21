@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -61,6 +62,37 @@ func BenchmarkWriteError(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				WriteError(httptest.NewRecorder(), tt.r, err)
+			}
+		})
+	}
+}
+
+// BenchmarkProcessRequest measures ProcessRequest's logging on the default
+// instance (with Print as a no-op), on an instance without a logger and on
+// one whose logger discards every record.
+func BenchmarkProcessRequest(b *testing.B) {
+	previousPrint := Print
+	Print = func(string, ...interface{}) {}
+	b.Cleanup(func() { Print = previousPrint })
+	handler := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
+		Success200().Write(w, r)
+	})
+
+	tests := []struct {
+		name    string
+		handler http.Handler
+	}{
+		{name: "default", handler: handler},
+		{name: "instance without logger", handler: New().Handler(handler)},
+		{name: "instance with discard logger", handler: New(WithLogger(slog.New(slog.DiscardHandler))).Handler(handler)},
+	}
+	for _, tt := range tests {
+		b.Run(tt.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				req := httptest.NewRequest(http.MethodGet, "/tasks?page=2", nil)
+				req.Header.Set("Authorization", "Bearer placeholder")
+				tt.handler.ServeHTTP(httptest.NewRecorder(), req)
 			}
 		})
 	}
