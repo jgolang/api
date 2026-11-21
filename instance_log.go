@@ -122,11 +122,12 @@ func (a *API) logResponse(r *http.Request, eventID string, rec *httptest.Respons
 // only for a runtime.Error. Any other value (panic(err) of a failed parse,
 // a formatted string) may carry request data, and masking by key cannot
 // apply to an opaque value, so it is logged as redactedLogValue. A panic
-// with http.ErrAbortHandler is a deliberate abort, so it is logged at debug
-// level as "handler aborted", under the same rule.
+// with http.ErrAbortHandler is a deliberate abort, re-panicked by
+// ProcessRequest, so it is logged at debug level as "handler aborted", under
+// the same rule.
 func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 	level, msg := slog.LevelError, "panic recovered"
-	if err, ok := recovered.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+	if isAbortPanic(recovered) {
 		level, msg = slog.LevelDebug, "handler aborted"
 	}
 	if !a.logs(r.Context(), level) {
@@ -143,18 +144,32 @@ func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 	)
 }
 
+// isAbortPanic reports whether recovered is http.ErrAbortHandler, wrapped or
+// not: net/http's documented way for a handler to abort its response.
+func isAbortPanic(recovered any) bool {
+	err, ok := recovered.(error)
+	return ok && errors.Is(err, http.ErrAbortHandler)
+}
+
 // Write the API response in screen. It encodes the body before writing
 // anything, so a body that cannot be encoded (e.g. a NaN float) is logged as
 // "response cannot be encoded" and answered with 500 and the formatter's
 // internal server error body (see writeEncodeFailure) instead of exiting the
 // process. If the handler already wrote a status, that status stays and the
-// error body is written under it.
+// error body is written under it. A nil response (a custom formatter that
+// returned nil) is logged as "response cannot be written" and answered the
+// same way.
 //
 // http.ErrBodyNotAllowed from writing the body is not reported: Warning and
 // Informative default to status 100, which a server sends as informational
 // before delivering the body with 200, while the recorder that ProcessRequest
 // writes into returns this error.
 func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.ResponseWriter) {
+	if response == nil {
+		writer.logError("response cannot be written", errors.New("nil formatted response"))
+		writer.writeEncodeFailure(nil, w)
+		return
+	}
 	var body bytes.Buffer
 	if err := json.NewEncoder(&body).Encode(response.Body); err != nil {
 		writer.logError("response cannot be encoded", err)

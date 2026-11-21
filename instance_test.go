@@ -282,14 +282,6 @@ func TestInstanceFromFallsBackToTheDefaultInstance(t *testing.T) {
 	}
 }
 
-// requestWithInstance returns a request that Handler served with a.
-func requestWithInstance(a *API) *http.Request {
-	var served *http.Request
-	a.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { served = r })).
-		ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
-	return served
-}
-
 func TestQuickStartAnswersLikeTheDefaultInstance(t *testing.T) {
 	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
 	titleRequired := codes.New("TSK-001", "title is required").WithKind(codes.KindValidation)

@@ -254,3 +254,34 @@ func TestInstanceLimitAboveTheDefaultIsNotCapped(t *testing.T) {
 		})
 	}
 }
+
+func TestNestedInstancesApplyTheSmallestLimit(t *testing.T) {
+	small, large := New(WithMaxBodyBytes(16)), New(WithMaxBodyBytes(1024))
+	tests := []struct {
+		name        string
+		outer       *API
+		inner       *API
+		bodySize    int
+		wantStatus  int
+		wantReached bool
+	}{
+		{name: "smaller outer", outer: small, inner: large, bodySize: 64, wantStatus: http.StatusRequestEntityTooLarge},
+		{name: "smaller inner", outer: large, inner: small, bodySize: 64, wantStatus: http.StatusRequestEntityTooLarge},
+		{name: "under both", outer: small, inner: large, bodySize: 12, wantStatus: http.StatusOK, wantReached: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var reached bool
+			handler := tt.outer.Handler(tt.inner.Handler(ProcessRequest(reachHandler(&reached))))
+
+			rec := serve(handler, http.MethodPost, jsonBodyOfSize(tt.bodySize), nil)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if reached != tt.wantReached {
+				t.Fatalf("handler reached = %v, want %v", reached, tt.wantReached)
+			}
+		})
+	}
+}

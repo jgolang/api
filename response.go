@@ -28,10 +28,11 @@ func getEventID(r *http.Request) string {
 // slog.Default and builds its 500 body with the formatter registered with
 // RegisterNewAPIResponseFormatter. New binds its logger and formatter to it,
 // so an instance's built-in writer logs through the instance logger and
-// builds the 500 body with the instance formatter instead. Both send the
-// Content-Type set in the formatted Headers (any key case; an empty value
-// counts as unset), else application/json; one a handler set on w.Header()
-// is overwritten.
+// builds the 500 body with the instance formatter instead. A nil formatted
+// response is logged as "response cannot be written" and answered with that
+// 500 body. Both send the Content-Type set in the formatted Headers (any key
+// case; an empty value counts as unset), else application/json; one a
+// handler set on w.Header() is overwritten.
 type ResponseWriter struct {
 	logger    *slog.Logger
 	formatter core.APIResponseFormatter

@@ -291,6 +291,13 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		defer func() {
 			if recvr := recover(); recvr != nil {
 				a.logPanic(r, rctx.EventID, recvr)
+				// Nothing has reached w yet, so re-panicking an abort lets
+				// net/http drop the response as it would without ProcessRequest.
+				// The plain sentinel is re-panicked even for a wrapped abort:
+				// net/http logs any other value, unredacted, with a stack.
+				if isAbortPanic(recvr) {
+					panic(http.ErrAbortHandler)
+				}
 				Error500().Write(w, r)
 				return
 			}

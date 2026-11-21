@@ -245,10 +245,9 @@ const maxErrorStatus = 599
 // is not recovered: it propagates out of WriteError with nothing written.
 // Under ProcessRequest it answers 500 and is logged, with the panic type,
 // through the instance's WithLogger logger; nothing is logged without one.
-// fn is shared by all
-// requests the instance serves and may run concurrently, so it must be safe
-// for concurrent use. A later WithErrorHook replaces an earlier one, and nil
-// means no hook.
+// fn is shared by all requests the instance serves and may run concurrently,
+// so it must be safe for concurrent use. A later WithErrorHook replaces an
+// earlier one, and nil means no hook.
 func WithErrorHook(fn func(r *http.Request, err error, status int)) Option {
 	return func(o *options) {
 		o.errorHook = fn
@@ -256,22 +255,25 @@ func WithErrorHook(fn func(r *http.Request, err error, status int)) Option {
 }
 
 // WithLogger makes the instance log through logger: ProcessRequest writes a
-// "request" and a "response" info record per request, and errors met while
+// "request" info record per request and a "response" info record per
+// response the handler completes (none after a recovered panic, although its
+// 500 is still written), and errors met while
 // serving one (a rejected body, a failed Get*Value* helper, a recovered
-// panic, a response that cannot be encoded) are written as error records.
-// Request and response bodies and the parsed form are never logged. Header
-// and query values whose key is sensitive (see WithSensitiveLogKeys) are
-// masked, as is the user information of an absolute-form URI; other header
-// values have the query values after each "?" masked the same way, and the
-// user information too when they carry a URL; a failed Get*Value* helper logs the name as "key" and, for a sensitive name, only
-// the kind of error, never the value. A recovered panic logs its Go type as
-// "panic_type" and its value only for a runtime.Error. A panic with
-// http.ErrAbortHandler is a "handler aborted" debug record instead of an
-// error record.
-// The built-in writer's records carry no request context or event_id, since
-// core.APIResponseWriter.Write receives no request.
-// Without it, or with nil, the instance writes no logs. A later WithLogger
-// replaces an earlier one.
+// panic, a response that cannot be encoded or written) are written as error
+// records. Request and response bodies and the parsed form are never
+// logged. Header and query values whose key is sensitive (see
+// WithSensitiveLogKeys) are masked, as is the user information of an
+// absolute-form URI; other header values have the query values after each
+// "?" masked the same way, and the user information too when they carry a
+// URL; a failed Get*Value* helper logs the name as "key" and, for a
+// sensitive name, only the kind of error, never the value. A recovered
+// panic logs its Go type as "panic_type" and its value only for a
+// runtime.Error. A panic with http.ErrAbortHandler is a "handler aborted"
+// debug record instead of an error record, and ProcessRequest re-panics it
+// so net/http aborts the response. The built-in writer's records carry no
+// request context or event_id, since core.APIResponseWriter.Write receives
+// no request. Without it, or with nil, the instance writes no logs. A later
+// WithLogger replaces an earlier one.
 func WithLogger(logger *slog.Logger) Option {
 	return func(o *options) {
 		o.logger = logger
@@ -351,9 +353,10 @@ func WithResponseFormatter(formatter core.APIResponseFormatter) Option {
 // WithResponseWriter sets the writer that sends the instance's formatted
 // responses. The built-in ResponseWriter, as a value, a pointer or a nil
 // interface value, is bound to the instance's logger and formatter: it logs a
-// body that cannot be encoded through the instance logger and answers 500
-// with the instance formatter's body. A custom writer alone decides how it
-// writes and is used as given, including a typed nil pointer. A type that
+// body that cannot be encoded, or a nil formatted response, through the
+// instance logger and answers 500 with the instance formatter's body. A
+// custom writer alone decides how it writes and is used as given, including
+// a typed nil pointer. A type that
 // embeds ResponseWriter is custom: its promoted Write keeps the default
 // instance's behavior (slog.Default and the registered formatter).
 func WithResponseWriter(writer core.APIResponseWriter) Option {
