@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -143,17 +144,45 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 				requestData, err := a.core.ProcessBody(r)
 				if err != nil {
 					a.logError(r, "request body rejected", err)
-					Error{
-						Title:        "Invalid request content",
-						Message:      "Request content empty json structure",
-						ResponseCode: ResponseCodes.InvalidJSON,
-					}.Write(w, r)
+					bodyRejection(a, err).Write(w, r)
 					return
 				}
 				r.Body = io.NopCloser(bytes.NewBuffer(requestData.RawBody))
 			}
 			next.ServeHTTP(w, r)
 		}
+	}
+}
+
+// bodyRejection returns the error response for a request body that a's
+// receiver rejected with err: 413 when it exceeds an instance's body limit,
+// else the v0 400.
+func bodyRejection(a *API, err error) Error {
+	if bodyTooLarge(a, err) {
+		return bodyTooLargeError()
+	}
+	return Error{
+		Title:        "Invalid request content",
+		Message:      "Request content empty json structure",
+		ResponseCode: ResponseCodes.InvalidJSON,
+	}
+}
+
+// bodyTooLarge reports whether err comes from the body limit of an instance
+// from New. The default instance keeps its v0 400 even for a limit the
+// service installed itself.
+func bodyTooLarge(a *API, err error) bool {
+	var maxBytesErr *http.MaxBytesError
+	return a.fromNew && errors.As(err, &maxBytesErr)
+}
+
+// bodyTooLargeError is the 413 an instance answers for a body over its limit.
+func bodyTooLargeError() Error {
+	return Error{
+		Title:          "Request content too large",
+		Message:        "Request content exceeds the size limit",
+		ResponseCode:   ResponseCodes.InvalidJSON,
+		HTTPStatusCode: http.StatusRequestEntityTooLarge,
 	}
 }
 
@@ -184,8 +213,10 @@ func GenSkipPath(method string, path string) SkipPath {
 // The proxiedIPAddress info value is the first X-Forwarded-For header line up
 // to its first ", ", which the client sets; trust it only behind a proxy that
 // overwrites the header.
-// The whole request body is read into memory with no size limit; bound it
-// before this middleware runs (http.MaxBytesHandler or http.MaxBytesReader).
+// The whole request body is read into memory. Under an instance's Handler it
+// is bounded by WithMaxBodyBytes (10 MiB by default) and a larger body is
+// answered with 413; the default instance has no limit, so bound it before
+// this middleware runs (http.MaxBytesHandler or http.MaxBytesReader).
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -199,11 +230,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		rctx, err := ProcessBody(r)
 		if err != nil {
 			a.logError(r, "request body rejected", err)
-			Error{
-				Title:        "Invalid request content",
-				Message:      "Request content empty json structure",
-				ResponseCode: ResponseCodes.InvalidJSON,
-			}.Write(w, r)
+			bodyRejection(a, err).Write(w, r)
 			return
 		}
 

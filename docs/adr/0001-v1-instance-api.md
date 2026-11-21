@@ -37,11 +37,11 @@ func New(opts ...Option) *API
 func (a *API) Handler(next http.Handler) http.Handler
 ```
 
-- An instance owns exactly: request mode, response mode, request receiver, response formatter, response writer, code case, logger, sensitive log keys, kind-to-status overrides, error hook. Internally it builds its own `core.API` with `core.New`; `core` does not change.
+- An instance owns exactly: request mode, response mode, request receiver, response formatter, response writer, code case, logger, sensitive log keys, kind-to-status overrides, error hook, request body limit. Internally it builds its own `core.API` with `core.New`; `core` does not change.
 - The type is named `API` (it wraps `core.API`; `doc.API` stays the OpenAPI metadata).
 - An instance has no setters. Options are applied once in `New`; there is nothing to drift after start-up. `Option` takes an unexported `options` struct that `New` owns, not the `*API`, so no `Option` value can change an instance after `New` returns.
 - `New` returns `*API` without an error and never panics. An unknown mode value falls back to the default, as `SetRequestMode`/`SetResponseMode` do, and this is documented on the option.
-- `New()` with no options behaves like v0's defaults (plain requests, envelope responses, the same formatter output, trace suffix 1, ID length 6, blank successes), except: codes as declared (section 4) and no logging (section 6).
+- `New()` with no options behaves like v0's defaults (plain requests, envelope responses, the same formatter output, trace suffix 1, ID length 6, blank successes), except: codes as declared (section 4), no logging (section 6), a 10 MiB body limit (section 9) and no request token echo (section 10).
 
 Options (one exported function each):
 
@@ -57,6 +57,7 @@ Options (one exported function each):
 | `WithErrorHook(func(r *http.Request, err error, status int))` | none (new, API-01) | none |
 | `WithLogger(*slog.Logger)` | `Print`, `PrintError`, `Fatal` | no logging |
 | `WithSensitiveLogKeys(keys ...string)` | `SensitiveLogKeys` | the v0 list |
+| `WithMaxBodyBytes(int64)` | none (new, SEC-05, Q35) | 10 MiB |
 
 The mode and code-case options apply to the built-in receiver and formatter: `RequestReceiver`, `RequestReceiverV2` and `ResponseFormatter` passed with `WithRequestReceiver`/`WithResponseFormatter` (as values or pointers) take the instance's modes, so the built-in components of an instance never read the package mode variables. A custom receiver or formatter owns its own behavior, as in v0; a type that embeds a built-in one is custom, and its promoted methods read the package mode variables and the package formatter settings, and lowercase codes. A nil interface value keeps the built-in; a typed nil pointer to a custom component is used as given. The security guarantor and param validator are not per instance: every instance forwards to the ones set with `RegisterNewAPISecurityGuarantor` and `RegisterParamValidator` (see "What stays package-level in v1").
 
@@ -134,6 +135,19 @@ sequenceDiagram
 - Success, warning and informative responses write their content as the body (as `ResponseModeNone`).
 - Only the built-in formatter bound by `New` writes problem details; a custom formatter, or one embedding `ResponseFormatter` (which reads the package variable), never does. The problem formatter adds `Content-Type: application/problem+json` to a copy of `Headers` only when they do not set one, so a `Content-Type` set in `Headers` wins also for problem errors. The 500 sent when an instance's body cannot be encoded is the formatter's body, so it carries the formatter's `Content-Type` (`application/json`, or `application/problem+json` in problem mode), not one set in the failed response's `Headers`.
 - The built-in `ResponseWriter` (default instance and instances) sets `Content-Type: application/json` only when the formatted headers do not set a non-empty one (one a handler set on `w.Header()` is overwritten). For v0 callers who put a `Content-Type` in `Headers` this is a fix, not a breaking change (owner answer Q40): v0 discarded a `Content-Type` the service set. It goes in the release notes. On the default instance too, the 500 that replaces a body that cannot be encoded carries the error body's `Content-Type` and drops the failed body's headers, as on an instance (bare 500 if the registered formatter returns nil or its body cannot be encoded).
+
+### 9. Request body limit (SEC-05, owner answer Q35)
+
+- `(*API).Handler` wraps a request body (not a nil or `http.NoBody` one) in `http.MaxBytesReader` at the instance's limit, so every reader under the instance is bounded: the built-in receivers, custom receivers and handlers that read `r.Body`. The default is 10 MiB; `WithMaxBodyBytes(n)` sets another. `n <= 0` is ignored (the earlier value or the default stays), so a zero configuration value never switches the bound off; `math.MaxInt64` means no practical limit. A later valid call wins. Nested instances each add their bound, so the smallest limit applies (an inner instance cannot raise an outer one). Only readers inside `a.Handler` are bounded: a `ProcessRequest` or `RequestBody` outside it runs with the default instance and reads without a limit.
+- `ProcessRequest`, `RequestBody` and `UnmarshalBody` of an instance answer a `*http.MaxBytesError` with 413, code `ResponseCodes.InvalidJSON` (`E002`, no new code) and the library title `Request content too large` (problem mode: `Request Entity Too Large`). `ProcessRequest` and `RequestBody` still log it as `request body rejected`. A custom receiver, or a handler that reads the body itself, gets the error and decides the answer. `WriteError`, `ProcessEncryptedBody`, `core` and the receivers do not change.
+- The default instance has no limit (v0 behavior). A body over a limit the service installed itself (`http.MaxBytesHandler`) is answered with 400 `Invalid request content`, as in v0.11.0.
+
+### 10. No request token echo (SEC-08, owner answer Q36)
+
+- `Success.Write`, `Error.Write`, `Warning.Write` and `Informative.Write` (and so `WriteError` and the library's own rejections) leave an empty `SecurityToken` empty on an instance from `New`: the request token (`SecurityToken` header, `Authorization: Bearer`, the envelope `header.token` read by `ProcessRequest`) never reaches the response bodies written under its `Handler`. A middleware placed outside `a.Handler` (a token middleware, `ProcessRequest`) runs with the default instance and still echoes it. Plain bodies send `"token":""`, envelope bodies omit `header.token`, problem bodies never had it. The rule sits before the formatter, so it holds for custom formatters too. A token the handler sets on the response is sent as before.
+- The default instance keeps the v0 echo (wire unchanged for v0 programs, like codes in section 4).
+- No option restores the echo on an instance: nothing in this ADR or the migration guide needs it, and a handler that wants to return a token sets `SecurityToken` (for example from `rctx.SecurityToken`) in one line (YAGNI-01). A consumer need would be a new proposal.
+- `RequestHeaderSession` copying the `SecurityToken` request header into the response header is unchanged; it is the middleware's session contract, not a body echo. After `ProcessRequest` that header holds the request token, which in envelope request mode can come from the body's `header.token`.
 
 ## What stays package-level in v1
 

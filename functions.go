@@ -259,7 +259,11 @@ func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Respo
 func UnmarshalBody(v interface{}, r *http.Request) Response {
 	err := api.UnmarshalBody(v, r)
 	if err != nil {
-		instanceFrom(r).logError(r, "request body not unmarshaled", err)
+		a := instanceFrom(r)
+		a.logError(r, "request body not unmarshaled", err)
+		if bodyTooLarge(a, err) {
+			return bodyTooLargeError()
+		}
 		return Error{
 			Title:   "Not unmarshal JSON struct!",
 			Message: "Error when unmarshal JSON structure",

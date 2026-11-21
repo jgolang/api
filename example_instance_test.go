@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/core"
@@ -80,6 +81,22 @@ func ExampleWithResponseWriter() {
 
 	fmt.Println(rec.Code, rec.Body.Len())
 	// Output: 200 0
+}
+
+func ExampleWithMaxBodyBytes() {
+	a := api.New(api.WithMaxBodyBytes(16))
+	handler := a.Handler(api.ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
+		api.Success200().Write(w, r)
+	}))
+
+	for _, body := range []string{`{"title":"a"}`, `{"title":"a longer title"}`} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(body)))
+		fmt.Println(rec.Code)
+	}
+	// Output:
+	// 200
+	// 413
 }
 
 func ExampleWithLowercaseCodes() {

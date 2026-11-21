@@ -25,6 +25,11 @@ import (
 // An API from New logs only through its WithLogger logger and masks the keys
 // of WithSensitiveLogKeys; the default instance logs through Print and
 // PrintError and masks SensitiveLogKeys.
+// An API from New bounds request bodies at 10 MiB unless WithMaxBodyBytes
+// sets another limit; the default instance does not bound them.
+// An API from New does not echo the request token in response bodies: a
+// response carries a token only when the handler sets SecurityToken; the
+// default instance fills an empty one from the request, as v0 does.
 // A zero or nil API is the default instance.
 type API struct {
 	core       *core.API
@@ -35,6 +40,7 @@ type API struct {
 	fromNew          bool
 	logger           *slog.Logger
 	sensitiveLogKeys []string
+	maxBodyBytes     int64
 }
 
 // options collects what the Option values passed to New set. New owns it, so
@@ -50,6 +56,7 @@ type options struct {
 	errorHook        func(r *http.Request, err error, status int)
 	logger           *slog.Logger
 	sensitiveLogKeys []string
+	maxBodyBytes     int64
 }
 
 // Option configures an API in New. New skips a nil Option.
@@ -65,11 +72,14 @@ type Option func(*options)
 // RegisterParamValidator apply to every instance. WriteError has no kind
 // overrides and no error hook unless WithKindStatus or WithErrorHook set them.
 // It writes no logs unless WithLogger sets a logger, and its built-in
-// response writer never exits; a custom writer owns its behavior.
+// response writer never exits; a custom writer owns its behavior. Its
+// Handler bounds request bodies at 10 MiB unless WithMaxBodyBytes sets
+// another limit.
 func New(opts ...Option) *API {
 	o := options{
 		requestMode:  RequestModePlain,
 		responseMode: ResponseModeEnvelope,
+		maxBodyBytes: defaultMaxBodyBytes,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -91,8 +101,13 @@ func New(opts ...Option) *API {
 		fromNew:          true,
 		logger:           o.logger,
 		sensitiveLogKeys: instanceSensitiveLogKeys(o.sensitiveLogKeys),
+		maxBodyBytes:     o.maxBodyBytes,
 	}
 }
+
+// defaultMaxBodyBytes is the request body limit of an API from New without
+// WithMaxBodyBytes.
+const defaultMaxBodyBytes = 10 << 20
 
 // requestReceiver returns the receiver New uses. A built-in receiver without
 // a mode takes the instance's, so the instance never reads the package mode
@@ -285,6 +300,27 @@ func WithSensitiveLogKeys(keys ...string) Option {
 	}
 }
 
+// WithMaxBodyBytes sets the most bytes of a request body the instance's
+// Handler lets anything under it read; the default is 10 MiB. When
+// ProcessRequest, RequestBody or UnmarshalBody meet a larger body, they
+// answer 413 Request Entity Too Large with the response code
+// ResponseCodes.InvalidJSON (E002) and the title "Request content too
+// large". A custom receiver, or a handler that reads r.Body itself, gets the
+// *http.MaxBytesError and decides how to answer. A value n <= 0 is ignored
+// and the earlier value or the default stays, so a zero configuration value
+// never removes the bound; pass math.MaxInt64 for no practical limit. A
+// later valid call replaces an earlier one. With nested instances each
+// Handler adds its bound, so the smallest limit applies. The default instance
+// has no limit; bound its bodies with http.MaxBytesHandler.
+func WithMaxBodyBytes(n int64) Option {
+	return func(o *options) {
+		if n <= 0 {
+			return
+		}
+		o.maxBodyBytes = n
+	}
+}
+
 // WithRequestReceiver sets the receiver that parses the instance's request
 // bodies. RequestReceiver and RequestReceiverV2 parse with the instance's
 // request mode; a custom receiver alone decides how it parses, and
@@ -355,14 +391,21 @@ func sharedParamValidator(v any) (errMsg string, err error) {
 // Wrap the outermost chain (usually the router). When instances are nested,
 // the innermost one wins. ProcessRequest and the other middlewares placed
 // outside a.Handler run with the default instance, so they parse with the
-// package-level request mode. On a zero or nil API, Handler returns next
-// unchanged.
+// package-level request mode. Handler bounds the request body with
+// http.MaxBytesReader at the instance's limit (see WithMaxBodyBytes); nested
+// limits combine, so the smallest applies. On a zero or nil API, Handler
+// returns next unchanged.
 func (a *API) Handler(next http.Handler) http.Handler {
 	if a == nil || a.core == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), instanceKey{}, a)))
+		r = r.WithContext(context.WithValue(r.Context(), instanceKey{}, a))
+		// A body-less request keeps http.NoBody, so it costs no allocation.
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = http.MaxBytesReader(w, r.Body, a.maxBodyBytes)
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
