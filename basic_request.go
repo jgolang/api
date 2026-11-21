@@ -36,6 +36,9 @@ func (request *RequestBasic) GetSecurityToken() Response {
 }
 
 // GetUserID gets id user ID by header key layout.
+//
+// The UserIDHeaderKey header is set by the client, so do not use it to
+// identify or authorize the user.
 func (request *RequestBasic) GetUserID() Response {
 	userID, response := GetHeaderValueString(UserIDHeaderKey, request.HTTPReq)
 	if response != nil {

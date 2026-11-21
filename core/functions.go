@@ -160,7 +160,8 @@ func (api API) UnmarshalBody(v interface{}, r *http.Request) error {
 	return nil
 }
 
-// UnmarshalBody parses request body to a struct.
+// ValidateParams validates v with the registered param validator and returns
+// its message and error.
 func (api API) ValidateParams(v any) (errMsg string, err error) {
 	return api.paramValidator(v)
 }

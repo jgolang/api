@@ -71,7 +71,7 @@ func errorResponseFor(err error, statusFor func(codes.Kind) int) Error {
 	case status == http.StatusInternalServerError:
 		response.Title = InternalServerTitle
 		response.Message = InternalServerMessage
-		response.ResponseCode = ResponseCodes.InternalServerEerror
+		response.ResponseCode = internalServerErrorCode()
 	case status > http.StatusInternalServerError:
 		// Only a WithKindStatus override reaches another 5xx; titled like Error501.
 		response.Title = InternalServerTitle

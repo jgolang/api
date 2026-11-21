@@ -44,6 +44,13 @@ func (receiver RequestReceiver) ProcessEncryptedBody(r *http.Request) (*core.Req
 
 // ProcessBody process API request body information.
 func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataContext, error) {
+	return processRequestBody(r, receiver.requestMode(), true)
+}
+
+// processRequestBody is the ProcessBody of both built-in receivers. Only
+// RequestReceiver fills the device serial, device ID, latitude and longitude
+// (deviceFields); RequestReceiverV2 never did, and keeps it that way.
+func processRequestBody(r *http.Request, mode RequestMode, deviceFields bool) (*core.RequestDataContext, error) {
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -66,17 +73,18 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataC
 	requestData.AppBuildInfo = headerData.AppBuildInfo
 	requestData.AppName = headerData.AppName
 	requestData.SecurityToken = headerData.SecurityToken
-	requestData.DeviceSerial = headerData.DeviceSerial
-	requestData.DeviceId = headerData.DeviceID
-	requestData.Latitude = headerData.Latitude
-	requestData.Longitude = headerData.Longitude
+	if deviceFields {
+		requestData.DeviceSerial = headerData.DeviceSerial
+		requestData.DeviceId = headerData.DeviceID
+		requestData.Latitude = headerData.Latitude
+		requestData.Longitude = headerData.Longitude
+	}
 	requestData.EventID = headerData.EventID
 
 	if len(bytesTrimSpace(rawBody)) == 0 {
 		return &requestData, nil
 	}
 
-	mode := receiver.requestMode()
 	if mode == RequestModeAuto && envelopeRequestBody(rawBody) {
 		mode = RequestModeEnvelope
 	}
@@ -90,54 +98,7 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataC
 		if err != nil {
 			return nil, err
 		}
-		if requestData.UUID == "" {
-			requestData.UUID = request.Header.UUID
-		}
-		if requestData.DeviceType == "" {
-			requestData.DeviceType = request.Header.DeviceType
-		}
-		if requestData.DeviceBrand == "" {
-			requestData.DeviceBrand = request.Header.DeviceBrand
-		}
-		if requestData.DeviceModel == "" {
-			requestData.DeviceModel = request.Header.DeviceModel
-		}
-		if requestData.DeviceOS == "" {
-			requestData.DeviceOS = request.Header.OS
-		}
-		if requestData.OSVersion == "" {
-			requestData.OSVersion = request.Header.OSVersion
-		}
-		if requestData.OSTimezone == "" {
-			requestData.OSTimezone = request.Header.Timezone
-		}
-		if requestData.AppLanguage == "" {
-			requestData.AppLanguage = request.Header.Lang
-		}
-		if requestData.AppVersion == "" {
-			requestData.AppVersion = request.Header.AppVersion
-		}
-		if requestData.AppBuildInfo == "" {
-			requestData.AppBuildInfo = request.Header.AppBuildVersion
-		}
-		if requestData.AppName == "" {
-			requestData.AppName = request.Header.AppName
-		}
-		if requestData.SecurityToken == "" {
-			requestData.SecurityToken = request.Header.SecurityToken
-		}
-		if requestData.DeviceSerial == "" {
-			requestData.DeviceSerial = request.Header.DeviceSerial
-		}
-		if requestData.DeviceId == "" {
-			requestData.DeviceId = request.Header.DeviceId
-		}
-		if requestData.Latitude == "" {
-			requestData.Latitude = request.Header.Latitude
-		}
-		if requestData.Longitude == "" {
-			requestData.Longitude = request.Header.Longitude
-		}
+		fillFromEnvelopeHeader(&requestData, request.Header, deviceFields)
 		requestData.Content = core.JSONContent(request.Content)
 		return &requestData, nil
 	}
@@ -147,6 +108,35 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataC
 	}
 	requestData.Content = core.JSONContent(rawBody)
 	return &requestData, nil
+}
+
+// fillFromEnvelopeHeader fills the fields that the HTTP headers left empty
+// from the envelope header, so an HTTP header always wins.
+func fillFromEnvelopeHeader(requestData *core.RequestDataContext, header envelope.RequestInfo, deviceFields bool) {
+	fillEmpty(&requestData.UUID, header.UUID)
+	fillEmpty(&requestData.DeviceType, header.DeviceType)
+	fillEmpty(&requestData.DeviceBrand, header.DeviceBrand)
+	fillEmpty(&requestData.DeviceModel, header.DeviceModel)
+	fillEmpty(&requestData.DeviceOS, header.OS)
+	fillEmpty(&requestData.OSVersion, header.OSVersion)
+	fillEmpty(&requestData.OSTimezone, header.Timezone)
+	fillEmpty(&requestData.AppLanguage, header.Lang)
+	fillEmpty(&requestData.AppVersion, header.AppVersion)
+	fillEmpty(&requestData.AppBuildInfo, header.AppBuildVersion)
+	fillEmpty(&requestData.AppName, header.AppName)
+	fillEmpty(&requestData.SecurityToken, header.SecurityToken)
+	if deviceFields {
+		fillEmpty(&requestData.DeviceSerial, header.DeviceSerial)
+		fillEmpty(&requestData.DeviceId, header.DeviceId)
+		fillEmpty(&requestData.Latitude, header.Latitude)
+		fillEmpty(&requestData.Longitude, header.Longitude)
+	}
+}
+
+func fillEmpty(field *string, value string) {
+	if *field == "" {
+		*field = value
+	}
 }
 
 // withMode returns receiver bound to mode.

@@ -109,7 +109,7 @@ With `WithLowercaseCodes()` the handler answers byte for byte as on the default 
 
 ### Deprecated names and their options
 
-The names replaced by an instance option keep working, but only for the default instance. The `GetQueryParamValue*` helpers keep working everywhere, instances included.
+The names replaced by an instance option keep working, but only for the default instance. The `GetQueryParamValue*` helpers and `ResponseCodes.InternalServerEerror` keep working everywhere, instances included.
 
 | Deprecated (v0) | Use instead |
 |---|---|
@@ -130,6 +130,7 @@ The names replaced by an instance option keep working, but only for the default 
 | `GetQueryParamValueString` | `api.QueryString` (deprecated since v0.9.0) |
 | `GetQueryParamValueInt` | `api.QueryInt` (deprecated since v0.9.0) |
 | `GetQueryParamValueBool` | `api.QueryBool` (deprecated since v0.9.0) |
+| `ResponseCodes.InternalServerEerror` | `ResponseCodes.InternalServerError` (once it is changed from `E300`, it wins over the old field) |
 
 Every option in one place:
 

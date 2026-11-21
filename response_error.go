@@ -122,7 +122,7 @@ func Error403() Error {
 func Error500(errs ...error) Error {
 	code, msg := getErrCode(errs...)
 	if code == "" {
-		code = ResponseCodes.InternalServerEerror
+		code = internalServerErrorCode()
 	}
 	if msg == "" {
 		msg = InternalServerMessage
