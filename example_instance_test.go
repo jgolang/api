@@ -1,12 +1,15 @@
 package api_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/core"
+	"github.com/jgolang/errors"
+	"github.com/jgolang/errors/codes"
 )
 
 func ExampleNew() {
@@ -43,4 +46,30 @@ func ExampleWithResponseWriter() {
 
 	fmt.Println(rec.Code, rec.Body.Len())
 	// Output: 200 0
+}
+
+func ExampleWithLowercaseCodes() {
+	titleRequired := codes.New("PLN-001", "title is required").WithKind(codes.KindValidation)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.WriteError(w, r, errors.NewC(titleRequired, "empty title"))
+	})
+
+	for _, a := range []*api.API{api.New(), api.New(api.WithLowercaseCodes())} {
+		rec := httptest.NewRecorder()
+		a.Handler(handler).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/tasks", nil))
+
+		var body struct {
+			Header struct {
+				Code string `json:"code"`
+			} `json:"header"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			fmt.Println(err)
+			continue
+		}
+		fmt.Println(body.Header.Code)
+	}
+	// Output:
+	// PLN-001
+	// pln-001
 }

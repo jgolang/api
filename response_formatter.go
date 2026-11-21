@@ -9,21 +9,30 @@ import (
 )
 
 // ResponseFormatter implementation of core.APIResponseFormatter interface.
-// The zero value formats with CurrentResponseMode.
+// The zero value formats with CurrentResponseMode, TraceVisibility,
+// TraceIDLength and BlankSuccess and lowercases response codes, as v0 does;
+// New binds an instance's mode and code case to it, and the v0 defaults of
+// the three formatter settings.
 type ResponseFormatter struct {
 	// mode is set by New; empty means the default instance's package variable.
 	mode ResponseMode
+	// declaredCodes is set by New; false lowercases codes, as v0 does.
+	declaredCodes bool
+	// v0Settings is set by New: the formatter uses the v0 defaults of
+	// TraceVisibility, TraceIDLength and BlankSuccess instead of reading them.
+	v0Settings bool
 }
 
 // TraceIDLength specifies the number of characters to return from the beginning of the input trace ID.
+// It affects only the default instance; an instance from New uses 6.
 var TraceIDLength = 6
 
-// shortID returns the first n characters of the input traceID
-func shortID(traceID string) string {
-	if len(traceID) < TraceIDLength {
+// shortID returns the first length characters of the input traceID.
+func shortID(traceID string, length int) string {
+	if len(traceID) < length {
 		return traceID
 	}
-	return traceID[:TraceIDLength]
+	return traceID[:length]
 }
 
 // TraceVisibility controls how trace information is included in the response message.
@@ -31,31 +40,34 @@ func shortID(traceID string) string {
 // - 1: Includes both event ID and response code.
 // - 2: Includes only the Code.
 // - 3: Includes only the event ID.
+// It affects only the default instance; an instance from New uses 1.
 var TraceVisibility = 1
 
 // BlankSuccess controls whether success responses leave out their title and
 // message. Responses of any other type (error, warning, informative or a
 // custom type) keep them, since that is the feedback a client shows.
+// It affects only the default instance; an instance from New uses true.
 var BlankSuccess = true
 
 // Format the response body information.
 func (formatter ResponseFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
 	msg := data.Message
 	title := data.Title
-	code := strings.ToLower(string(data.ResponseCode))
+	code := formatter.responseCode(data.ResponseCode)
 
 	// A trace suffix on an empty message would show clients a bare " (id-code)".
 	if data.Message != "" {
-		switch TraceVisibility {
+		visibility, idLength := formatter.traceSettings()
+		switch visibility {
 		case 1:
-			msg = fmt.Sprintf("%s (%s-%s)", data.Message, shortID(data.EventID), code)
+			msg = fmt.Sprintf("%s (%s-%s)", data.Message, shortID(data.EventID, idLength), code)
 		case 2:
 			msg = fmt.Sprintf("%s (%s)", data.Message, code)
 		case 3:
-			msg = fmt.Sprintf("%s (%s)", data.Message, shortID(data.EventID))
+			msg = fmt.Sprintf("%s (%s)", data.Message, shortID(data.EventID, idLength))
 		}
 	}
-	if BlankSuccess && data.ResponseType == SuccessType {
+	if formatter.blankSuccess() && data.ResponseType == SuccessType {
 		msg = ""
 		title = ""
 	}
@@ -97,6 +109,30 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 		Headers:        data.Headers,
 		Body:           body,
 	}
+}
+
+// responseCode returns code as the body and the trace suffix show it.
+func (formatter ResponseFormatter) responseCode(code core.ResponseCode) string {
+	if formatter.declaredCodes {
+		return string(code)
+	}
+	return strings.ToLower(string(code))
+}
+
+// traceSettings returns the trace visibility and ID length: the v0 defaults
+// on an instance, the package variables on the default instance.
+func (formatter ResponseFormatter) traceSettings() (visibility, idLength int) {
+	if formatter.v0Settings {
+		return 1, 6
+	}
+	return TraceVisibility, TraceIDLength
+}
+
+func (formatter ResponseFormatter) blankSuccess() bool {
+	if formatter.v0Settings {
+		return true
+	}
+	return BlankSuccess
 }
 
 // withMode returns formatter bound to mode.
