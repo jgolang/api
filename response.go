@@ -15,7 +15,14 @@ type Response interface {
 	Write(w http.ResponseWriter, r *http.Request)
 }
 
+// getSecurityToken returns the request token that Write puts in a response
+// whose SecurityToken is empty. An instance from New returns "" so the
+// request token is never echoed in its bodies (SEC-08); the default instance
+// keeps the v0 echo.
 func getSecurityToken(r *http.Request) string {
+	if instanceFrom(r).fromNew {
+		return ""
+	}
 	requestData, err := GetRequestContext(r)
 	if err != nil {
 		if token := r.Header.Get(SecurityTokenHeaderKey); token != "" {

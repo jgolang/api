@@ -27,6 +27,9 @@ import (
 // PrintError and masks SensitiveLogKeys.
 // An API from New bounds request bodies at 10 MiB unless WithMaxBodyBytes
 // sets another limit; the default instance does not bound them.
+// An API from New does not echo the request token in response bodies: a
+// response carries a token only when the handler sets SecurityToken; the
+// default instance fills an empty one from the request, as v0 does.
 // A zero or nil API is the default instance.
 type API struct {
 	core       *core.API
