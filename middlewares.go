@@ -149,7 +149,7 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 				boundDefaultBody(w, r)
 				requestData, err := a.core.ProcessBody(r)
 				if err != nil {
-					a.logError(r, "request body rejected", err)
+					a.logBodyError(r, "request body rejected", err, false)
 					bodyRejection(err).Write(w, r)
 					return
 				}
@@ -266,7 +266,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		boundDefaultBody(w, r)
 		rctx, err := processBody(r)
 		if err != nil {
-			a.logError(r, "request body rejected", err)
+			a.logBodyError(r, "request body rejected", err, false)
 			bodyRejection(err).Write(w, r)
 			return
 		}
