@@ -114,16 +114,16 @@ handler := api.MiddlewaresChain(api.ProcessRequest)(func(w http.ResponseWriter, 
 http.HandleFunc("/api/example", handler)
 ```
 
-`api.ProcessRequest` calls the registered `core.APIRequestReceiver` (through `api.ProcessBody`), which reads the body, merges the HTTP headers and the envelope `header` as described above, and returns the request context. The middleware then assigns the event ID, logs the request, stores the context in the request and replaces `r.Body` with the content.
+`api.ProcessRequest` calls the instance's `core.APIRequestReceiver` (the registered one on the default instance) (through `api.ProcessBody`), which reads the body, merges the HTTP headers and the envelope `header` as described above, and returns the request context. The middleware then assigns the event ID, logs the request, stores the context in the request and replaces `r.Body` with the content.
 
 ### Request receivers
 
 Two exported implementations of `core.APIRequestReceiver` exist. Both follow the request mode for `ProcessBody`.
 
 - `api.RequestReceiver` is the default, wired in `api.go`. `ProcessBody` fills every field in the table above. `ProcessEncryptedBody` reads a JSON body `{"data": "...", "deviceUUID": "..."}` (`envelope.EncryptedBody`).
-- `api.RequestReceiverV2` must be registered with `api.RegisterNewAPIRequestReceiver(api.RequestReceiverV2{})`. `ProcessBody` does not fill `DeviceSerial`, `DeviceId`, `Latitude` or `Longitude`. `ProcessEncryptedBody` reads the form or query values `data` and `metadata`, both required; a missing one returns a `codes.ValRequired` error (400 through `api.WriteError`).
+- `api.RequestReceiverV2` must be passed with `api.New(api.WithRequestReceiver(api.RequestReceiverV2{}))`, or registered on the default instance with the deprecated `api.RegisterNewAPIRequestReceiver(api.RequestReceiverV2{})`. `ProcessBody` does not fill `DeviceSerial`, `DeviceId`, `Latitude` or `Longitude`. `ProcessEncryptedBody` reads the form or query values `data` and `metadata`, both required; a missing one returns a `codes.ValRequired` error (400 through `api.WriteError`).
 
-`api.ProcessEncryptedBody(r)` runs the registered receiver's `ProcessEncryptedBody` and returns an `*api.EncryptedRequest`; decrypting `Data` is left to the application.
+`api.ProcessEncryptedBody(r)` runs `ProcessEncryptedBody` on the instance's receiver (the registered one on the default instance) and returns an `*api.EncryptedRequest`; decrypting `Data` is left to the application.
 
 ### Method maps and the body middleware
 

@@ -149,6 +149,12 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataC
 	return &requestData, nil
 }
 
+// withMode returns receiver bound to mode.
+func (receiver RequestReceiver) withMode(mode RequestMode) RequestReceiver {
+	receiver.mode = mode
+	return receiver
+}
+
 func (receiver RequestReceiver) requestMode() RequestMode {
 	if receiver.mode == "" {
 		return CurrentRequestMode

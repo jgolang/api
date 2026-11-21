@@ -27,7 +27,7 @@
 type API struct { /* unexported */ }
 
 // Option configures an API in New.
-type Option func(*API)
+type Option func(*options) // options is unexported
 
 func New(opts ...Option) *API
 
@@ -39,7 +39,7 @@ func (a *API) Handler(next http.Handler) http.Handler
 
 - An instance owns exactly: request mode, response mode, request receiver, response formatter, response writer, code case, logger, sensitive log keys, kind-to-status overrides, error hook. Internally it builds its own `core.API` with `core.New`; `core` does not change.
 - The type is named `API` (it wraps `core.API`; `doc.API` stays the OpenAPI metadata).
-- An instance has no setters. Options are applied once in `New`; there is nothing to drift after start-up.
+- An instance has no setters. Options are applied once in `New`; there is nothing to drift after start-up. `Option` takes an unexported `options` struct that `New` owns, not the `*API`, so no `Option` value can change an instance after `New` returns.
 - `New` returns `*API` without an error and never panics. An unknown mode value falls back to the default, as `SetRequestMode`/`SetResponseMode` do, and this is documented on the option.
 - `New()` with no options behaves like v0's defaults (plain requests, envelope responses, the same formatter output, trace suffix 1, ID length 6, blank successes), except: codes as declared (section 4) and no logging (section 6).
 
@@ -58,7 +58,7 @@ Options (one exported function each):
 | `WithLogger(*slog.Logger)` | `Print`, `PrintError`, `Fatal` | no logging |
 | `WithSensitiveLogKeys(keys ...string)` | `SensitiveLogKeys` | the v0 list |
 
-The mode and code-case options apply to the built-in receiver and formatter. A custom receiver or formatter passed with `WithRequestReceiver`/`WithResponseFormatter` owns its own behavior, as in v0.
+The mode and code-case options apply to the built-in receiver and formatter: `RequestReceiver`, `RequestReceiverV2` and `ResponseFormatter` passed with `WithRequestReceiver`/`WithResponseFormatter` (as values or pointers) take the instance's modes, so the built-in components of an instance never read the package mode variables. A custom receiver or formatter owns its own behavior, as in v0; a type that embeds a built-in one is custom, and its promoted methods read the package mode variables. A nil interface value keeps the built-in; a typed nil pointer to a custom component is used as given. The security guarantor and param validator are not per instance: every instance forwards to the ones set with `RegisterNewAPISecurityGuarantor` and `RegisterParamValidator` (see "What stays package-level in v1").
 
 ### 3. How handlers, routes, docs and routers attach to an instance
 

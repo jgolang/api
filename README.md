@@ -110,7 +110,17 @@ a := api.New(
 http.ListenAndServe(":8080", a.Handler(router))
 ```
 
-`a.Handler` stores the instance in the request context, so `api.ProcessRequest`, `api.RequestBody`, the token middlewares, `Write(w, r)` on every response type (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) and `api.WriteError` use its modes; handler code does not change. Wrap the outermost chain: middlewares outside `a.Handler` (and the package-level `api.Write(data, w)`, which takes no request) use the default instance; with nested instances the innermost one wins. An instance is immutable after `api.New`, and two instances in one process (two services, or two tests) do not see each other's modes. `api.New()` with no options parses plain requests and writes envelope responses. An instance uses the built-in request receiver, response formatter and response writer: `api.RegisterNewAPIRequestReceiver`, `api.RegisterNewAPIResponseFormatter` and `api.RegisterNewAPIResponseWriter` affect only the default instance (per-instance options come later).
+`a.Handler` stores the instance in the request context, so `api.ProcessRequest`, `api.RequestBody`, the token middlewares, `Write(w, r)` on every response type (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) and `api.WriteError` use its modes; handler code does not change. Wrap the outermost chain: middlewares outside `a.Handler` (and the package-level `api.Write(data, w)`, which takes no request) use the default instance; with nested instances the innermost one wins. An instance is immutable after `api.New`, and two instances in one process (two services, or two tests) do not see each other's modes. `api.New()` with no options parses plain requests and writes envelope responses. An instance uses the built-in request receiver, response formatter and response writer unless you pass your own:
+
+```go
+a := api.New(
+	api.WithRequestReceiver(myReceiver),    // core.APIRequestReceiver
+	api.WithResponseFormatter(myFormatter), // core.APIResponseFormatter
+	api.WithResponseWriter(myWriter),       // core.APIResponseWriter
+)
+```
+
+The mode options apply to the built-in receivers (`api.RequestReceiver`, `api.RequestReceiverV2`) and formatter (`api.ResponseFormatter`), also when you pass them with these options; a custom receiver or formatter alone decides how it parses and what body it writes. A type that embeds a built-in receiver or formatter is custom, and its promoted methods read the deprecated package mode variables. A nil value keeps the built-in. The deprecated `api.RegisterNewAPIRequestReceiver`, `api.RegisterNewAPIResponseFormatter` and `api.RegisterNewAPIResponseWriter` affect only the default instance. `api.RegisterNewAPISecurityGuarantor` and `api.RegisterParamValidator` are not deprecated and apply to every instance.
 
 | Request mode | Body parsing |
 | --- | --- |

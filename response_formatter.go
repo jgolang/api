@@ -99,6 +99,12 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 	}
 }
 
+// withMode returns formatter bound to mode.
+func (formatter ResponseFormatter) withMode(mode ResponseMode) ResponseFormatter {
+	formatter.mode = mode
+	return formatter
+}
+
 func (formatter ResponseFormatter) responseMode() ResponseMode {
 	if formatter.mode == "" {
 		return CurrentResponseMode
