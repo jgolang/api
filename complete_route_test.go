@@ -54,7 +54,7 @@ func newCompleteRoute() (http.Handler, *doc.Docs) {
 		doc.OperationID("createTask"),
 		doc.Summary("Create a task"),
 		doc.Tags("tasks"),
-		doc.PathWithDescription("projectID", doc.Int, true, "Project that owns the task"),
+		doc.PathWithDescription("projectID", doc.String, true, "Project that owns the task"),
 		doc.QueryWithDescription("notify", doc.Bool, false, "Notify the project members"),
 		doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Client request ID for tracing"),
 		doc.BodyWithExample(createProjectTaskRequest{}, createProjectTaskRequest{Title: "Write docs", Priority: "high"}),
@@ -88,7 +88,7 @@ func createdTaskExample() map[string]any {
 func createTask(w http.ResponseWriter, r *http.Request) {
 	var request createProjectTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		api.WriteError(w, r, errors.NewC(errTaskTitleRequired, "decode body: %v", err))
+		api.WriteError(w, r, errors.WrapC(err, errTaskTitleRequired))
 		return
 	}
 	if strings.TrimSpace(request.Title) == "" {
@@ -175,17 +175,19 @@ func lineOrAbsent(lines []string, index int) string {
 
 func TestFirstDifference(t *testing.T) {
 	tests := []struct {
-		name     string
-		want     string
-		got      string
-		contains []string
+		name        string
+		want        string
+		got         string
+		contains    []string
+		notContains []string
 	}{
 		{name: "equal", want: "a\nb\n", got: "a\nb\n"},
 		{
-			name:     "differing line",
-			want:     "a\nb\nc\nd\ne\n",
-			got:      "a\nb\nc\nd\nX\n",
-			contains: []string{"line 5", "- want: e\n", "+ got:  X\n", "  b\n", "  d\n"},
+			name:        "differing line",
+			want:        "a\nb\nc\nd\ne\n",
+			got:         "a\nb\nc\nd\nX\n",
+			contains:    []string{"line 5", "- want: e\n", "+ got:  X\n", "  b\n", "  d\n"},
+			notContains: []string{"  a\n"},
 		},
 		{
 			name:     "got is longer",
@@ -212,6 +214,11 @@ func TestFirstDifference(t *testing.T) {
 					t.Errorf("firstDifference() = %q, want it to contain %q", diff, fragment)
 				}
 			}
+			for _, fragment := range test.notContains {
+				if strings.Contains(diff, fragment) {
+					t.Errorf("firstDifference() = %q, want it not to contain %q", diff, fragment)
+				}
+			}
 		})
 	}
 }
@@ -221,10 +228,11 @@ func TestCompleteRouteServesDocumentedResponses(t *testing.T) {
 		name       string
 		body       string
 		wantStatus int
+		wantCode   string
 	}{
-		{name: "valid task", body: `{"title":"Write docs","priority":"high"}`, wantStatus: http.StatusCreated},
-		{name: "empty title", body: `{"title":" "}`, wantStatus: http.StatusBadRequest},
-		{name: "malformed body", body: `{`, wantStatus: http.StatusBadRequest},
+		{name: "valid task", body: `{"title":"Write docs","priority":"high"}`, wantStatus: http.StatusCreated, wantCode: `"code":"0000"`},
+		{name: "empty title", body: `{"title":" "}`, wantStatus: http.StatusBadRequest, wantCode: `"code":"TSK-001"`},
+		{name: "malformed body", body: `{`, wantStatus: http.StatusBadRequest, wantCode: `"code":"TSK-001"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -237,6 +245,9 @@ func TestCompleteRouteServesDocumentedResponses(t *testing.T) {
 
 			if recorder.Code != test.wantStatus {
 				t.Fatalf("status = %d, want %d; body %s", recorder.Code, test.wantStatus, recorder.Body)
+			}
+			if !strings.Contains(recorder.Body.String(), test.wantCode) {
+				t.Fatalf("body %s, want it to contain %s", recorder.Body, test.wantCode)
 			}
 		})
 	}

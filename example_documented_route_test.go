@@ -31,8 +31,12 @@ func Example_documentedRoute() {
 
 	createTask := func(w http.ResponseWriter, r *http.Request) {
 		var body newTask
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Title == "" {
-			api.WriteError(w, r, errors.NewC(titleRequired, "invalid task body"))
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			api.WriteError(w, r, errors.WrapC(err, titleRequired))
+			return
+		}
+		if body.Title == "" {
+			api.WriteError(w, r, errors.NewC(titleRequired, "empty title"))
 			return
 		}
 		created := task{ID: 42, Title: body.Title}
@@ -77,9 +81,11 @@ func Example_documentedRoute() {
 
 	fmt.Println(recorder.Code)
 	fmt.Println(recorder.Header().Get("Location"))
+	fmt.Println(strings.TrimSpace(recorder.Body.String()))
 	fmt.Println(strings.Join(statuses, " "))
 	// Output:
 	// 201
 	// /projects/7/tasks/42
+	// {"header":{"type":"success","code":"0000"},"content":{"id":42,"title":"Write docs"}}
 	// 201 400 401 500
 }
