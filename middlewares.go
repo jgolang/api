@@ -149,7 +149,7 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 				boundDefaultBody(w, r)
 				requestData, err := a.core.ProcessBody(r)
 				if err != nil {
-					a.logError(r, "request body rejected", err)
+					a.logBodyError(r, "request body rejected", err, false)
 					bodyRejection(err).Write(w, r)
 					return
 				}
@@ -197,6 +197,15 @@ type SkipPath string
 // SkipPaths holds the routes ProcessRequest skips: a request whose method and
 // URL path match a key is not parsed and goes straight to the next handler.
 // Only presence counts; the bool value is ignored.
+//
+// Only a request path sent exactly as Go's canonical encoding of its decoded
+// path (an empty r.URL.RawPath) can match. Any other spelling is processed
+// even when its decoded form is a key: an escaped slash (/health%2Flive,
+// %2f), an escaped unreserved character (/health/%6Cive), and the raw
+// characters ! ' ( ) * that Go escapes in a path (/a(b) is processed, while
+// /a%28b%29 matches the key /a(b)). A router that matches the escaped path
+// may route an escaped slash to another handler (GET /{tenant}), which must
+// not lose its processing.
 var SkipPaths map[SkipPath]bool
 
 // AddSkipPath adds path to SkipPaths. ProcessRequest skips path whatever skip
@@ -218,9 +227,22 @@ func DeleteSkipPath(path SkipPath) {
 }
 
 // GenSkipPath returns the SkipPath of method and path, as matched against the
-// request method and URL path (no query).
+// request method and decoded URL path (no query) of a request whose path has
+// Go's canonical encoding (see SkipPaths).
 func GenSkipPath(method string, path string) SkipPath {
 	return SkipPath(fmt.Sprintf("%s:%s", method, path))
+}
+
+// skipsRequest reports whether r matches a SkipPaths key. A non-empty
+// RawPath means the request path is not the canonical encoding of Path (an
+// escaped slash, for one), so the decoded path may not be the path the router
+// matched; such a request is never skipped.
+func skipsRequest(r *http.Request) bool {
+	if r.URL.RawPath != "" {
+		return false
+	}
+	_, exists := SkipPaths[GenSkipPath(r.Method, r.URL.Path)]
+	return exists
 }
 
 // ProcessRequest process request information.
@@ -236,7 +258,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		start := time.Now()
 		a := instanceFrom(r)
 
-		if _, exists := SkipPaths[GenSkipPath(r.Method, r.URL.Path)]; exists {
+		if skipsRequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -244,7 +266,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		boundDefaultBody(w, r)
 		rctx, err := processBody(r)
 		if err != nil {
-			a.logError(r, "request body rejected", err)
+			a.logBodyError(r, "request body rejected", err, false)
 			bodyRejection(err).Write(w, r)
 			return
 		}

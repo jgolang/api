@@ -268,7 +268,7 @@ func UnmarshalBody(v interface{}, r *http.Request) Response {
 	err := api.UnmarshalBody(v, r)
 	if err != nil {
 		a := instanceFrom(r)
-		a.logError(r, "request body not unmarshaled", err)
+		a.logBodyError(r, "request body not unmarshaled", err, true)
 		if bodyTooLarge(err) {
 			return bodyTooLargeError()
 		}

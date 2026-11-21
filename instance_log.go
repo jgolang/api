@@ -48,13 +48,43 @@ func (a *API) logs(ctx context.Context, level slog.Level) bool {
 	return a.log().Enabled(ctx, level)
 }
 
-// logError writes an error record with message msg for err, met while
-// serving r.
-func (a *API) logError(r *http.Request, msg string, err error) {
+// logBodyError reports err from reading or decoding the request body. A
+// json.UnmarshalTypeError or json.SyntaxError is described without the body
+// values it quotes (see jsonErrorText). Any other error is logged as it is,
+// unless strict is true: then only the body limit keeps its text and the rest
+// become a fixed text, because UnmarshalBody's other encoding/json errors
+// (from a json.Unmarshaler such as time.Time, for one) may quote the value.
+func (a *API) logBodyError(r *http.Request, msg string, err error, strict bool) {
 	if !a.logs(r.Context(), slog.LevelError) {
 		return
 	}
-	a.log().LogAttrs(r.Context(), slog.LevelError, msg, slog.Any("error", err))
+	errAttr := slog.Any("error", err)
+	if text, ok := jsonErrorText(err); ok {
+		errAttr = slog.String("error", text)
+	} else if strict && !bodyTooLarge(err) {
+		errAttr = slog.String("error", "request body cannot be read or decoded")
+	}
+	a.log().LogAttrs(r.Context(), slog.LevelError, msg, errAttr)
+}
+
+// jsonErrorText describes a json.UnmarshalTypeError by the kind of JSON value
+// (never the value), the field, the Go type and the offset, and a
+// json.SyntaxError by its offset only. ok is false for any other error.
+func jsonErrorText(err error) (text string, ok bool) {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		kind, _, _ := strings.Cut(typeErr.Value, " ")
+		target := "Go value"
+		if typeErr.Field != "" {
+			target = "Go struct field " + typeErr.Field
+		}
+		return fmt.Sprintf("json: cannot unmarshal %s into %s of type %s (offset %d)", kind, target, typeErr.Type, typeErr.Offset), true
+	}
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return fmt.Sprintf("json: syntax error at offset %d", syntaxErr.Offset), true
+	}
+	return "", false
 }
 
 // logNamedError reports err from reading the value of the header, query
