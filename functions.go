@@ -15,20 +15,30 @@ import (
 	"github.com/jgolang/api/core"
 )
 
-// PrintError wrapper function.
+// PrintError wrapper function. It affects only the default instance; an
+// instance from New logs errors through its WithLogger logger.
+//
+// Deprecated: use api.New(api.WithLogger(...)) instead.
 var PrintError func(...interface{}) = log.Print
 
-// Print wrapper function.
+// Print wrapper function. It affects only the default instance; an instance
+// from New logs requests and responses through its WithLogger logger.
+//
+// Deprecated: use api.New(api.WithLogger(...)) instead.
 var Print func(string, ...interface{}) = log.Printf
 
-// Fatal wrapper function.
+// Fatal wrapper function. It affects only the default instance, which calls
+// it when a response cannot be encoded; an instance from New never exits and
+// logs the failure through its WithLogger logger.
+//
+// Deprecated: use api.New(api.WithLogger(...)) instead.
 var Fatal func(...interface{}) = log.Fatal
 
 // GetHeaderValueString gets header value as string.
 func GetHeaderValueString(key string, r *http.Request) (string, Response) {
 	value, err := api.GetHeaderValueString(key, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "header value not obtained", key, err)
 		return value, Error{
 			Title:   "Error getting header value!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -41,7 +51,7 @@ func GetHeaderValueString(key string, r *http.Request) (string, Response) {
 func GetHeaderValueInt(key string, r *http.Request) (int, Response) {
 	value, err := api.GetHeaderValueInt(key, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "header value not obtained", key, err)
 		return value, Error{
 			Title:   "Error getting header value type Int!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -54,7 +64,7 @@ func GetHeaderValueInt(key string, r *http.Request) (int, Response) {
 func GetHeaderValueInt64(key string, r *http.Request) (int64, Response) {
 	value, err := api.GetHeaderValueInt64(key, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "header value not obtained", key, err)
 		return value, Error{
 			Title:   "Error getting header value type Int64!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -67,7 +77,7 @@ func GetHeaderValueInt64(key string, r *http.Request) (int64, Response) {
 func GetHeaderValueFloat64(key string, r *http.Request) (float64, Response) {
 	value, err := api.GetHeaderValueFloat64(key, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "header value not obtained", key, err)
 		return value, Error{
 			Title:   "Error getting header value type Float64!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -80,7 +90,7 @@ func GetHeaderValueFloat64(key string, r *http.Request) (float64, Response) {
 func GetHeaderValueBool(key string, r *http.Request) (bool, Response) {
 	value, err := api.GetHeaderValueBool(key, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "header value not obtained", key, err)
 		return value, Error{
 			Title:   "Error getting header value type Bool!",
 			Message: fmt.Sprintf("The %v key header has not been obtained", key),
@@ -93,7 +103,7 @@ func GetHeaderValueBool(key string, r *http.Request) (bool, Response) {
 func GetRouteVarValueString(urlVarName string, r *http.Request) (string, Response) {
 	value, err := api.GetRouteVarValueString(urlVarName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "route var not obtained", urlVarName, err)
 		return value, Error{
 			Title:   "Error getting route var!",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -106,7 +116,7 @@ func GetRouteVarValueString(urlVarName string, r *http.Request) (string, Respons
 func GetRouteVarValueInt(urlVarName string, r *http.Request) (int, Response) {
 	value, err := api.GetRouteVarValueInt(urlVarName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "route var not obtained", urlVarName, err)
 		return 0, Error{
 			Title:   "Error getting route var type Int",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -119,7 +129,7 @@ func GetRouteVarValueInt(urlVarName string, r *http.Request) (int, Response) {
 func GetRouteVarValueInt64(urlVarName string, r *http.Request) (int64, Response) {
 	value, err := api.GetRouteVarValueInt64(urlVarName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "route var not obtained", urlVarName, err)
 		return value, Error{
 			Title:   "Error getting route var type Int64",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -132,7 +142,7 @@ func GetRouteVarValueInt64(urlVarName string, r *http.Request) (int64, Response)
 func GetRouteVarValueFloat64(urlVarName string, r *http.Request) (float64, Response) {
 	value, err := api.GetRouteVarValueFloat64(urlVarName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "route var not obtained", urlVarName, err)
 		return value, Error{
 			Title:   "Error getting route var type Float64",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -145,7 +155,7 @@ func GetRouteVarValueFloat64(urlVarName string, r *http.Request) (float64, Respo
 func GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, Response) {
 	value, err := api.GetRouteVarValueBool(urlVarName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "route var not obtained", urlVarName, err)
 		return value, Error{
 			Title:   "Error getting route var type Bool",
 			Message: fmt.Sprintf("The route var %v has not been obtained", urlVarName),
@@ -164,7 +174,7 @@ func GetRouteVarValueBool(urlVarName string, r *http.Request) (bool, Response) {
 func GetQueryParamValueString(queryParamName string, r *http.Request) (string, Response) {
 	value, err := api.GetQueryParamValueString(queryParamName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "query param not obtained", queryParamName, err)
 		return value, Error{
 			Title:   "Error getting query param!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -184,7 +194,7 @@ func GetQueryParamValueString(queryParamName string, r *http.Request) (string, R
 func GetQueryParamValueInt(queryParamName string, r *http.Request) (int, Response) {
 	value, err := api.GetQueryParamValueInt(queryParamName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "query param not obtained", queryParamName, err)
 		return value, Error{
 			Title:   "Error getting query param type Int!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -200,7 +210,7 @@ func GetQueryParamValueInt(queryParamName string, r *http.Request) (int, Respons
 func GetQueryParamValueInt64(queryParamName string, r *http.Request) (int64, Response) {
 	value, err := api.GetQueryParamValueInt64(queryParamName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "query param not obtained", queryParamName, err)
 		return value, Error{
 			Title:   "Error getting query param type Int64!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -216,7 +226,7 @@ func GetQueryParamValueInt64(queryParamName string, r *http.Request) (int64, Res
 func GetQueryParamValueFloat64(queryParamName string, r *http.Request) (float64, Response) {
 	value, err := api.GetQueryParamValueFloat64(queryParamName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "query param not obtained", queryParamName, err)
 		return value, Error{
 			Title:   "Error getting query param type Float64!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -235,7 +245,7 @@ func GetQueryParamValueFloat64(queryParamName string, r *http.Request) (float64,
 func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Response) {
 	value, err := api.GetQueryParamValueBool(queryParamName, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logNamedError(r, "query param not obtained", queryParamName, err)
 		return value, Error{
 			Title:   "Error getting query param type Bool!",
 			Message: fmt.Sprintf("The query parameter %v has not been obtained", queryParamName),
@@ -248,7 +258,7 @@ func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Respo
 func UnmarshalBody(v interface{}, r *http.Request) Response {
 	err := api.UnmarshalBody(v, r)
 	if err != nil {
-		PrintError(err)
+		instanceFrom(r).logError(r, "request body not unmarshaled", err)
 		return Error{
 			Title:   "Not unmarshal JSON struct!",
 			Message: "Error when unmarshal JSON structure",
@@ -367,19 +377,35 @@ var LogResponseBody bool = false
 // MaxLoggedBodyBytes limits logged request and response bodies when PrintFullEvent is false.
 var MaxLoggedBodyBytes int = 2000
 
-// SensitiveLogKeys defines fields and headers that must be redacted in logs.
-var SensitiveLogKeys = []string{
-	"authorization",
-	"token",
-	"password",
-	"secret",
-	"credential",
-	"apikey",
-	"api-key",
-	"key",
+// SensitiveLogKeys defines fields and headers that must be redacted in logs:
+// by default authorization, token, password, secret, credential, apikey,
+// api-key and key.
+// It affects only the default instance, which reads it at call time; an
+// instance from New masks the same keys plus cookie and session, and the
+// keys added with WithSensitiveLogKeys.
+//
+// Deprecated: use api.New(api.WithSensitiveLogKeys(...)) instead.
+var SensitiveLogKeys = v0SensitiveLogKeys()
+
+// v0SensitiveLogKeys returns a fresh copy of the v0 sensitive key list, so
+// changing SensitiveLogKeys never reaches an instance.
+func v0SensitiveLogKeys() []string {
+	return []string{
+		"authorization",
+		"token",
+		"password",
+		"secret",
+		"credential",
+		"apikey",
+		"api-key",
+		"key",
+	}
 }
 
-// LogRequest prints API request in log.
+// LogRequest prints API request in log. It writes only the default
+// instance's lines; an instance from New logs through its WithLogger logger.
+//
+// Deprecated: use api.New(api.WithLogger(...)) instead.
 func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody []byte) {
 	format := "REQUEST event_id=%q method=%q uri=%q"
 	args := []interface{}{eventID, method, uri}
@@ -398,12 +424,19 @@ func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody 
 	Print(format, args...)
 }
 
-// LogResponse prints API response in log.
+// LogResponse prints API response in log. It writes only the default
+// instance's lines; an instance from New logs through its WithLogger logger.
+//
+// Deprecated: use api.New(api.WithLogger(...)) instead.
 func LogResponse(eventID string, res *httptest.ResponseRecorder) {
 	LogResponseWithDuration(eventID, res, 0)
 }
 
-// LogResponseWithDuration prints API response in log including request duration.
+// LogResponseWithDuration prints API response in log including request
+// duration. It writes only the default instance's lines; an instance from New
+// logs through its WithLogger logger.
+//
+// Deprecated: use api.New(api.WithLogger(...)) instead.
 func LogResponseWithDuration(eventID string, res *httptest.ResponseRecorder, duration time.Duration) {
 	format := "RESPONSE event_id=%q status=%d status_text=%q"
 	args := []interface{}{eventID, res.Code, http.StatusText(res.Code)}
@@ -440,9 +473,15 @@ func sanitizeJSONBodyForLog(rawBody []byte) string {
 }
 
 func sanitizeHeadersForLog(headers http.Header) http.Header {
+	return redactHeaders(headers, SensitiveLogKeys)
+}
+
+// redactHeaders returns a copy of headers with the values of the headers
+// whose name matches sensitiveKeys replaced by redactedLogValue.
+func redactHeaders(headers http.Header, sensitiveKeys []string) http.Header {
 	sanitized := make(http.Header, len(headers))
 	for key, values := range headers {
-		if isSensitiveLogKey(key) {
+		if isSensitiveKey(key, sensitiveKeys) {
 			sanitized[key] = []string{redactedLogValue}
 			continue
 		}
@@ -475,8 +514,14 @@ func sanitizeValueForLog(value interface{}) interface{} {
 }
 
 func isSensitiveLogKey(key string) bool {
+	return isSensitiveKey(key, SensitiveLogKeys)
+}
+
+// isSensitiveKey reports whether key contains one of sensitiveKeys, ignoring
+// case.
+func isSensitiveKey(key string, sensitiveKeys []string) bool {
 	key = strings.ToLower(key)
-	for _, sensitiveKey := range SensitiveLogKeys {
+	for _, sensitiveKey := range sensitiveKeys {
 		if strings.Contains(key, strings.ToLower(sensitiveKey)) {
 			return true
 		}

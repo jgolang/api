@@ -244,7 +244,23 @@ a := api.New(
 )
 ```
 
-Kinds without an override keep `api.StatusForKind`. Only statuses 400–599 are accepted: other calls are ignored and leave any earlier override for the kind in place, and a later valid call wins. Errors without a kind always answer 500. The title follows the decided status: the internal title for any 5xx, the unauthorized title for 401 and 403. The hook runs on the request goroutine with the original error and the status `WriteError` decided (a handler that already wrote a header, or a custom formatter or writer, can send another), before anything is written; it is shared by all requests the instance serves and may run concurrently, so it must be safe for concurrent use. A panic in it is not recovered: `api.ProcessRequest` turns it into a logged 500, and without `api.ProcessRequest` `net/http` aborts the connection; the log shows a non-`error` panic value only once the SEC-03 fix (#48) is in. Only `WriteError` calls the hook: not `Error400`/`Error500`/the other helpers, and not the library's own rejections (body-parse failures in `api.RequestBody`/`api.ProcessRequest`, the token middlewares' 401s, `api.ProcessRequest`'s panic 500). The default instance has no overrides and no hook. `ExampleWithKindStatus` and `ExampleWithErrorHook` are the compiled versions.
+Kinds without an override keep `api.StatusForKind`. Only statuses 400–599 are accepted: other calls are ignored and leave any earlier override for the kind in place, and a later valid call wins. Errors without a kind always answer 500. The title follows the decided status: the internal title for any 5xx, the unauthorized title for 401 and 403. The hook runs on the request goroutine with the original error and the status `WriteError` decided (a handler that already wrote a header, or a custom formatter or writer, can send another), before anything is written; it is shared by all requests the instance serves and may run concurrently, so it must be safe for concurrent use. A panic in it is not recovered: `api.ProcessRequest` answers 500 and logs it through the instance's `api.WithLogger` logger with the panic value (nothing is logged without a logger), and without `api.ProcessRequest` `net/http` aborts the connection. On the default instance the `api.PrintError` line shows a non-`error` panic value only once the SEC-03 fix (#48) is in. Only `WriteError` calls the hook: not `Error400`/`Error500`/the other helpers, and not the library's own rejections (body-parse failures in `api.RequestBody`/`api.ProcessRequest`, the token middlewares' 401s, `api.ProcessRequest`'s panic 500). The default instance has no overrides and no hook. `ExampleWithKindStatus` and `ExampleWithErrorHook` are the compiled versions.
+
+## Logging
+
+An `api.New` instance writes no logs unless you give it a standard `log/slog` logger, and never writes to stdout/stderr or exits on its own with the built-in response writer (a custom writer passed with `api.WithResponseWriter` owns its behavior):
+
+```go
+a := api.New(
+	api.WithLogger(slog.New(slog.NewJSONHandler(os.Stderr, nil))),
+	api.WithSensitiveLogKeys("pin"), // adds to the defaults
+)
+// {"level":"INFO","msg":"request","event_id":"…","method":"GET","uri":"/login?access_token=[REDACTED]&page=2","headers":{"Pin":["[REDACTED]"]}}
+```
+
+`api.ProcessRequest` writes a `request` record (`event_id`, `method`, `uri`, `headers`) and a `response` record (`event_id`, `method`, `uri`, `status`, `status_text`, `duration_ms`) at info level. A rejected body, a failed `Get*Value*`/`UnmarshalBody` helper, a recovered panic (`panic recovered`, with the panic value) and a response that cannot be encoded are error records with an `error` or `panic` attribute; a panic with `http.ErrAbortHandler` is a `handler aborted` debug record. A failed `Get*Value*` helper adds the name as `key`; for a sensitive name its `error` is only the kind (`invalid syntax`, `value out of range`, `invalid value`), never the value. A response that cannot be encoded (for example a `NaN` in the content) is answered with the `Error500()` body instead; the writer gets no request, so its records carry no request context or `event_id`. Bodies and the parsed form are never logged (query values appear only in `uri`). Header and query values are masked when their key contains a sensitive key, ignoring case (a query key that cannot be unescaped is masked too), and so is the user information of an absolute-form URI; secrets in path segments are not masked. The sensitive keys are the default list (`authorization`, `token`, `password`, `secret`, `credential`, `apikey`, `api-key`, `key`, `cookie`, `session`) plus the keys of `api.WithSensitiveLogKeys`, which can only add. `ExampleWithLogger` is the compiled version.
+
+The default instance keeps v0: lines through `api.Print`/`api.PrintError` (the standard `log` package), `api.Fatal` on a response that cannot be encoded (until SEC-01, #46, lands), `api.SensitiveLogKeys` without `cookie` and `session`, and the body-logging variables below. `api.Print`, `api.PrintError`, `api.Fatal`, `api.SensitiveLogKeys`, `api.LogRequest`, `api.LogResponse` and `api.LogResponseWithDuration` are deprecated in favor of the options; `api.LogRequestBody`, `api.LogResponseBody`, `api.PrintFullEvent` and `api.MaxLoggedBodyBytes` are not deprecated and affect only the default instance.
 
 ## Routing and OpenAPI
 
@@ -322,7 +338,8 @@ See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, respon
 
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
-- Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
+- An `api.New` instance never logs bodies or the parsed form and masks header and query values under its sensitive keys: the defaults, which include `cookie` and `session`, plus `api.WithSensitiveLogKeys`. Path segments are not masked. See [Logging](#logging).
+- On the default instance, request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`. Query strings are not masked there.
 
 ## Trace IDs
 

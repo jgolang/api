@@ -133,9 +133,10 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if ValidateMethods(keyListMethods, r.Method) {
-				requestData, err := instanceFrom(r).core.ProcessBody(r)
+				a := instanceFrom(r)
+				requestData, err := a.core.ProcessBody(r)
 				if err != nil {
-					PrintError(err)
+					a.logError(r, "request body rejected", err)
 					Error{
 						Title:        "Invalid request content",
 						Message:      "Request content empty json structure",
@@ -176,6 +177,7 @@ func GenSkipPath(method string, path string) SkipPath {
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		a := instanceFrom(r)
 
 		if _, exists := SkipPaths[GenSkipPath(r.Method, r.URL.Path)]; exists {
 			next.ServeHTTP(w, r)
@@ -184,7 +186,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 
 		rctx, err := ProcessBody(r)
 		if err != nil {
-			PrintError(err)
+			a.logError(r, "request body rejected", err)
 			Error{
 				Title:        "Invalid request content",
 				Message:      "Request content empty json structure",
@@ -209,7 +211,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		rctx.EventID = generateEventID(r.Context(), prefixEventID, r.RequestURI)
 		rctx.AddInfo("proxiedIPAddress", proxiedIPAddress)
 
-		LogRequest(r.Method, r.RequestURI, rctx.EventID, r.Form.Encode(), r.Header, rctx.RawBody)
+		a.logRequest(r, rctx.EventID, rctx.RawBody)
 
 		r = UpdateRequestContext(rctx, r)
 		rctx.Context = r.Context()
@@ -234,12 +236,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 
 		defer func() {
 			if recvr := recover(); recvr != nil {
-				err, ok := recvr.(error)
-				if ok {
-					PrintError(err)
-				} else {
-					PrintError("Not response: ", fmt.Sprintf("%v", r))
-				}
+				a.logPanic(r, rctx.EventID, recvr)
 				Error500().Write(w, r)
 				return
 			}
@@ -252,7 +249,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		}
 		w.WriteHeader(rec.Code)
 		w.Write(rec.Body.Bytes())
-		LogResponseWithDuration(rctx.EventID, rec, time.Since(start))
+		a.logResponse(r, rctx.EventID, rec, time.Since(start))
 	}
 }
 

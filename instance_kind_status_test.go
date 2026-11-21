@@ -361,19 +361,17 @@ func TestWithErrorHookPanicPropagatesBeforeWriting(t *testing.T) {
 }
 
 func TestWithErrorHookPanicUnderProcessRequestAnswers500(t *testing.T) {
-	oldPrintError := PrintError
-	var logged atomic.Int32
-	PrintError = func(...any) { logged.Add(1) }
-	t.Cleanup(func() { PrintError = oldPrintError })
-	a := New(WithErrorHook(func(*http.Request, error, int) { panic("hook failed") }))
+	logger, buf := newRecordingLogger()
+	a := New(WithLogger(logger), WithErrorHook(func(*http.Request, error, int) { panic("hook failed") }))
 	handler := a.Handler(ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, errors.NewC(planValidation, "title"))
 	}))
 
 	rec := serve(handler, http.MethodGet, "", nil)
 
-	if rec.Code != http.StatusInternalServerError || logged.Load() == 0 {
-		t.Fatalf("status = %d, logged %d times; want 500 and a log line", rec.Code, logged.Load())
+	logged := strings.Contains(buf.String(), `"msg":"panic recovered"`)
+	if rec.Code != http.StatusInternalServerError || !logged {
+		t.Fatalf("status = %d, logged %v; want 500 and a panic record", rec.Code, logged)
 	}
 }
 

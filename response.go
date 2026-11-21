@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/jgolang/api/core"
@@ -41,10 +42,22 @@ func getEventID(r *http.Request) string {
 }
 
 // ResponseWriter implementation of core.APIResponseWriter interface.
-type ResponseWriter struct{}
+// The zero value calls Fatal when a body cannot be encoded, as v0 does; New
+// binds its logger and formatter to it, so an instance's built-in writer
+// logs the failure and answers 500 instead.
+type ResponseWriter struct {
+	// fromNew is set by New; false is the default instance's v0 behavior.
+	fromNew   bool
+	logger    *slog.Logger
+	formatter core.APIResponseFormatter
+}
 
 // Write the API response in screen.
 func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.ResponseWriter) {
+	if writer.fromNew {
+		writer.writeForInstance(response, w)
+		return
+	}
 	for key := range response.Headers {
 		w.Header().Set(key, response.Headers[key])
 	}
