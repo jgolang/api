@@ -167,6 +167,7 @@ var libraryErrorTitles = map[string]bool{
 	"Sorry!":                                   true,
 	"Unauthorized!":                            true,
 	"Invalid request content":                  true,
+	"Request content too large":                true,
 	"Request info error!":                      true,
 	"Not unmarshal JSON struct!":               true,
 	"Error getting header value!":              true,
