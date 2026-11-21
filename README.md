@@ -244,7 +244,7 @@ a := api.New(
 )
 ```
 
-Kinds without an override keep `api.StatusForKind`. Only statuses 400–599 are accepted (others are ignored), and errors without a kind always answer 500. The title follows the decided status as above. The hook runs on the request goroutine with the original error, before anything is written; a panic in it is not recovered (`api.ProcessRequest` turns it into a logged 500). Only `WriteError` calls the hook, not `Error400`/`Error500`/the other helpers, and the default instance has no overrides and no hook. `ExampleWithKindStatus` and `ExampleWithErrorHook` are the compiled versions.
+Kinds without an override keep `api.StatusForKind`. Only statuses 400–599 are accepted (others are ignored), and errors without a kind always answer 500. The title follows the decided status as above. The hook runs on the request goroutine with the original error, before anything is written; it is shared by all requests the instance serves and may run concurrently, so it must be safe for concurrent use; a panic in it is not recovered (`api.ProcessRequest` turns it into a logged 500). Only `WriteError` calls the hook, not `Error400`/`Error500`/the other helpers, and the default instance has no overrides and no hook. `ExampleWithKindStatus` and `ExampleWithErrorHook` are the compiled versions.
 
 ## Routing and OpenAPI
 

@@ -192,8 +192,10 @@ func WithKindStatus(kind codes.Kind, status int) Option {
 // to be written. It runs synchronously on the request goroutine, after the
 // status is decided and before anything is written. The other error helpers
 // (Error400, Error500, ...) do not call it. A panic in fn is not recovered:
-// it propagates out of WriteError with nothing written. A later WithErrorHook
-// replaces an earlier one, and nil means no hook.
+// it propagates out of WriteError with nothing written. fn is shared by all
+// requests the instance serves and may run concurrently, so it must be safe
+// for concurrent use. A later WithErrorHook replaces an earlier one, and nil
+// means no hook.
 func WithErrorHook(fn func(r *http.Request, err error, status int)) Option {
 	return func(o *options) {
 		o.errorHook = fn

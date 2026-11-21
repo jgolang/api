@@ -94,7 +94,7 @@ func TestWithKindStatusKeepsTheCodeMessage(t *testing.T) {
 	rec := httptest.NewRecorder()
 	a := New(WithKindStatus(codes.KindValidation, http.StatusUnprocessableEntity))
 
-	writeErrorThrough(rec, a, errors.NewC(planValidation, "title"))
+	writeErrorThrough(rec, a, fmt.Errorf("x: %w", errors.NewC(planValidation, "title")))
 
 	if header := decodeErrorHeader(t, rec); !hasCodeMessage(header.Message, planValidation) || header.Title != DefaultErrorTitle {
 		t.Fatalf("title, message = %q, %q; want %q and %q", header.Title, header.Message, DefaultErrorTitle, planValidation.Msg())
