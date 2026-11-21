@@ -64,3 +64,23 @@ func TestBasicTokenAcceptsConfiguredCredentials(t *testing.T) {
 		})
 	}
 }
+
+// The README and doc comments warn that the defaults accept default:default.
+func TestValidateCredentialsDefaultsAcceptDefaultCredentials(t *testing.T) {
+	tests := []struct {
+		name     string
+		username string
+		password string
+		want     bool
+	}{
+		{name: "default credentials", username: "default", password: "default", want: true},
+		{name: "other credentials", username: "default", password: "other", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validateCredentials(tt.username, tt.password); got != tt.want {
+				t.Fatalf("validateCredentials(%q, %q) = %v, want %v", tt.username, tt.password, got, tt.want)
+			}
+		})
+	}
+}
