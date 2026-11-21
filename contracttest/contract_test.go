@@ -47,17 +47,20 @@ var knownGaps = map[string]string{
 	"none/malformed body": errBodyWithoutContent.Error(),
 }
 
-// recordedExchange mirrors the root module's recording format. Body holds
-// the response JSON as is, or a JSON string when the response was not JSON.
+// recordedExchange mirrors the root module's recording format. Headers are
+// the documented response headers the instance sent, besides Content-Type.
+// Body holds the response JSON as is, or a JSON string when the response was
+// not JSON.
 type recordedExchange struct {
-	Name               string          `json:"name"`
-	Method             string          `json:"method"`
-	Path               string          `json:"path"`
-	RequestContentType string          `json:"requestContentType"`
-	RequestBody        string          `json:"requestBody"`
-	Status             int             `json:"status"`
-	ContentType        string          `json:"contentType"`
-	Body               json.RawMessage `json:"body"`
+	Name               string            `json:"name"`
+	Method             string            `json:"method"`
+	Path               string            `json:"path"`
+	RequestContentType string            `json:"requestContentType"`
+	RequestBody        string            `json:"requestBody"`
+	Status             int               `json:"status"`
+	ContentType        string            `json:"contentType"`
+	Headers            map[string]string `json:"headers"`
+	Body               json.RawMessage   `json:"body"`
 }
 
 // contract is one mode's spec, ready to validate against, and its recorded
@@ -158,6 +161,10 @@ func validateExchange(router routers.Router, exchange recordedExchange) error {
 	}
 
 	body := responseBody(exchange.Body)
+	header := http.Header{"Content-Type": {exchange.ContentType}}
+	for name, value := range exchange.Headers {
+		header.Set(name, value)
+	}
 	input := &openapi3filter.ResponseValidationInput{
 		RequestValidationInput: &openapi3filter.RequestValidationInput{
 			Request:    request,
@@ -166,7 +173,7 @@ func validateExchange(router routers.Router, exchange recordedExchange) error {
 			Options:    &openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
 		},
 		Status:  exchange.Status,
-		Header:  http.Header{"Content-Type": {exchange.ContentType}},
+		Header:  header,
 		Options: &openapi3filter.Options{IncludeResponseStatus: true},
 	}
 	input.SetBodyBytes(body)
@@ -196,6 +203,7 @@ func responseBody(recorded json.RawMessage) []byte {
 }
 
 func TestRecordedResponsesMatchSpec(t *testing.T) {
+	seenGaps := make(map[string]bool)
 	for _, mode := range modes {
 		contract := loadContract(t, mode)
 		for _, exchange := range contract.exchanges {
@@ -204,6 +212,7 @@ func TestRecordedResponsesMatchSpec(t *testing.T) {
 				err := validateExchange(contract.router, exchange)
 
 				wantGap, isKnownGap := knownGaps[name]
+				seenGaps[name] = isKnownGap
 				switch {
 				case isKnownGap && err == nil:
 					t.Fatalf("known gap %q no longer fails: remove it from knownGaps", name)
@@ -213,6 +222,12 @@ func TestRecordedResponsesMatchSpec(t *testing.T) {
 					t.Fatalf("recorded response does not match the spec: %v", err)
 				}
 			})
+		}
+	}
+	// A gap whose exchange is no longer recorded would otherwise pass unseen.
+	for name := range knownGaps {
+		if !seenGaps[name] {
+			t.Errorf("known gap %q matches no recorded exchange: remove or rename it in knownGaps", name)
 		}
 	}
 }

@@ -7,6 +7,9 @@
     "requestBody": "{\"title\":\"Write docs\",\"priority\":\"high\"}",
     "status": 201,
     "contentType": "application/json",
+    "headers": {
+      "Location": "/projects/7/tasks/42"
+    },
     "body": {
       "header": {
         "type": "success",

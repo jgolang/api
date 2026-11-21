@@ -150,15 +150,20 @@ func TestCompleteRouteSpecMatchesGolden(t *testing.T) {
 // as the contracttest module reads it. Body holds the response JSON as is,
 // or a JSON string when the response is not JSON (see recordedBody).
 type recordedExchange struct {
-	Name               string          `json:"name"`
-	Method             string          `json:"method"`
-	Path               string          `json:"path"`
-	RequestContentType string          `json:"requestContentType"`
-	RequestBody        string          `json:"requestBody"`
-	Status             int             `json:"status"`
-	ContentType        string          `json:"contentType"`
-	Body               json.RawMessage `json:"body"`
+	Name               string            `json:"name"`
+	Method             string            `json:"method"`
+	Path               string            `json:"path"`
+	RequestContentType string            `json:"requestContentType"`
+	RequestBody        string            `json:"requestBody"`
+	Status             int               `json:"status"`
+	ContentType        string            `json:"contentType"`
+	Headers            map[string]string `json:"headers,omitempty"`
+	Body               json.RawMessage   `json:"body"`
 }
+
+// recordedHeaders are the response headers the complete route documents,
+// besides Content-Type; only these are recorded so the files stay stable.
+var recordedHeaders = []string{"Location"}
 
 // completeRouteRequests cover the 201 and both 400 paths of createTask.
 var completeRouteRequests = []struct {
@@ -208,8 +213,26 @@ func recordExchange(t *testing.T, handler http.Handler, name, body string) recor
 		RequestBody:        body,
 		Status:             recorder.Code,
 		ContentType:        recorder.Header().Get("Content-Type"),
+		Headers:            documentedHeaders(recorder.Header()),
 		Body:               recordedBody(t, recorder.Body.Bytes()),
 	}
+}
+
+// documentedHeaders returns the non-empty recordedHeaders of header, or nil
+// when there are none.
+func documentedHeaders(header http.Header) map[string]string {
+	var headers map[string]string
+	for _, name := range recordedHeaders {
+		value := header.Get(name)
+		if value == "" {
+			continue
+		}
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		headers[name] = value
+	}
+	return headers
 }
 
 // recordedBody keeps a JSON body as is, so the golden file shows it as
