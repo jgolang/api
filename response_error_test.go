@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/jgolang/api/core"
@@ -73,6 +74,27 @@ func TestErrorHelpersWithoutCodeUseDefaults(t *testing.T) {
 
 			if response.ResponseCode != ResponseCodes.InternalServerEerror || response.Message != InternalServerMessage {
 				t.Fatalf("expected the Error500 defaults, got %q %q", response.ResponseCode, response.Message)
+			}
+		})
+	}
+}
+
+func TestErrorHelpersHTTPStatus(t *testing.T) {
+	cases := []struct {
+		name   string
+		build  func() Error
+		status int
+	}{
+		{name: "Error500", build: func() Error { return Error500() }, status: http.StatusInternalServerError},
+		{name: "Error501", build: func() Error { return Error501() }, status: http.StatusNotImplemented},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := tc.build()
+
+			if response.HTTPStatusCode != tc.status {
+				t.Fatalf("expected status %d, got %d", tc.status, response.HTTPStatusCode)
 			}
 		})
 	}
