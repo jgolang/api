@@ -123,7 +123,9 @@ doc.Status(http.StatusBadRequest, envelope.Error())
 ```
 
 The typed response wrapper also documents `content` as optional, so successful
-responses may use only `header` when there is no payload.
+responses may use only `header` when there is no payload. `header` is required
+in `envelope.Success` and `envelope.Error`, as on the wire, and its `code`
+example is `0000`, the default success code; an error sends its own code.
 
 Use `doc.BodyWithExample` and `doc.StatusWithExample` to add complete request or
 response examples to the generated OpenAPI media type.
