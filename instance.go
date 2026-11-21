@@ -19,6 +19,7 @@ import (
 // ResponseFormatter is used as given, so its promoted methods read the
 // package mode variables. An API from New sends response codes as declared
 // unless built with WithLowercaseCodes; the default instance lowercases them.
+// Only an API from New can write RFC 9457 problem details (ResponseModeProblem).
 // WriteError answers with the instance's WithKindStatus overrides and calls
 // its WithErrorHook; the default instance has neither.
 // An API from New logs only through its WithLogger logger and masks the keys
@@ -169,10 +170,17 @@ func WithRequestMode(mode RequestMode) Option {
 }
 
 // WithResponseMode sets how the instance's built-in response formatter
-// formats responses. An unknown mode falls back to ResponseModeEnvelope. A
-// custom formatter set with WithResponseFormatter alone decides the body.
+// formats responses. An unknown mode falls back to ResponseModeEnvelope. With
+// ResponseModeProblem, error responses are RFC 9457 problem details sent as
+// application/problem+json, unless Headers sets a Content-Type, and other
+// responses are their content alone. A custom formatter set with
+// WithResponseFormatter alone decides the body.
 func WithResponseMode(mode ResponseMode) Option {
 	return func(o *options) {
+		if mode == ResponseModeProblem {
+			o.responseMode = mode
+			return
+		}
 		o.responseMode = normalizeResponseMode(mode)
 	}
 }

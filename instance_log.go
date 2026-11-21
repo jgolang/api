@@ -285,10 +285,10 @@ func (writer ResponseWriter) writeEncoded(headers map[string]string, status int,
 }
 
 // formattedContentType returns the Content-Type set in headers, whatever the
-// key's case, or "" when they set none.
+// key's case, or "" when they set none. An empty value counts as unset.
 func formattedContentType(headers map[string]string) string {
 	for key, value := range headers {
-		if strings.EqualFold(key, "Content-Type") {
+		if strings.EqualFold(key, "Content-Type") && value != "" {
 			return value
 		}
 	}
