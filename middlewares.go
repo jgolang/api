@@ -40,8 +40,9 @@ var MiddlewaresChain = core.MiddlewaresChain
 // With the default validator it answers 401 to every request while
 // Username or Password is empty or "default"; set both (or replace
 // ValidateBasicAuthCredentialsFunc) to use it. After a successful check it
-// copies the user name and the plain password into the Basic-Client and
-// Basic-Secret request headers; do not forward or log those headers.
+// copies the user name into the Basic-Client request header. Since v1.0.0
+// it no longer copies the password into a Basic-Secret header, and it
+// removes one the client sent, so a handler never reads a password there.
 func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
@@ -52,7 +53,7 @@ func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 			response.Write(w, r)
 			return
 		}
-		client, secret, tokenValid := ValidateBasicToken(auth[1])
+		client, _, tokenValid := ValidateBasicToken(auth[1])
 		if !tokenValid {
 			response := Error401()
 			response.Message = DefaultBasicUnauthorizedMsg
@@ -60,7 +61,7 @@ func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		r.Header.Set("Basic-Client", client)
-		r.Header.Set("Basic-Secret", secret)
+		r.Header.Del("Basic-Secret")
 		next(w, r)
 	}
 }

@@ -147,3 +147,63 @@ func TestBasicTokenUsesCustomValidatorWhileNotConfigured(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusNoContent, res.Code)
 	}
 }
+
+// serveBasicToken answers an authenticated request through BasicToken on
+// the default instance and on an instance, and returns the Basic-Client and
+// Basic-Secret request headers the handler saw on each.
+func serveBasicToken(t *testing.T, requestHeaders map[string]string) map[string][2]string {
+	t.Helper()
+	previousUsername, previousPassword := Username, Password
+	Username, Password = "service-user", "service-password"
+	defer func() { Username, Password = previousUsername, previousPassword }()
+
+	instances := map[string]func(http.Handler) http.Handler{
+		"default instance": func(next http.Handler) http.Handler { return next },
+		"instance":         New().Handler,
+	}
+	seen := map[string][2]string{}
+	for name, wrap := range instances {
+		handler := BasicToken(func(w http.ResponseWriter, r *http.Request) {
+			seen[name] = [2]string{r.Header.Get("Basic-Client"), r.Header.Get("Basic-Secret")}
+			w.WriteHeader(http.StatusNoContent)
+		})
+		req := httptest.NewRequest(http.MethodGet, "/private", nil)
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("service-user:service-password")))
+		for key, value := range requestHeaders {
+			req.Header.Set(key, value)
+		}
+		res := httptest.NewRecorder()
+
+		wrap(handler).ServeHTTP(res, req)
+
+		if res.Code != http.StatusNoContent {
+			t.Fatalf("%s: status = %d, want %d", name, res.Code, http.StatusNoContent)
+		}
+	}
+	return seen
+}
+
+func TestBasicTokenDoesNotCopyThePasswordIntoBasicSecret(t *testing.T) {
+	for name, headers := range serveBasicToken(t, nil) {
+		if headers[1] != "" {
+			t.Errorf("%s: Basic-Secret = %q, want no header", name, headers[1])
+		}
+	}
+}
+
+// v0 overwrote a client-sent Basic-Secret, so handlers may still trust it.
+func TestBasicTokenRemovesAClientSentBasicSecret(t *testing.T) {
+	for name, headers := range serveBasicToken(t, map[string]string{"Basic-Secret": "forged"}) {
+		if headers[1] != "" {
+			t.Errorf("%s: Basic-Secret = %q, want no header", name, headers[1])
+		}
+	}
+}
+
+func TestBasicTokenSetsBasicClient(t *testing.T) {
+	for name, headers := range serveBasicToken(t, nil) {
+		if headers[0] != "service-user" {
+			t.Errorf("%s: Basic-Client = %q, want %q", name, headers[0], "service-user")
+		}
+	}
+}
