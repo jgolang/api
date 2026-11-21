@@ -298,8 +298,16 @@ See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, respon
 ## Security notes
 
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
+- `api.BasicToken` with the default validator answers 401 to every request while `api.Username` or `api.Password` is empty or `"default"` (since v0.11.0; before, it accepted `default:default`). Set both, or replace `api.ValidateBasicAuthCredentialsFunc`, before exposing a route. The default validator compares credentials in constant time; a custom one should too (`crypto/subtle`). After a successful check, `BasicToken` copies the user name and the plain password into the `Basic-Client` and `Basic-Secret` request headers; do not forward or log those headers.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
 - Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
+- The request log masks, by the keys in `api.SensitiveLogKeys` (a name matches when it contains a key, ignoring case; the defaults include `authorization`, `token`, `password`, `key`, `cookie` and `session`): header values, JSON body fields, query parameter values in `uri` (names are found by splitting on `&` and `;`, and a masked value runs to the next `&`; a name that cannot be unescaped is masked too), and `form` values. It also masks the user information of an absolute-form, `//host` or CONNECT authority-form `uri` (`http://[REDACTED]@host/...`), up to the last `@`, so an `@` in the path or query hides the host and path too. Path segments are not masked. Masking is by name: a secret under a non-sensitive name (such as a URL with credentials in `?next=`) is logged as sent. A request body that is not JSON (form, XML, text) is logged as `[non-JSON body, N bytes]` unless `api.PrintFullEvent` is true.
+- `api.ProcessRequest` stores the value of the `X-Forwarded-For` header up to its first `", "` as the `proxiedIPAddress` info value (and, when the request has no device UUID, as the event ID input). Only the first `X-Forwarded-For` header line is read. That value is set by the client: trust it only behind a proxy that overwrites the header, and do not use it on its own for rate limits, allow lists or audit.
+- The package sets no limit on the request body size: `api.ProcessRequest` and the request receivers read the whole body into memory. Bound it before they run, with `http.MaxBytesHandler` (or `http.MaxBytesReader` in a middleware) or a proxy limit:
+
+  ```go
+  mux.Handle("POST /tasks", http.MaxBytesHandler(api.ProcessRequest(createTask), 1<<20)) // 1 MiB
+  ```
 
 ## Trace IDs
 
