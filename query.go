@@ -30,18 +30,39 @@ func WithQueryCode(code codes.Coder) QueryOption {
 
 // QueryString returns the first value of the query parameter name. ok is
 // false when the parameter is absent; a present but empty parameter returns ""
-// with ok true. When the query string is malformed and name cannot be read,
-// it returns ok true and a validation error, so a bad request is not taken for
-// a missing parameter. Each call parses the query string.
+// with ok true. When a malformed pair of name hides it (limit=%zz, or a pair
+// with a ";" such as a=1;limit=5), it returns ok true and a validation error,
+// so a bad request is not taken for a missing parameter. A malformed pair of
+// another parameter is ignored, as r.URL.Query() does. Each call parses the
+// query string.
 func QueryString(r *http.Request, name string, opts ...QueryOption) (string, bool, error) {
 	values, parseErr := url.ParseQuery(r.URL.RawQuery)
 	if found, present := values[name]; present {
 		return found[0], true, nil
 	}
-	if parseErr != nil {
+	if parseErr != nil && hasPairFor(r.URL.RawQuery, name) {
 		return "", true, invalidQuery(name, "readable (the query string is malformed)", opts)
 	}
 	return "", false, nil
+}
+
+// hasPairFor reports whether rawQuery has a pair whose key unescapes to
+// name. QueryString calls it only when name was not parsed, so such a pair is
+// one url.ParseQuery dropped as malformed. Go rejects a pair with a ";" as a
+// whole; it counts for name when any ";"-separated part has name as its key,
+// since the client most likely meant ";" as a separator. A key that cannot be
+// unescaped is never name.
+func hasPairFor(rawQuery string, name string) bool {
+	for pair := range strings.SplitSeq(rawQuery, "&") {
+		for part := range strings.SplitSeq(pair, ";") {
+			rawKey, _, _ := strings.Cut(part, "=")
+			key, err := url.QueryUnescape(rawKey)
+			if err == nil && key == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // QueryInt parses the first value of the query parameter name with
