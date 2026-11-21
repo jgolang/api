@@ -288,6 +288,12 @@ func cloneSchema(schema *Schema) *Schema {
 		}
 	}
 	clone.Items = cloneSchema(schema.Items)
+	if schema.AllOf != nil {
+		clone.AllOf = make([]*Schema, len(schema.AllOf))
+		for i, part := range schema.AllOf {
+			clone.AllOf[i] = cloneSchema(part)
+		}
+	}
 	clone.AdditionalProperties = cloneSchema(schema.AdditionalProperties)
 	clone.Required = append([]string(nil), schema.Required...)
 	clone.Enum = append([]interface{}(nil), schema.Enum...)

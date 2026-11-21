@@ -333,10 +333,16 @@ func (builder *openAPISchemaBuilder) SchemaFromType(value interface{}) *Schema {
 	if value == nil {
 		return &Schema{}
 	}
-	if typ, ok := value.(reflect.Type); ok {
-		return builder.schemaFromReflectType(typ)
+	typ, ok := value.(reflect.Type)
+	if !ok {
+		typ = reflect.TypeOf(value)
 	}
-	return builder.schemaFromReflectType(reflect.TypeOf(value))
+	// A body passed as &T{} is a sample value; the pointer does not make the
+	// whole body nullable, so the body stays a plain $ref.
+	for typ != nil && typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	return builder.schemaFromReflectType(typ)
 }
 
 func (builder *openAPISchemaBuilder) schemaFromReflectType(typ reflect.Type) *Schema {
@@ -349,7 +355,7 @@ func (builder *openAPISchemaBuilder) schemaFromReflectType(typ reflect.Type) *Sc
 	if typ.Kind() == reflect.Ptr {
 		schema := cloneSchema(builder.schemaFromReflectType(typ.Elem()))
 		schema.Nullable = true
-		return schema
+		return refToAllOf(schema)
 	}
 	if typ.Kind() == reflect.Struct && typ.Name() != "" {
 		return builder.componentRef(typ)
@@ -425,7 +431,7 @@ func (builder *openAPISchemaBuilder) structSchema(typ reflect.Type) *Schema {
 		}
 		fieldSchema := builder.schemaFromReflectType(field.Type)
 		applySchemaTags(fieldSchema, field)
-		schema.Properties[name] = fieldSchema
+		schema.Properties[name] = refToAllOf(fieldSchema)
 		if isRequiredField(field, omitEmpty) {
 			schema.Required = append(schema.Required, name)
 		}
@@ -439,7 +445,29 @@ func (builder *openAPISchemaBuilder) structSchema(typ reflect.Type) *Schema {
 	return schema
 }
 
+// refToAllOf moves a $ref that has sibling keys into allOf, because
+// OpenAPI 3.0.3 ignores every key written beside $ref. A plain $ref is
+// returned unchanged.
+func refToAllOf(schema *Schema) *Schema {
+	if schema.Ref == "" || !hasRefSiblings(schema) {
+		return schema
+	}
+	wrapped := *schema
+	wrapped.AllOf = []*Schema{{Ref: schema.Ref}}
+	wrapped.Ref = ""
+	return &wrapped
+}
+
+// hasRefSiblings reports whether any key beside $ref is set, such as a
+// pointer's nullable or a field tag.
+func hasRefSiblings(schema *Schema) bool {
+	return !reflect.DeepEqual(*schema, Schema{Ref: schema.Ref})
+}
+
 func (builder *openAPISchemaBuilder) resolveLocalRef(schema *Schema) *Schema {
+	if schema != nil && schema.Ref == "" && len(schema.AllOf) == 1 {
+		schema = schema.AllOf[0]
+	}
 	if schema == nil || schema.Ref == "" {
 		return schema
 	}
