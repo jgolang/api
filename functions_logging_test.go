@@ -211,8 +211,18 @@ func TestLogRequestRedactsSensitiveURIQueryValues(t *testing.T) {
 		},
 		{
 			name: "case-insensitive key and semicolon separator",
-			uri:  "/tasks?API-KEY=secret-key;Session=secret-session&q=go",
-			want: "/tasks?API-KEY=[REDACTED];Session=[REDACTED]&q=go",
+			uri:  "/tasks?q=go;Session=secret-session&API-KEY=secret-key",
+			want: "/tasks?q=go;Session=[REDACTED]&API-KEY=[REDACTED]",
+		},
+		{
+			name: "sensitive value with a raw semicolon is masked up to the next ampersand",
+			uri:  "/tasks?token=abc;def&q=go",
+			want: "/tasks?token=[REDACTED]&q=go",
+		},
+		{
+			name: "sensitive value with a raw semicolon at the end",
+			uri:  "/tasks?q=go;token=abc;def;page=2",
+			want: "/tasks?q=go;token=[REDACTED]",
 		},
 		{
 			name: "escaped sensitive key",
@@ -238,6 +248,36 @@ func TestLogRequestRedactsSensitiveURIQueryValues(t *testing.T) {
 			name: "absolute-form with @ in the query",
 			uri:  "http://example.com/cb?email=a@b.com&token=secret-token",
 			want: "http://[REDACTED]@b.com&token=[REDACTED]",
+		},
+		{
+			name: "sensitive name holding a raw semicolon",
+			uri:  "/tasks?token;x=secret-token&q=go",
+			want: "/tasks?token;x=[REDACTED]&q=go",
+		},
+		{
+			name: "authority-form userinfo",
+			uri:  "user:secret-pass@example.com:443",
+			want: "[REDACTED]@example.com:443",
+		},
+		{
+			name: "network-path userinfo",
+			uri:  "//user:secret-pass@example.com/tasks",
+			want: "//[REDACTED]@example.com/tasks",
+		},
+		{
+			name: "absolute-form userinfo without a query",
+			uri:  "http://user:secret-pass@[::1]:8080/tasks",
+			want: "http://[REDACTED]@[::1]:8080/tasks",
+		},
+		{
+			name: "absolute-form userinfo with a raw # in the password",
+			uri:  "http://user:se#cret@example.com/tasks",
+			want: "http://[REDACTED]@example.com/tasks",
+		},
+		{
+			name: "raw ? in the password before a sensitive value holding the @",
+			uri:  "http://user:secret?key=1@example.com/tasks",
+			want: "http://[REDACTED]",
 		},
 		{
 			name: "absolute-form userinfo with a raw ? in the password",

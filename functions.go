@@ -502,74 +502,106 @@ func isSensitiveKey(key string, sensitiveKeys []string) bool {
 	return false
 }
 
-// redactURI masks the query values of uri whose key is sensitive and, in an
-// absolute-form URI (scheme://user:pass@host/...), the user information.
-// Path segments are not masked.
+// redactURI masks the query values of uri whose key is sensitive and the
+// user information of an absolute-form (scheme://user:pass@host/...),
+// network-path (//user:pass@host/...) or authority-form (CONNECT
+// user:pass@host:443) target. Path segments are not masked.
 func redactURI(uri string, sensitiveKeys []string) string {
 	// The query goes first, cut at the first "?" of the raw uri: masking the
 	// user information first would cut at an "@" inside the query (such as
 	// "?email=a@b.com&token=..."), lose the "?" and log the query in clear.
-	// redactUserInfo only removes text, so no masked value comes back; a raw
-	// "?" in a password at worst over-masks.
-	path, query, found := strings.Cut(uri, "?")
+	redacted, query, found := strings.Cut(uri, "?")
 	if found {
-		path += "?" + redactQuery(query, sensitiveKeys)
+		redacted += "?" + redactQuery(query, sensitiveKeys)
 	}
-	return redactUserInfo(path)
+	return redactUserInfo(redacted, uri)
 }
 
-// redactUserInfo replaces the user information of an absolute-form request
-// target with redactedLogValue: everything from "://" to the last "@" before
-// the first "#", so a raw "/" or "?" in a password is masked too.
-func redactUserInfo(target string) string {
-	scheme, rest, found := strings.Cut(target, "://")
-	if !found || strings.ContainsAny(scheme, "/?#") {
+// redactUserInfo replaces the user information of target with
+// redactedLogValue: everything from the start of the authority to the last
+// "@", so a raw "/", "?" or "#" in a password is masked too (an "@" in the
+// path or query over-masks). rawTarget is target before its query was
+// masked; when masking removed the only "@" (a raw "?" in a password
+// followed by a sensitive key), everything after the authority start is
+// masked.
+func redactUserInfo(target, rawTarget string) string {
+	start := authorityStart(target)
+	if start < 0 {
 		return target
 	}
-	beforeFragment, _, _ := strings.Cut(rest, "#")
-	at := strings.LastIndex(beforeFragment, "@")
-	if at < 0 {
-		return target
+	if at := strings.LastIndex(target[start:], "@"); at >= 0 {
+		return target[:start] + redactedLogValue + target[start+at:]
 	}
-	return scheme + "://" + redactedLogValue + rest[at:]
+	if strings.Contains(rawTarget[start:], "@") {
+		return target[:start] + redactedLogValue
+	}
+	return target
+}
+
+// authorityStart returns where the authority of target starts, or -1 for an
+// origin-form ("/path") or asterisk-form ("*") target, which has none. A
+// target with neither "/" nor "scheme://" at its start is taken as
+// authority-form; an opaque URI such as "mailto:a@b" is then over-masked.
+func authorityStart(target string) int {
+	if strings.HasPrefix(target, "//") {
+		return len("//")
+	}
+	if strings.HasPrefix(target, "/") || target == "*" {
+		return -1
+	}
+	if scheme, _, found := strings.Cut(target, "://"); found && !strings.ContainsAny(scheme, "/?#") {
+		return len(scheme) + len("://")
+	}
+	return 0
 }
 
 // redactQuery masks the values of rawQuery whose unescaped key is sensitive,
-// and the values whose key cannot be unescaped. It rebuilds the query part by
-// part, splitting on "&" and ";" and keeping each separator, so the other
-// parameters keep their order and encoding; a part without "=" has no value
-// and is kept.
+// and the values whose key cannot be unescaped. It reads rawQuery one
+// "&"-separated segment at a time: when the segment's own key (up to its
+// first "=") is sensitive, its whole value is masked, so a raw ";" in the
+// name or the value (token;x=..., token=abc;def) exposes nothing. Otherwise
+// the segment is split on ";" and the first part with a sensitive key masks
+// the rest of the segment. The other parameters keep their order,
+// separators and encoding; a part without "=" has no value and is kept.
 func redactQuery(rawQuery string, sensitiveKeys []string) string {
-	if rawQuery == "" {
-		return rawQuery
-	}
 	var redacted strings.Builder
 	redacted.Grow(len(rawQuery))
-	for rawQuery != "" {
-		end := strings.IndexAny(rawQuery, "&;")
-		part, separator := rawQuery, ""
-		if end >= 0 {
-			part, separator = rawQuery[:end], rawQuery[end:end+1]
-			rawQuery = rawQuery[end+1:]
-		} else {
-			rawQuery = ""
+	for i, segment := range strings.Split(rawQuery, "&") {
+		if i > 0 {
+			redacted.WriteByte('&')
 		}
-		redacted.WriteString(redactQueryPart(part, sensitiveKeys))
-		redacted.WriteString(separator)
+		if masked, isMasked := redactQueryPart(segment, sensitiveKeys); isMasked {
+			redacted.WriteString(masked)
+			continue
+		}
+		redacted.WriteString(redactSemicolonParts(segment, sensitiveKeys))
 	}
 	return redacted.String()
 }
 
-func redactQueryPart(part string, sensitiveKeys []string) string {
+// redactSemicolonParts masks a ";"-separated segment from its first part
+// with a sensitive key to its end.
+func redactSemicolonParts(segment string, sensitiveKeys []string) string {
+	parts := strings.Split(segment, ";")
+	for i, part := range parts {
+		if masked, isMasked := redactQueryPart(part, sensitiveKeys); isMasked {
+			return strings.Join(append(parts[:i:i], masked), ";")
+		}
+	}
+	return segment
+}
+
+// redactQueryPart returns part with its value masked, and whether it did so.
+func redactQueryPart(part string, sensitiveKeys []string) (string, bool) {
 	rawKey, _, hasValue := strings.Cut(part, "=")
 	if !hasValue {
-		return part
+		return part, false
 	}
 	key, err := url.QueryUnescape(rawKey)
 	if err != nil || isSensitiveKey(key, sensitiveKeys) {
-		return rawKey + "=" + redactedLogValue
+		return rawKey + "=" + redactedLogValue, true
 	}
-	return part
+	return part, false
 }
 
 func formatLogValue(value interface{}) string {
