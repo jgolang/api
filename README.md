@@ -90,7 +90,7 @@ func main() {
 
 1. **Route registration.** `api.Get`, `api.Post`, `api.Put`, `api.Patch` and `api.Delete` register a handler on any `api.Router` and record its `doc.RouteOption`s for the OpenAPI document. `stdadapter` is the `net/http` router; see [Routing and OpenAPI](#routing-and-openapi).
 2. **`api.ProcessRequest`.** Wrap a handler with this middleware to get the full flow. It:
-   - reads the body and parses it according to the [request mode](#request-and-response-modes); an invalid JSON body answers 400 with code `e002`;
+   - reads the body and parses it according to the [request mode](#request-and-response-modes); an invalid JSON body answers 400 with code `E002` on an `api.New` instance (`e002` on the default instance);
    - collects request metadata from HTTP headers (see [Reading the request](#reading-the-request));
    - assigns an [event ID](#trace-ids) and logs the request and the response;
    - stores the request context, replaces `r.Body` with the endpoint content, and answers 500 if the handler panics.

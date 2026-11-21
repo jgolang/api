@@ -8,7 +8,7 @@ This guide takes a v0 program (v0.10.x) to `github.com/jgolang/api` v1. The desi
 - v1 removes nothing. Every v0 name still compiles. Names replaced by an instance option are deprecated, and each one points at its option.
 - A program that does not change its code sends the same bodies as v0. Two things change for it:
   - `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)). This is the only breaking change for unchanged code.
-  - A `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too.
+  - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0.
 - Configuration moves from package variables to an instance: `a := api.New(opts...)` and `a.Handler(router)` ([step 3](#step-3-move-to-apinew)). Handler code does not change.
 
 Three steps, each one shippable on its own:
@@ -188,11 +188,13 @@ a := api.New(
 - the sensitive keys are the v0 list plus `cookie` and `session`; `WithSensitiveLogKeys` only adds;
 - query values in `uri` are masked by key (`/login?access_token=[REDACTED]&page=2`); path segments are not;
 - bodies and the parsed form are never logged;
-- the built-in writer never calls `Fatal` and never exits: a body that cannot be encoded is logged and answered with 500 and the `Error500()` body.
+- a failed `Get*Value*` helper logs the name as `key`; for a sensitive name the `error` gives only the kind of failure, never the value;
+- the user information of an absolute-form URI is masked (`http://[REDACTED]@host/...`);
+- the built-in writer never calls `Fatal` and never exits: a body that cannot be encoded is logged and answered with 500 and the `Error500()` body, with the formatter's `Content-Type`. The failed response's headers that describe its body (`Content-Type`, `Content-Encoding`, `Content-Length`, `ETag`, …) are dropped from that 500; the others are kept.
 
 See the README "Logging" section for every record.
 
-**Problem details.** `api.WithResponseMode(api.ResponseModeProblem)` writes errors as RFC 9457 `application/problem+json`. Other responses are written as their content alone. Only instances accept this mode; `SetResponseMode(ResponseModeProblem)` falls back to envelope.
+**Problem details.** `api.WithResponseMode(api.ResponseModeProblem)` writes errors as RFC 9457 `application/problem+json`. That includes the library's own rejections under the instance: `ProcessRequest`'s invalid body (400, `E002`) and panic (500, `E300`), the token and header middlewares (401, 415) and `RequestBody`. Other responses are written as their content alone. Only instances accept this mode; `SetResponseMode(ResponseModeProblem)` falls back to envelope. A non-empty `Content-Type` in the response's `Headers` still wins over `application/problem+json`.
 
 ```json
 {"type":"about:blank","title":"Error response!","status":400,"detail":"title is required","code":"TSK-001","event_id":"evt1"}
@@ -219,6 +221,7 @@ These are not decided and may change before v1.0.0:
 - **Q35:** a request body limit, possibly as a `WithMaxBodyBytes` option with a 10 MiB default. Not built.
 - **Q36:** whether instances stop echoing the request token in the response `token` field. Today they echo it, as v0 does (problem bodies never carry it).
 - **Q39:** whether the problem `title` becomes the HTTP status phrase (`Bad Request`) instead of the response title.
+- **Q40:** whether the `Content-Type`-in-`Headers` change on the default instance is called a breaking change in the release notes. This guide lists it as a wire change either way.
 
 ## Checklist
 
@@ -226,7 +229,7 @@ These are not decided and may change before v1.0.0:
 - [ ] Start the service once (or build its router in a test): fix every registration panic (conflicts, methods, wildcard names).
 - [ ] Check trailing-slash clients, HEAD skip paths, 405 handling and `GODEBUG=httpmuxgo121`.
 - [ ] Validate route variables that reach file paths, headers or logs.
-- [ ] Check responses that set a `Content-Type` in `Headers`: it is now sent.
+- [ ] Check responses that set a `Content-Type` in `Headers`: it is now sent (one set on `w.Header()` is still overwritten).
 - [ ] Create one instance with `api.New` and wrap the outermost handler with `a.Handler`.
 - [ ] Replace each deprecated name with its option (staticcheck `SA1019` lists them).
 - [ ] Decide on code case: keep `api.WithLowercaseCodes()`, or update clients and alerts to the declared codes.
