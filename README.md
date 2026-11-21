@@ -233,6 +233,19 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 
 401 and 403 use the unauthorized title, like `Error401`/`Error403`; a nil error answers 500. `ExampleWriteError` in `example_write_error_test.go` is the compiled version.
 
+An `api.New` instance can change the status of a kind and observe every error `WriteError` writes:
+
+```go
+a := api.New(
+	api.WithKindStatus(codes.KindValidation, http.StatusUnprocessableEntity), // repeat per kind
+	api.WithErrorHook(func(r *http.Request, err error, status int) {
+		slog.ErrorContext(r.Context(), "request failed", "status", status, "error", err)
+	}),
+)
+```
+
+Kinds without an override keep `api.StatusForKind`. Only statuses 400–599 are accepted (others are ignored), and errors without a kind always answer 500. The title follows the decided status as above. The hook runs on the request goroutine with the original error, before anything is written; a panic in it is not recovered (`api.ProcessRequest` turns it into a logged 500). Only `WriteError` calls the hook, not `Error400`/`Error500`/the other helpers, and the default instance has no overrides and no hook. `ExampleWithKindStatus` and `ExampleWithErrorHook` are the compiled versions.
+
 ## Routing and OpenAPI
 
 The package includes a router-agnostic registration layer for OpenAPI 3 and Swagger UI. The native adapter uses only Go's standard `net/http` package, while adapters for Gin, Echo, chi, gorilla/mux, or other routers should live in the application that chooses those routers (`api.RegisterAdapter` and `api.NewRouter` register and build them by name).

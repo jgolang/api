@@ -2,7 +2,7 @@
 
 - Status: Accepted (2026-11-21); implemented step by step through the v1 stories, all in v1.0.0:
   - 5.1 lands the instance, `Handler` and the two mode options (sections 2–3 for the modes; the `Get*Value*` helpers still use the default instance);
-  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7); 5.5 the logger, redaction and an instance writer that never exits (section 6); 5.6 problem details (section 8).
+  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7; landed); 5.5 the logger, redaction and an instance writer that never exits (section 6); 5.6 problem details (section 8).
 - Issues: API-07 (#21), API-02 (#16), API-12 (#26), the v1 part of API-01 (#15).
 - Related: ADR 0002 (stdadapter on ServeMux patterns, lands with story 5.7) will record the routing change planned for the same release (API-08).
 
@@ -118,6 +118,7 @@ sequenceDiagram
 - `WriteError(w, r, err)` keeps its signature. With an instance it takes the status from the instance's overrides, else `StatusForKind`. `StatusForKind` stays the documented default mapping and is not deprecated.
 - `WithKindStatus(kind, status)` overrides one kind; repeat it for more. A per-kind override instead of a whole mapping function, so a service cannot forget the default rows.
 - `WithErrorHook(fn)` is called by `WriteError` after the status is decided and before the response is written, with the original error, so a service can log or count it without wrapping every handler. Only `WriteError` calls it (the other error helpers receive no `error` to report); a panic in the hook is not recovered (it is the caller's code).
+- As landed in 5.4: an override status outside 400–599 is ignored (an error never answers 2xx/3xx, and `New` returns no error), and the empty kind cannot be overridden, so errors without a kind and nil errors always answer 500. A later override for the same kind wins; a later `WithErrorHook` replaces an earlier one, and nil means no hook. The response title follows the decided status (500 internal, 401/403 unauthorized). A hook panic propagates out of `WriteError` with nothing written, reaching `ProcessRequest`'s recovery (a logged 500) or `net/http`'s.
 
 ### 8. RFC 9457 problem details (API-12)
 
