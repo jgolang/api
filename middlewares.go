@@ -244,7 +244,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 				if ok {
 					PrintError(err)
 				} else {
-					PrintError("Not response: ", fmt.Sprintf("%v", r))
+					PrintError("Not response: ", fmt.Sprintf("%v", recvr))
 				}
 				Error500().Write(w, r)
 				return
