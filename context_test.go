@@ -11,7 +11,6 @@ import (
 type contextTestKey string
 
 func TestContextFindsRequestDataInDerivedContexts(t *testing.T) {
-	var gotEventID, wantEventID string
 	tests := []struct {
 		name   string
 		derive func(context.Context) (context.Context, context.CancelFunc)
@@ -30,6 +29,7 @@ func TestContextFindsRequestDataInDerivedContexts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var gotEventID, wantEventID string
 			handler := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
 				wantEventID = Context(r.Context()).EventID
 				ctx, cancel := tt.derive(r.Context())
