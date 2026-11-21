@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/jgolang/api/core"
 )
@@ -84,8 +85,9 @@ func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.Resp
 }
 
 // writeEncodeFailure answers 500 with the internal server error body built by
-// the registered formatter. If that body cannot be encoded either, it answers
-// 500 with no body.
+// the registered formatter, labeled with that body's Content-Type: the one
+// set for the body that failed is dropped, and the other headers are kept.
+// If the error body cannot be encoded either, it answers 500 with no body.
 func writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
 	failure := Error500()
 	formatted := responseFormatter.Format(core.ResponseData{
@@ -101,7 +103,22 @@ func writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	writeEncoded(headers, http.StatusInternalServerError, body.Bytes(), w)
+	writeEncoded(withContentType(headers, formattedContentType(formatted.Headers)), http.StatusInternalServerError, body.Bytes(), w)
+}
+
+// withContentType returns a copy of headers whose Content-Type, whatever the
+// key's case, is contentType; an empty contentType leaves it unset.
+func withContentType(headers map[string]string, contentType string) map[string]string {
+	copied := make(map[string]string, len(headers)+1)
+	for key, value := range headers {
+		if !strings.EqualFold(key, "Content-Type") {
+			copied[key] = value
+		}
+	}
+	if contentType != "" {
+		copied["Content-Type"] = contentType
+	}
+	return copied
 }
 
 func writeEncoded(headers map[string]string, status int, body []byte, w http.ResponseWriter) {

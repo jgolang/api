@@ -178,3 +178,26 @@ func TestResponseWriterFailureAfterStatusWrittenKeepsEarlierStatus(t *testing.T)
 		t.Fatalf("expected the internal server error body, got %q", res.Body.String())
 	}
 }
+
+// TestDefaultEncodeFailureDoesNotKeepTheFailedContentType checks that the
+// default writer labels its 500 error body with the error body's own
+// Content-Type, not with the one set for the body that failed to encode.
+func TestDefaultEncodeFailureDoesNotKeepTheFailedContentType(t *testing.T) {
+	previousPrintError := PrintError
+	PrintError = func(...interface{}) {}
+	defer func() { PrintError = previousPrintError }()
+	res := httptest.NewRecorder()
+
+	ResponseWriter{}.Write(&core.ResponseFormatted{
+		Body:           math.NaN(),
+		HTTPStatusCode: http.StatusOK,
+		Headers:        map[string]string{"content-type": "text/csv", "X-Trace": "t"},
+	}, res)
+
+	if got := res.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if got := res.Header().Get("X-Trace"); got != "t" {
+		t.Fatalf("X-Trace = %q, want the other headers kept", got)
+	}
+}
