@@ -955,26 +955,78 @@ func TestInstanceWriterKeepsFormattedContentType(t *testing.T) {
 	}
 }
 
-func TestInstanceLogsAbortedHandlerAtDebug(t *testing.T) {
-	failOnPackageLoggers(t)
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	handler := ProcessRequest(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) })
+// nilFormatter formats every response into nil.
+type nilFormatter struct{}
 
-	rec := serve(New(WithLogger(logger)).Handler(handler), http.MethodGet, "", nil)
+func (nilFormatter) Format(core.ResponseData) *core.ResponseFormatted { return nil }
+
+func TestInstanceAnswers500WhenTheFormattedResponseIsNil(t *testing.T) {
+	failOnPackageLoggers(t)
+	logger, buf := newRecordingLogger()
+	a := New(WithLogger(logger), WithResponseFormatter(nilFormatter{}))
+
+	rec := serve(a.Handler(http.HandlerFunc(okHandler)), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusInternalServerError || rec.Body.Len() != 0 {
+		t.Fatalf("response = %d %q, want a bare 500", rec.Code, rec.Body)
+	}
+	record := recordNamed(t, decodeRecords(t, buf), "response cannot be written")
+	if record["level"] != "ERROR" || record["error"] != "nil formatted response" {
+		t.Fatalf("record = %v, want an error record for the nil response", record)
+	}
+}
+
+func TestDefaultWriterAnswers500WhenTheFormattedResponseIsNil(t *testing.T) {
+	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
+	buf := captureDefaultLogger(t)
+	failOnPackageLoggers(t)
+	rec := httptest.NewRecorder()
+
+	ResponseWriter{}.Write(nil, rec)
 
 	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500 as for other panics", rec.Code)
+		t.Fatalf("status = %d, want 500", rec.Code)
 	}
-	records := decodeRecords(t, &buf)
-	record := recordNamed(t, records, "handler aborted")
-	if record["level"] != "DEBUG" || record["event_id"] == nil || record["panic"] == nil {
-		t.Fatalf("record = %v, want a debug record with event_id and panic", record)
+	if title, code := envelopeHeader(t, rec.Body.Bytes()); title != InternalServerTitle || code != string(internalServerErrorCode()) {
+		t.Fatalf("title, code = %q, %q, want the Error500 body", title, code)
 	}
-	for _, r := range records {
-		if r["level"] == "ERROR" {
-			t.Fatalf("unexpected error record %v", r)
-		}
+	record := recordNamed(t, decodeRecords(t, buf), "response cannot be written")
+	if record["error"] != "nil formatted response" {
+		t.Fatalf("record = %v, want the nil response error", record)
+	}
+}
+
+// embeddedWriter is a custom writer that only embeds ResponseWriter.
+type embeddedWriter struct{ ResponseWriter }
+
+// TestInstanceEmbeddedWriterLogsThroughSlogDefault checks that a type that
+// embeds ResponseWriter keeps the default instance's behavior: it logs
+// through slog.Default and builds the 500 with the registered (envelope)
+// formatter, not the instance's (problem details) one.
+func TestInstanceEmbeddedWriterLogsThroughSlogDefault(t *testing.T) {
+	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
+	defaultBuf := captureDefaultLogger(t)
+	failOnPackageLoggers(t)
+	logger, instanceBuf := newRecordingLogger()
+	a := New(WithLogger(logger), WithResponseMode(ResponseModeProblem), WithResponseWriter(embeddedWriter{}))
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		SuccessWithContent(math.NaN()).Write(w, r)
+	})
+
+	rec := serve(a.Handler(handler), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want the registered formatter's application/json", got)
+	}
+	if _, code := envelopeHeader(t, rec.Body.Bytes()); code == "" {
+		t.Fatalf("body = %s, want the registered formatter's envelope with a code", rec.Body)
+	}
+	recordNamed(t, decodeRecords(t, defaultBuf), "response cannot be encoded")
+	if instanceBuf.Len() != 0 {
+		t.Fatalf("instance logger got records: %s", instanceBuf)
 	}
 }
 
