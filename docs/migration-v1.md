@@ -193,6 +193,8 @@ a := api.New(
 
 See the README "Logging" section for every record.
 
+**Request body limit.** An instance's `Handler` bounds request bodies at 10 MiB (`http.MaxBytesReader`). `ProcessRequest`, `RequestBody` and `UnmarshalBody` answer a larger body with 413, code `E002` and the title `Request content too large` (in problem mode, `Request Entity Too Large`); the default instance has no limit and answers a limit the service set itself with 400 as in v0. Set another limit with `api.WithMaxBodyBytes(n)`; `n <= 0` is ignored, and `math.MaxInt64` means no practical limit. Nested instance limits combine, so the smallest applies. Only readers inside `a.Handler` are bounded: a `ProcessRequest` or `RequestBody` outside it runs with the default instance and reads without a limit. A custom receiver, or a handler that reads `r.Body` itself, gets the `*http.MaxBytesError` and decides the answer.
+
 **Problem details.** `api.WithResponseMode(api.ResponseModeProblem)` writes errors as RFC 9457 `application/problem+json`. That includes the library's own rejections under the instance: `ProcessRequest`'s invalid body (400, `E002`) and panic (500, `E300`), the token and header middlewares (401, 415) and `RequestBody`. Other responses are written as their content alone. Only instances accept this mode; `SetResponseMode(ResponseModeProblem)` falls back to envelope. A non-empty `Content-Type` in the response's `Headers` still wins over `application/problem+json`.
 
 ```json
@@ -215,7 +217,6 @@ a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 
 These are not decided and may change before v1.0.0:
 
-- **Q35:** a request body limit, possibly as a `WithMaxBodyBytes` option with a 10 MiB default. Not built.
 - **Q36:** whether instances stop echoing the request token in the response `token` field. Today they echo it, as v0 does (problem bodies never carry it).
 
 ## Checklist
