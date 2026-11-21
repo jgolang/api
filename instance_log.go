@@ -173,13 +173,13 @@ func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w htt
 		ResponseType:   ErrorType,
 	})
 	if formatted == nil {
-		writer.writeBare500(headers, w)
+		writeBare500(headers, w)
 		return
 	}
 	var body bytes.Buffer
 	if err := json.NewEncoder(&body).Encode(formatted.Body); err != nil {
 		writer.logError("response cannot be encoded", err)
-		writer.writeBare500(headers, w)
+		writeBare500(headers, w)
 		return
 	}
 	if contentType := formattedContentType(formatted.Headers); contentType != "" {
@@ -188,7 +188,8 @@ func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w htt
 	writer.writeEncoded(headers, http.StatusInternalServerError, body.Bytes(), w)
 }
 
-func (writer ResponseWriter) writeBare500(headers map[string]string, w http.ResponseWriter) {
+// writeBare500 answers 500 with no body and no Content-Type, with headers.
+func writeBare500(headers map[string]string, w http.ResponseWriter) {
 	setHeaders(headers, w)
 	w.Header().Del("Content-Type")
 	w.WriteHeader(http.StatusInternalServerError)
@@ -214,10 +215,10 @@ func (writer ResponseWriter) writeEncoded(headers map[string]string, status int,
 }
 
 // formattedContentType returns the Content-Type set in headers, whatever the
-// key's case, or "" when they set none.
+// key's case, or "" when they set none. An empty value counts as unset.
 func formattedContentType(headers map[string]string) string {
 	for key, value := range headers {
-		if strings.EqualFold(key, "Content-Type") {
+		if strings.EqualFold(key, "Content-Type") && value != "" {
 			return value
 		}
 	}

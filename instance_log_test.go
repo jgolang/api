@@ -838,7 +838,8 @@ func TestInstanceWriterKeepsFormattedContentType(t *testing.T) {
 		want   string
 	}{
 		{name: "instance", writer: options{}.responseWriter(formatter), want: "application/problem+json"},
-		{name: "default", writer: ResponseWriter{}, want: "application/json"},
+		// Story 5.6: the default writer keeps a Content-Type set in Headers too.
+		{name: "default", writer: ResponseWriter{}, want: "application/problem+json"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

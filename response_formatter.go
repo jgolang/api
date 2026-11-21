@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/jgolang/api/core"
@@ -51,6 +52,11 @@ var BlankSuccess = true
 
 // Format the response body information.
 func (formatter ResponseFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
+	// Only the mode New binds selects problem details; the package variable
+	// never does, so the default instance keeps its v0 modes.
+	if formatter.mode == ResponseModeProblem {
+		return formatter.formatProblem(data)
+	}
 	msg := data.Message
 	title := data.Title
 	code := formatter.responseCode(data.ResponseCode)
@@ -109,6 +115,107 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 		Headers:        data.Headers,
 		Body:           body,
 	}
+}
+
+// problemContentType is the RFC 9457 media type of a problem details body.
+const problemContentType = "application/problem+json"
+
+// problemDetails is an RFC 9457 problem details body. Code and EventID are
+// extension members (RFC 9457 section 3.2).
+type problemDetails struct {
+	Type    string `json:"type"`
+	Title   string `json:"title,omitempty"`
+	Status  int    `json:"status,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+	Code    string `json:"code,omitempty"`
+	EventID string `json:"event_id,omitempty"`
+}
+
+// formatProblem formats data in ResponseModeProblem: an error as problem
+// details, any other response as its content alone. The title is the HTTP
+// status text unless a service set it (see problemTitle). Content, token, actions
+// and info never reach a problem body. Detail has no trace suffix, since
+// code and event_id carry it.
+func (formatter ResponseFormatter) formatProblem(data core.ResponseData) *core.ResponseFormatted {
+	if data.ResponseType != ErrorType {
+		return &core.ResponseFormatted{
+			HTTPStatusCode: data.HTTPStatusCode,
+			Headers:        data.Headers,
+			Body:           data.Content,
+		}
+	}
+	return &core.ResponseFormatted{
+		HTTPStatusCode: data.HTTPStatusCode,
+		Headers:        problemHeaders(data.Headers),
+		Body: problemDetails{
+			Type:    "about:blank",
+			Title:   problemTitle(data.Title, data.HTTPStatusCode),
+			Status:  data.HTTPStatusCode,
+			Detail:  data.Message,
+			Code:    formatter.responseCode(data.ResponseCode),
+			EventID: data.EventID,
+		},
+	}
+}
+
+// libraryErrorTitles are the titles the library puts on error responses on
+// its own: the shipped values of DefaultErrorTitle, InternalServerTitle and
+// UnauthorizedTitle, and the titles of its helpers and middlewares. A title
+// reassigned through those variables is the service's.
+var libraryErrorTitles = map[string]bool{
+	"Error response!":                          true,
+	"Sorry!":                                   true,
+	"Unauthorized!":                            true,
+	"Invalid request content":                  true,
+	"Request info error!":                      true,
+	"Not unmarshal JSON struct!":               true,
+	"Error getting header value!":              true,
+	"Error getting header value type Int!":     true,
+	"Error getting header value type Int64!":   true,
+	"Error getting header value type Float64!": true,
+	"Error getting header value type Bool!":    true,
+	"Error getting route var!":                 true,
+	"Error getting route var type Int":         true,
+	"Error getting route var type Int64":       true,
+	"Error getting route var type Float64":     true,
+	"Error getting route var type Bool":        true,
+	"Error getting query param!":               true,
+	"Error getting query param type Int!":      true,
+	"Error getting query param type Int64!":    true,
+	"Error getting query param type Float64!":  true,
+	"Error getting query param type Bool!":     true,
+}
+
+// problemTitle returns the problem title for an error with title and
+// status: http.StatusText(status), as RFC 9457 section 4.2.1 advises for
+// about:blank, when title is empty or one the library set on its own
+// (owner answer Q39); title otherwise, or when status has no text.
+func problemTitle(title string, status int) string {
+	if title != "" && !libraryErrorTitles[title] {
+		return title
+	}
+	if text := http.StatusText(status); text != "" {
+		return text
+	}
+	return title
+}
+
+// problemHeaders returns a copy of headers with the problem Content-Type,
+// unless headers already set a non-empty one (a set Content-Type always
+// wins; an empty value counts as unset, as in the writers). It copies so the
+// caller's map is never changed.
+func problemHeaders(headers map[string]string) map[string]string {
+	problem := make(map[string]string, len(headers)+1)
+	for key, value := range headers {
+		if value == "" && strings.EqualFold(key, "Content-Type") {
+			continue
+		}
+		problem[key] = value
+	}
+	if formattedContentType(problem) == "" {
+		problem["Content-Type"] = problemContentType
+	}
+	return problem
 }
 
 // responseCode returns code as the body and the trace suffix show it.

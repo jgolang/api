@@ -30,6 +30,38 @@ func ExampleNew() {
 	// {"action":"","code":"0000","content":{"status":"ok"},"event_id":"","info":null,"message":"","title":"","token":"","type":"success"}
 }
 
+func ExampleWithResponseMode_problem() {
+	taskNotFound := codes.New("PLN-404", "task not found").WithKind(codes.KindNotFound)
+	a := api.New(api.WithResponseMode(api.ResponseModeProblem))
+	handler := a.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.WriteError(w, r, errors.NewC(taskNotFound, "task 7"))
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/tasks/7", nil)
+	req.Header.Set(api.EventIDHeaderKey, "evt-123")
+	handler.ServeHTTP(rec, req)
+
+	// A generic RFC 9457 client: the standard members plus the code extension.
+	var problem struct {
+		Type     string `json:"type"`
+		Title    string `json:"title"`
+		Status   int    `json:"status"`
+		Detail   string `json:"detail"`
+		Instance string `json:"instance"`
+		Code     string `json:"code"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(rec.Header().Get("Content-Type"))
+	fmt.Printf("%s | %s | %d | %s | %q | %s\n", problem.Type, problem.Title, problem.Status, problem.Detail, problem.Instance, problem.Code)
+	// Output:
+	// application/problem+json
+	// about:blank | Not Found | 404 | task not found | "" | PLN-404
+}
+
 // statusOnlyWriter writes the status code and no body.
 type statusOnlyWriter struct{}
 
