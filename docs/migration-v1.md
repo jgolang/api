@@ -216,7 +216,7 @@ See the README "Logging" section for every record.
 
 **No token echo.** Neither an instance nor the default instance copies the request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) into the response `token` field: plain bodies send `"token":""` and envelope bodies omit `header.token`, for every response kind, 401 included. A token the handler sets on the response (`api.Success{SecurityToken: renewed}`) is still sent, through any formatter. A client that read the token back from responses must keep its own copy, or the handler sets `SecurityToken` from `rctx.SecurityToken`. `RequestHeaderSession` does not copy the `SecurityToken` request header into the response header either; it still answers 401 without it. There is no option to restore the echo.
 
-**Request body limit.** An instance's `Handler` bounds every reader of the request body at 10 MiB (`http.MaxBytesReader`), a handler reading `r.Body` itself included; the default instance bounds only the library's read points. `ProcessRequest`, `RequestBody` and `UnmarshalBody` answer a larger body with 413, code `E002` and the title `Request content too large` (in problem mode, `Request Entity Too Large`). Set another limit with `api.WithMaxBodyBytes(n)`; `n <= 0` is ignored, and `math.MaxInt64` means no practical limit. Nested instance limits combine, so the smallest applies. A custom receiver, or a handler that reads `r.Body` itself, gets the `*http.MaxBytesError` and decides the answer.
+**Request body limit.** An instance's `Handler` bounds every reader of the request body at 10 MiB (`http.MaxBytesReader`), a handler reading `r.Body` itself included; the default instance bounds only the library's read points. `ProcessRequest`, `RequestBody` and `UnmarshalBody` answer a larger body with 413, code `E002` and the title `Request content too large` (in problem mode, `Request Entity Too Large`). Set another limit with `api.WithMaxBodyBytes(n)`; `n <= 0` is ignored, and `math.MaxInt64` means no practical limit. With nested instances the innermost limit applies (since v1.2.0; before, the smallest applied), so a nested instance sets a per-route limit; a limit the service installed itself is never raised. A custom receiver, or a handler that reads `r.Body` itself, gets the `*http.MaxBytesError` and decides the answer.
 
 **Problem details.** `api.WithResponseMode(api.ResponseModeProblem)` (or `SetResponseMode` on the default instance) writes errors as RFC 9457 `application/problem+json`. That includes the library's own rejections: `ProcessRequest`'s invalid body (400, `E002`) and panic (500, `E300`), the token and header middlewares (401, 415) and `RequestBody`. Other responses are written as their content alone. A non-empty `Content-Type` in the response's `Headers` still wins over `application/problem+json`.
 
@@ -247,6 +247,12 @@ v1.2.0 changes how `api.ProcessRequest` runs the handler ([ADR 0003](adr/0003-pr
 
 Check handlers that set headers after writing, and clients that relied on a 400 for non-JSON bodies.
 
+## v1.2.0: the innermost instance's body limit wins
+
+Before v1.2.0 nested instance limits combined and the smallest applied. Now the innermost instance's limit applies, larger or smaller ([ADR 0001](adr/0001-v1-instance-api.md), section 9), so a nested instance sets a per-route limit: a route under `api.New(api.WithMaxBodyBytes(25<<20)).Handler(...)` inside a router-wide `api.New().Handler(mux)` accepts 25 MiB while the other routes keep 10 MiB. A limit the service installed itself (`http.MaxBytesHandler`), or any middleware between the two instances that replaces `r.Body`, keeps its bound, so the inner instance cannot raise past it; and if something outside the inner instance already read part of the body, the inner limit counts the bytes that remain.
+
+Check nested instances whose inner limit is larger than the outer one: a service that relied on the outer limit to cap them now accepts the inner limit, and must lower it.
+
 ## Checklist
 
 - [ ] Upgrade and build. Nothing is removed, so the program compiles.
@@ -263,4 +269,4 @@ Check handlers that set headers after writing, and clients that relied on a 400 
 - [ ] Decide on code case: update clients and alerts to the declared codes, or use `api.WithLowercaseCodes()`.
 - [ ] Give the instance a `*slog.Logger`, or accept that it logs nothing.
 - [ ] Move tests to `a.Handler(h).ServeHTTP` instead of resetting package variables.
-- [ ] v1.2.0: check handlers that set headers after writing, and clients that relied on a 400 for non-JSON bodies ([v1.2.0](#v120-processrequest-writes-through)).
+- [ ] v1.2.0: check handlers that set headers after writing, and clients that relied on a 400 for non-JSON bodies ([v1.2.0](#v120-processrequest-writes-through)), and nested instances whose inner body limit is larger than the outer one ([v1.2.0](#v120-the-innermost-instances-body-limit-wins)).

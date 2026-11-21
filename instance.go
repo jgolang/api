@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -309,9 +310,13 @@ func WithSensitiveLogKeys(keys ...string) Option {
 // *http.MaxBytesError and decides how to answer. A value n <= 0 is ignored
 // and the earlier value or the default stays, so a zero configuration value
 // never removes the bound; pass math.MaxInt64 for no practical limit. A
-// later valid call replaces an earlier one. With nested instances each
-// Handler adds its bound, so the smallest limit applies. The default instance
-// bounds bodies at 10 MiB where the library reads them (ProcessRequest,
+// later valid call replaces an earlier one. With nested instances the
+// innermost Handler's limit applies, larger or smaller than the outer one
+// (since v1.2.0; before, the smallest applied), so a nested instance sets a
+// per-route limit. A limit the service installed itself
+// (http.MaxBytesHandler), or a middleware between the instances that
+// replaces r.Body, keeps its bound. The default instance bounds bodies at
+// 10 MiB where the library reads them (ProcessRequest,
 // RequestBody, ProcessBody, ProcessEncryptedBody, UnmarshalBody); a handler
 // that reads r.Body itself outside an instance is not bounded.
 func WithMaxBodyBytes(n int64) Option {
@@ -396,21 +401,51 @@ func sharedParamValidator(v any) (errMsg string, err error) {
 // the innermost one wins. ProcessRequest and the other middlewares placed
 // outside a.Handler run with the default instance, so they parse with the
 // package-level request mode. Handler bounds the request body with
-// http.MaxBytesReader at the instance's limit (see WithMaxBodyBytes); nested
-// limits combine, so the smallest applies. On a zero or nil API, Handler
-// returns next unchanged.
+// http.MaxBytesReader at the instance's limit (see WithMaxBodyBytes); with
+// nested instances the innermost limit applies, so an instance around one
+// route can raise or lower the limit of an instance around the router. On a
+// zero or nil API, Handler returns next unchanged.
 func (a *API) Handler(next http.Handler) http.Handler {
 	if a == nil || a.core == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(context.WithValue(r.Context(), instanceKey{}, a))
+		ctx := context.WithValue(r.Context(), instanceKey{}, a)
 		// A body-less request keeps http.NoBody, so it costs no allocation.
 		if r.Body != nil && r.Body != http.NoBody {
-			r.Body = http.MaxBytesReader(w, r.Body, a.maxBodyBytes)
+			bound := a.boundBody(w, r)
+			ctx = context.WithValue(ctx, bodyBoundKey{}, bound)
+			r = r.WithContext(ctx)
+			r.Body = bound.bounded
+		} else {
+			r = r.WithContext(ctx)
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// bodyBound records the body a Handler bounded and the reader it set as
+// r.Body, so a nested Handler can bound that body at its own limit: the
+// innermost instance's limit applies. r.Body stays the reader
+// http.MaxBytesReader returns, which net/http's form parsing relies on to
+// lift its own 10 MB cap.
+type bodyBound struct {
+	unbounded io.ReadCloser
+	bounded   io.ReadCloser
+}
+
+type bodyBoundKey struct{}
+
+// boundBody bounds r's body at a's limit. When r.Body is still the reader
+// an outer instance set, a bounds the body under it instead, so a can raise
+// or lower the outer limit. Any other body, a limit the service installed or
+// a middleware's own reader, keeps its bound under a's.
+func (a *API) boundBody(w http.ResponseWriter, r *http.Request) bodyBound {
+	body := r.Body
+	if outer, ok := r.Context().Value(bodyBoundKey{}).(bodyBound); ok && outer.bounded == r.Body {
+		body = outer.unbounded
+	}
+	return bodyBound{unbounded: body, bounded: http.MaxBytesReader(w, body, a.maxBodyBytes)}
 }
 
 type instanceKey struct{}

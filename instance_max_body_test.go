@@ -3,7 +3,9 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -255,7 +257,7 @@ func TestInstanceLimitAboveTheDefaultIsNotCapped(t *testing.T) {
 	}
 }
 
-func TestNestedInstancesApplyTheSmallestLimit(t *testing.T) {
+func TestNestedInstancesApplyTheInnermostLimit(t *testing.T) {
 	small, large := New(WithMaxBodyBytes(16)), New(WithMaxBodyBytes(1024))
 	tests := []struct {
 		name        string
@@ -265,8 +267,9 @@ func TestNestedInstancesApplyTheSmallestLimit(t *testing.T) {
 		wantStatus  int
 		wantReached bool
 	}{
-		{name: "smaller outer", outer: small, inner: large, bodySize: 64, wantStatus: http.StatusRequestEntityTooLarge},
-		{name: "smaller inner", outer: large, inner: small, bodySize: 64, wantStatus: http.StatusRequestEntityTooLarge},
+		{name: "larger inner raises the outer limit", outer: small, inner: large, bodySize: 64, wantStatus: http.StatusOK, wantReached: true},
+		{name: "smaller inner lowers the outer limit", outer: large, inner: small, bodySize: 64, wantStatus: http.StatusRequestEntityTooLarge},
+		{name: "over the inner limit", outer: small, inner: large, bodySize: 2048, wantStatus: http.StatusRequestEntityTooLarge},
 		{name: "under both", outer: small, inner: large, bodySize: 12, wantStatus: http.StatusOK, wantReached: true},
 	}
 	for _, tt := range tests {
@@ -284,4 +287,136 @@ func TestNestedInstancesApplyTheSmallestLimit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInnerInstanceCannotRaiseAServiceLimit(t *testing.T) {
+	var reached bool
+	inner := New(WithMaxBodyBytes(1024)).Handler(ProcessRequest(reachHandler(&reached)))
+	handler := http.MaxBytesHandler(New(WithMaxBodyBytes(16)).Handler(inner), 32)
+
+	rec := serve(handler, http.MethodPost, jsonBodyOfSize(64), nil)
+
+	if rec.Code != http.StatusRequestEntityTooLarge || reached {
+		t.Fatalf("status = %d, reached = %v; want 413 without the handler", rec.Code, reached)
+	}
+}
+
+// TestRaisedLimitParsesALargeURLEncodedForm checks that r.Body stays the
+// reader http.MaxBytesReader returns: net/http's form parser caps any other
+// body at 10 MB, whatever the instance limit.
+func TestRaisedLimitParsesALargeURLEncodedForm(t *testing.T) {
+	const formSize = 11 << 20
+	var parseErr error
+	var fieldSize int
+	inner := New(WithMaxBodyBytes(25 << 20)).Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parseErr = r.ParseForm()
+		fieldSize = len(r.PostForm.Get("a"))
+	}))
+	body := "a=" + strings.Repeat("x", formSize)
+	tests := []struct {
+		name    string
+		handler http.Handler
+	}{
+		{name: "single instance", handler: inner},
+		{name: "nested in a 10 MiB instance", handler: New().Handler(inner)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/form", strings.NewReader(body))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			tt.handler.ServeHTTP(httptest.NewRecorder(), r)
+
+			if parseErr != nil || fieldSize != formSize {
+				t.Fatalf("ParseForm = %v, field size %d; want nil and %d", parseErr, fieldSize, formSize)
+			}
+		})
+	}
+}
+
+// TestInnerInstanceRaisesTheLimitForAnUploadRoute serves an upload route
+// under a 25 MiB instance inside a router-wide instance with the 10 MiB
+// default: the route streams a 25 MiB multipart part, and a sibling route
+// keeps the 10 MiB limit.
+func TestInnerInstanceRaisesTheLimitForAnUploadRoute(t *testing.T) {
+	const uploadLimit = 25 << 20
+	const fileSize = uploadLimit - 64<<10 // about 25 MiB, leaving room for the multipart framing
+
+	var received int64
+	upload := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
+		reader, err := r.MultipartReader()
+		if err != nil {
+			t.Errorf("MultipartReader: %v", err)
+			return
+		}
+		part, err := reader.NextPart()
+		if err != nil {
+			t.Errorf("NextPart: %v", err)
+			return
+		}
+		received, err = io.Copy(io.Discard, part)
+		if err != nil {
+			t.Errorf("reading the part: %v", err)
+			return
+		}
+		Success200().Write(w, r)
+	})
+	var siblingReached bool
+	mux := http.NewServeMux()
+	mux.Handle("POST /files", New(WithMaxBodyBytes(uploadLimit)).Handler(upload))
+	mux.Handle("POST /tasks", ProcessRequest(reachHandler(&siblingReached)))
+	server := serveStream(t, New().Handler(mux))
+
+	t.Run("upload route accepts about 25 MiB", func(t *testing.T) {
+		body, contentType := streamedMultipart(t, fileSize)
+
+		res, err := http.Post(server.URL+"/files", contentType, body)
+		if err != nil {
+			t.Fatalf("POST /files: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK || received != fileSize {
+			t.Fatalf("status = %d, received = %d; want 200 and %d bytes", res.StatusCode, received, fileSize)
+		}
+	})
+
+	t.Run("sibling route keeps 10 MiB", func(t *testing.T) {
+		res, err := http.Post(server.URL+"/tasks", "application/json", strings.NewReader(jsonBodyOfSize(uploadLimit)))
+		if err != nil {
+			t.Fatalf("POST /tasks: %v", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusRequestEntityTooLarge || siblingReached {
+			t.Fatalf("status = %d, reached = %v; want 413 without the handler", res.StatusCode, siblingReached)
+		}
+	})
+}
+
+// streamedMultipart returns a multipart body with one file part of size
+// bytes, written through a pipe so the client streams it.
+func streamedMultipart(t *testing.T, size int) (io.Reader, string) {
+	t.Helper()
+	pipeReader, pipeWriter := io.Pipe()
+	form := multipart.NewWriter(pipeWriter)
+	go func() {
+		part, err := form.CreateFormFile("file", "upload.bin")
+		if err == nil {
+			_, err = io.CopyN(part, zeroReader{}, int64(size))
+		}
+		if err == nil {
+			err = form.Close()
+		}
+		pipeWriter.CloseWithError(err)
+	}()
+	return pipeReader, form.FormDataContentType()
+}
+
+// zeroReader yields zero bytes forever.
+type zeroReader struct{}
+
+func (zeroReader) Read(b []byte) (int, error) {
+	clear(b)
+	return len(b), nil
 }
