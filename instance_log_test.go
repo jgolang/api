@@ -183,6 +183,9 @@ func TestInstanceURIMaskingAgreesWithTheDefaultInstance(t *testing.T) {
 		{name: "slash in the password", uri: "http://u:S4c/x@host/p", want: "http://[REDACTED]@host/p"},
 		{name: "question mark in the password", uri: "http://u:S4d?x@host/p", want: "http://[REDACTED]@host/p"},
 		{name: "network-path", uri: "//u:p@host/p", want: "//[REDACTED]@host/p"},
+		{name: "oauth code", uri: "/callback?code=C0DE&state=s", want: "/callback?code=[REDACTED]&state=s"},
+		{name: "presigned url signature", uri: "/obj?X-Amz-Expires=60&X-Amz-Signature=5160&x=1", want: "/obj?X-Amz-Expires=60&X-Amz-Signature=[REDACTED]&x=1"},
+		{name: "sig", uri: "/share?sig=AbC&sv=2024", want: "/share?sig=[REDACTED]&sv=2024"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -217,13 +220,15 @@ func TestHeaderMaskingAgreesWithTheDefaultInstance(t *testing.T) {
 		{name: "referer with token", header: "Referer", values: []string{"https://app.example/cb?token=referer-secret&page=2"}, want: []string{"https://app.example/cb?token=[REDACTED]&page=2"}, secret: "referer-secret"},
 		{name: "origin with user info", header: "Origin", values: []string{"https://u:origin-secret@app.example"}, want: []string{"https://[REDACTED]@app.example"}, secret: "origin-secret"},
 		{name: "origin-form", header: "X-Original-Url", values: []string{"/login?password=original-secret"}, want: []string{"/login?password=[REDACTED]"}, secret: "original-secret"},
-		{name: "network-path", header: "X-Forwarded-Uri", values: []string{"//u:forwarded-secret@host/p?code=1"}, want: []string{"//[REDACTED]@host/p?code=1"}, secret: "forwarded-secret"},
+		{name: "network-path", header: "X-Forwarded-Uri", values: []string{"//u:forwarded-secret@host/p?page=1"}, want: []string{"//[REDACTED]@host/p?page=1"}, secret: "forwarded-secret"},
 		{name: "link", header: "Link", values: []string{`<https://api.example/items?page=2&api_key=link-secret>; rel="next"`}, want: []string{"<https://api.example/items?page=2&api_key=[REDACTED]"}, secret: "link-secret"},
 		{name: "query-only value", header: "X-Search", values: []string{"q?token=search-secret"}, want: []string{"q?token=[REDACTED]"}, secret: "search-secret"},
 		{name: "several values", header: "Referer", values: []string{"https://a.example/?token=first-secret", "https://b.example/?token=first-secret"}, want: []string{"https://a.example/?token=[REDACTED]", "https://b.example/?token=[REDACTED]"}, secret: "first-secret"},
 		{name: "link list", header: "Link", values: []string{`<https://api.example/items?page=2>; rel="next", <https://u:link-pass@api.example/items?api_key=list-secret>; rel="last"`}, want: []string{`<https://[REDACTED]@api.example/items?api_key=[REDACTED]`}, secret: "list-secret"},
 		{name: "comma in a query value", header: "Referer", values: []string{"https://app.example/?ids=1,2&token=comma-secret"}, want: []string{"https://app.example/?ids=1,2&token=[REDACTED]"}, secret: "comma-secret"},
 		{name: "url in a query value", header: "Referer", values: []string{"https://app.example/?next=/cb?token=nested-secret"}, want: []string{"https://app.example/?next=/cb?token=[REDACTED]"}, secret: "nested-secret"},
+		{name: "referer with oauth code", header: "Referer", values: []string{"https://app.example/cb?code=oauth-secret&state=s"}, want: []string{"https://app.example/cb?code=[REDACTED]&state=s"}, secret: "oauth-secret"},
+		{name: "presigned url signature", header: "Referer", values: []string{"https://bucket.example/o?X-Amz-Signature=amz-secret&sig=sas-secret"}, want: []string{"https://bucket.example/o?X-Amz-Signature=[REDACTED]&sig=[REDACTED]"}, secret: "-secret"},
 		{name: "user agent", header: "User-Agent", values: []string{"Mozilla/5.0 (X11; Linux) Firefox/120.0"}, want: []string{"Mozilla/5.0 (X11; Linux) Firefox/120.0"}},
 		{name: "accept", header: "Accept", values: []string{"text/html;q=0.9"}, want: []string{"text/html;q=0.9"}},
 		{name: "from", header: "From", values: []string{"ops@example.com"}, want: []string{"ops@example.com"}},
@@ -813,7 +818,7 @@ func TestInstancesLogOnlyToTheirOwnLogger(t *testing.T) {
 }
 
 func TestInstanceDefaultSensitiveLogKeys(t *testing.T) {
-	want := []string{"authorization", "token", "password", "secret", "credential", "apikey", "api-key", "key", "cookie", "session"}
+	want := []string{"authorization", "token", "password", "secret", "credential", "apikey", "api-key", "key", "cookie", "session", "code", "signature", "sig"}
 
 	if got := New().sensitiveLogKeys; !slices.Equal(got, want) {
 		t.Fatalf("instance keys = %q, want %q", got, want)
@@ -846,7 +851,7 @@ func TestWithSensitiveLogKeysRepeatedKey(t *testing.T) {
 	if strings.Contains(buf.String(), "1234") {
 		t.Fatalf("Pin not masked: %s", buf)
 	}
-	if !slices.Equal(a.sensitiveLogKeys[:10], instanceSensitiveLogKeys(nil)) {
+	if defaults := instanceSensitiveLogKeys(nil); !slices.Equal(a.sensitiveLogKeys[:len(defaults)], defaults) {
 		t.Fatalf("keys = %q, want the defaults first", a.sensitiveLogKeys)
 	}
 }
