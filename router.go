@@ -6,32 +6,38 @@ import (
 	"github.com/jgolang/api/doc"
 )
 
-// Router is the minimal contract implemented by router adapters.
+// Router is the minimal contract implemented by router adapters. Handle may
+// panic on a conflicting or invalid route, as stdadapter does.
 type Router interface {
 	Handle(method string, path string, handler http.HandlerFunc, opts ...doc.RouteOption)
 }
 
-// Get registers a GET route in a router adapter.
+// Get registers a GET route in a router adapter. It panics if the router
+// panics on a conflicting or invalid route, as stdadapter does.
 func Get(router Router, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
 	router.Handle(http.MethodGet, path, handler, opts...)
 }
 
-// Post registers a POST route in a router adapter.
+// Post registers a POST route in a router adapter. It panics if the router
+// panics on a conflicting or invalid route, as stdadapter does.
 func Post(router Router, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
 	router.Handle(http.MethodPost, path, handler, opts...)
 }
 
-// Put registers a PUT route in a router adapter.
+// Put registers a PUT route in a router adapter. It panics if the router
+// panics on a conflicting or invalid route, as stdadapter does.
 func Put(router Router, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
 	router.Handle(http.MethodPut, path, handler, opts...)
 }
 
-// Patch registers a PATCH route in a router adapter.
+// Patch registers a PATCH route in a router adapter. It panics if the router
+// panics on a conflicting or invalid route, as stdadapter does.
 func Patch(router Router, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
 	router.Handle(http.MethodPatch, path, handler, opts...)
 }
 
-// Delete registers a DELETE route in a router adapter.
+// Delete registers a DELETE route in a router adapter. It panics if the router
+// panics on a conflicting or invalid route, as stdadapter does.
 func Delete(router Router, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
 	router.Handle(http.MethodDelete, path, handler, opts...)
 }
