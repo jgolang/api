@@ -102,3 +102,20 @@ func BenchmarkProcessRequest(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkRedactHeaders measures masking a typical request header set: a
+// sensitive name, two values without URL shape and a Referer with a query.
+func BenchmarkRedactHeaders(b *testing.B) {
+	headers := http.Header{
+		"Authorization": []string{"Bearer placeholder"},
+		"Accept":        []string{"application/json"},
+		"User-Agent":    []string{"Mozilla/5.0 (X11; Linux) Firefox/120.0"},
+		"Referer":       []string{"https://app.example/cb?token=placeholder&page=2"},
+	}
+	sensitiveKeys := defaultSensitiveLogKeys()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		redactHeaders(headers, sensitiveKeys)
+	}
+}

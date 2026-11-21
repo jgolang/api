@@ -431,9 +431,11 @@ func defaultSensitiveLogKeys() []string {
 
 // LogRequest prints API request in log. The values of sensitive headers,
 // JSON body fields, query parameters in uri and form fields are masked (see
-// SensitiveLogKeys), as is the user information of an absolute-form uri. A
-// request body that is not JSON is logged as its size unless PrintFullEvent
-// is true. The package no longer calls it: ProcessRequest logs through
+// SensitiveLogKeys), as is the user information of an absolute-form uri.
+// Other header values have the query values after each "?" masked the same
+// way, and the user information too when they carry a URL (Referer, Origin,
+// X-Original-URL, ...). A request body that is not JSON is logged as its
+// size unless PrintFullEvent is true. The package no longer calls it: ProcessRequest logs through
 // slog.Default, or through the instance's WithLogger logger.
 //
 // Deprecated: use api.New(api.WithLogger(...)) instead.
@@ -518,7 +520,8 @@ func sanitizeHeadersForLog(headers http.Header) http.Header {
 }
 
 // redactHeaders returns a copy of headers with the values of the headers
-// whose name matches sensitiveKeys replaced by redactedLogValue.
+// whose name matches sensitiveKeys replaced by redactedLogValue, and the other
+// values masked by redactHeaderValue.
 func redactHeaders(headers http.Header, sensitiveKeys []string) http.Header {
 	sanitized := make(http.Header, len(headers))
 	for key, values := range headers {
@@ -526,7 +529,11 @@ func redactHeaders(headers http.Header, sensitiveKeys []string) http.Header {
 			sanitized[key] = []string{redactedLogValue}
 			continue
 		}
-		sanitized[key] = append([]string(nil), values...)
+		redacted := make([]string, len(values))
+		for i, value := range values {
+			redacted[i] = redactHeaderValue(value, sensitiveKeys)
+		}
+		sanitized[key] = redacted
 	}
 	return sanitized
 }
@@ -583,6 +590,36 @@ func redactURI(uri string, sensitiveKeys []string) string {
 		redacted += "?" + redactQuery(query, sensitiveKeys)
 	}
 	return redactUserInfo(redacted, uri)
+}
+
+// redactHeaderValue masks a header value that carries a URL as uri is
+// masked. The shape decides, not the header name, so custom proxy headers
+// (X-Original-URI, X-Envoy-Original-Path, ...) are covered too. Every "?"
+// starts a query that runs to the next "?", so each URL of a value that holds
+// several (a Link list) has its sensitive query values masked; a value that
+// starts with "/" or contains "://" also has its user information masked, as
+// in uri. A value with neither "?" nor "@" is kept as is, and so is an "@"
+// without URL shape (From: ops@example.com). A non-URL value with "?" or
+// "://" may be over-masked, the safe direction.
+func redactHeaderValue(value string, sensitiveKeys []string) string {
+	if !strings.ContainsAny(value, "?@") {
+		return value
+	}
+	redacted := redactEveryQuery(value, sensitiveKeys)
+	if strings.HasPrefix(value, "/") || strings.Contains(value, "://") {
+		return redactUserInfo(redacted, value)
+	}
+	return redacted
+}
+
+// redactEveryQuery masks, with redactQuery, the text after each "?" of value
+// up to the next "?".
+func redactEveryQuery(value string, sensitiveKeys []string) string {
+	parts := strings.Split(value, "?")
+	for i := 1; i < len(parts); i++ {
+		parts[i] = redactQuery(parts[i], sensitiveKeys)
+	}
+	return strings.Join(parts, "?")
 }
 
 // redactUserInfo replaces the user information of target with

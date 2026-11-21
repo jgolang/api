@@ -243,7 +243,7 @@ const maxErrorStatus = 599
 // rejections (body-parse failures in RequestBody and ProcessRequest, the
 // token middlewares' 401s, ProcessRequest's panic 500) do not. A panic in fn
 // is not recovered: it propagates out of WriteError with nothing written.
-// Under ProcessRequest it answers 500 and is logged, with the panic value,
+// Under ProcessRequest it answers 500 and is logged, with the panic type,
 // through the instance's WithLogger logger; nothing is logged without one.
 // fn is shared by all
 // requests the instance serves and may run concurrently, so it must be safe
@@ -261,10 +261,13 @@ func WithErrorHook(fn func(r *http.Request, err error, status int)) Option {
 // panic, a response that cannot be encoded) are written as error records.
 // Request and response bodies and the parsed form are never logged. Header
 // and query values whose key is sensitive (see WithSensitiveLogKeys) are
-// masked, as is the user information of an absolute-form URI; a failed
-// Get*Value* helper logs the name as "key" and, for a sensitive name, only
-// the kind of error, never the value. A panic with http.ErrAbortHandler is a
-// "handler aborted" debug record instead of an error record.
+// masked, as is the user information of an absolute-form URI; other header
+// values have the query values after each "?" masked the same way, and the
+// user information too when they carry a URL; a failed Get*Value* helper logs the name as "key" and, for a sensitive name, only
+// the kind of error, never the value. A recovered panic logs its Go type as
+// "panic_type" and its value only for a runtime.Error. A panic with
+// http.ErrAbortHandler is a "handler aborted" debug record instead of an
+// error record.
 // The built-in writer's records carry no request context or event_id, since
 // core.APIResponseWriter.Write receives no request.
 // Without it, or with nil, the instance writes no logs. A later WithLogger

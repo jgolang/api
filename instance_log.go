@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -82,7 +84,8 @@ func sensitiveValueError(err error) string {
 
 // logRequest logs the request ProcessRequest received. It never logs the
 // body or the parsed form (it may come from the body) and masks the query
-// values whose key is sensitive.
+// values whose key is sensitive, in uri and in header values that carry a URL
+// (see redactHeaders).
 func (a *API) logRequest(r *http.Request, eventID string) {
 	if !a.logs(r.Context(), slog.LevelInfo) {
 		return
@@ -114,9 +117,13 @@ func (a *API) logResponse(r *http.Request, eventID string, rec *httptest.Respons
 	)
 }
 
-// logPanic logs a panic ProcessRequest recovered, with the panic value and
-// the event ID. A panic with http.ErrAbortHandler is a deliberate abort, so
-// it is logged at debug level as "handler aborted".
+// logPanic logs a panic ProcessRequest recovered, with the event ID, the
+// panic value's Go type as "panic_type" and, as "panic", the value itself
+// only for a runtime.Error. Any other value (panic(err) of a failed parse,
+// a formatted string) may carry request data, and masking by key cannot
+// apply to an opaque value, so it is logged as redactedLogValue. A panic
+// with http.ErrAbortHandler is a deliberate abort, so it is logged at debug
+// level as "handler aborted", under the same rule.
 func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 	level, msg := slog.LevelError, "panic recovered"
 	if err, ok := recovered.(error); ok && errors.Is(err, http.ErrAbortHandler) {
@@ -125,9 +132,14 @@ func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 	if !a.logs(r.Context(), level) {
 		return
 	}
+	panicAttr := slog.String("panic", redactedLogValue)
+	if runtimeErr, ok := recovered.(runtime.Error); ok {
+		panicAttr = slog.Any("panic", runtimeErr)
+	}
 	a.log().LogAttrs(r.Context(), level, msg,
 		slog.String("event_id", eventID),
-		slog.Any("panic", recovered),
+		panicAttr,
+		slog.String("panic_type", fmt.Sprintf("%T", recovered)),
 	)
 }
 

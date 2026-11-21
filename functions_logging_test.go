@@ -53,6 +53,21 @@ func TestLogRequestRedactsSensitiveHeadersAndJSONBody(t *testing.T) {
 	}
 }
 
+func TestLogRequestRedactsURLValuedHeaders(t *testing.T) {
+	headers := http.Header{"Referer": []string{"https://app.example/cb?token=referer-token&page=2"}}
+
+	output := captureLogOutput(t, func() {
+		LogRequest(http.MethodGet, "/tasks", "event-id", "", headers, nil)
+	})
+
+	if strings.Contains(output, "referer-token") {
+		t.Fatalf("expected the referer token to be redacted, got %q", output)
+	}
+	if !strings.Contains(output, `cb?token=[REDACTED]\u0026page=2`) {
+		t.Fatalf("expected the referer query masked as in uri, got %q", output)
+	}
+}
+
 func TestFormatBodyForLogTruncatesSanitizedBody(t *testing.T) {
 	previousMaxLoggedBodyBytes := MaxLoggedBodyBytes
 	previousPrintFullEvent := PrintFullEvent

@@ -203,6 +203,63 @@ func TestInstanceURIMaskingAgreesWithTheDefaultInstance(t *testing.T) {
 	}
 }
 
+// TestHeaderMaskingAgreesWithTheDefaultInstance checks that the default
+// instance and an instance mask URL-valued header values as they mask uri,
+// and keep the other values.
+func TestHeaderMaskingAgreesWithTheDefaultInstance(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string
+		values []string
+		want   []string
+		secret string
+	}{
+		{name: "referer with token", header: "Referer", values: []string{"https://app.example/cb?token=referer-secret&page=2"}, want: []string{"https://app.example/cb?token=[REDACTED]&page=2"}, secret: "referer-secret"},
+		{name: "origin with user info", header: "Origin", values: []string{"https://u:origin-secret@app.example"}, want: []string{"https://[REDACTED]@app.example"}, secret: "origin-secret"},
+		{name: "origin-form", header: "X-Original-Url", values: []string{"/login?password=original-secret"}, want: []string{"/login?password=[REDACTED]"}, secret: "original-secret"},
+		{name: "network-path", header: "X-Forwarded-Uri", values: []string{"//u:forwarded-secret@host/p?code=1"}, want: []string{"//[REDACTED]@host/p?code=1"}, secret: "forwarded-secret"},
+		{name: "link", header: "Link", values: []string{`<https://api.example/items?page=2&api_key=link-secret>; rel="next"`}, want: []string{"<https://api.example/items?page=2&api_key=[REDACTED]"}, secret: "link-secret"},
+		{name: "query-only value", header: "X-Search", values: []string{"q?token=search-secret"}, want: []string{"q?token=[REDACTED]"}, secret: "search-secret"},
+		{name: "several values", header: "Referer", values: []string{"https://a.example/?token=first-secret", "https://b.example/?token=first-secret"}, want: []string{"https://a.example/?token=[REDACTED]", "https://b.example/?token=[REDACTED]"}, secret: "first-secret"},
+		{name: "link list", header: "Link", values: []string{`<https://api.example/items?page=2>; rel="next", <https://u:link-pass@api.example/items?api_key=list-secret>; rel="last"`}, want: []string{`<https://[REDACTED]@api.example/items?api_key=[REDACTED]`}, secret: "list-secret"},
+		{name: "comma in a query value", header: "Referer", values: []string{"https://app.example/?ids=1,2&token=comma-secret"}, want: []string{"https://app.example/?ids=1,2&token=[REDACTED]"}, secret: "comma-secret"},
+		{name: "url in a query value", header: "Referer", values: []string{"https://app.example/?next=/cb?token=nested-secret"}, want: []string{"https://app.example/?next=/cb?token=[REDACTED]"}, secret: "nested-secret"},
+		{name: "user agent", header: "User-Agent", values: []string{"Mozilla/5.0 (X11; Linux) Firefox/120.0"}, want: []string{"Mozilla/5.0 (X11; Linux) Firefox/120.0"}},
+		{name: "accept", header: "Accept", values: []string{"text/html;q=0.9"}, want: []string{"text/html;q=0.9"}},
+		{name: "from", header: "From", values: []string{"ops@example.com"}, want: []string{"ops@example.com"}},
+		{name: "sensitive name", header: "Authorization", values: []string{"Bearer x"}, want: []string{redactedLogValue}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defaultBuf := captureDefaultLogger(t)
+			logger, buf := newRecordingLogger()
+			instance := New(WithLogger(logger))
+			newRequest := func() *http.Request {
+				req := newRawURIRequest("/tasks")
+				req.Header[tt.header] = tt.values
+				return req
+			}
+
+			ProcessRequest(okHandler).ServeHTTP(httptest.NewRecorder(), newRequest())
+			instance.Handler(ProcessRequest(okHandler)).ServeHTTP(httptest.NewRecorder(), newRequest())
+
+			for name, records := range map[string]*bytes.Buffer{"default instance": defaultBuf, "instance": buf} {
+				headers := recordNamed(t, decodeRecords(t, records), "request")["headers"].(map[string]any)
+				var got []string
+				for _, value := range headers[tt.header].([]any) {
+					got = append(got, value.(string))
+				}
+				if !slices.Equal(got, tt.want) {
+					t.Errorf("%s %s = %q, want %q", name, tt.header, got, tt.want)
+				}
+				if tt.secret != "" && strings.Contains(records.String(), tt.secret) {
+					t.Errorf("%s records contain %q: %s", name, tt.secret, records)
+				}
+			}
+		})
+	}
+}
+
 // newRawURIRequest returns a GET request whose RequestURI is uri as sent,
 // which httptest.NewRequest would parse and rebuild.
 func newRawURIRequest(uri string) *http.Request {
@@ -443,18 +500,83 @@ func TestInstanceLogsRecoveredPanic(t *testing.T) {
 	}
 	records := decodeRecords(t, buf)
 	record := recordNamed(t, records, "panic recovered")
-	if record["level"] != "ERROR" || record["panic"] != "boom" {
-		t.Fatalf("record = %v, want an error record with panic=boom", record)
+	if record["level"] != "ERROR" || record["panic"] != redactedLogValue || record["panic_type"] != "string" {
+		t.Fatalf("record = %v, want an error record with panic=%s and panic_type=string", record, redactedLogValue)
 	}
 	if record["event_id"] != recordNamed(t, records, "request")["event_id"] {
 		t.Fatalf("event_id = %v, want the request's", record["event_id"])
 	}
 	keys := slices.Sorted(maps.Keys(record))
-	if want := []string{"event_id", "level", "msg", "panic", "time"}; !slices.Equal(keys, want) {
+	if want := []string{"event_id", "level", "msg", "panic", "panic_type", "time"}; !slices.Equal(keys, want) {
 		t.Fatalf("panic record keys = %q, want %q", keys, want)
 	}
 	if strings.Contains(buf.String(), "Not response") || strings.Contains(buf.String(), "&{") {
 		t.Fatalf("records dump the request: %s", buf)
+	}
+}
+
+// TestInstanceLogsPanicValueOnlyForRuntimeErrors checks that a recovered
+// panic logs its value only when the runtime built it: any other value may
+// carry request data, so it is masked and only its type is logged.
+func TestInstanceLogsPanicValueOnlyForRuntimeErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		panicWith func()
+		wantPanic string
+		wantType  string
+		secret    string
+	}{
+		{
+			name:      "string",
+			panicWith: func() { panic("boom") },
+			wantPanic: redactedLogValue,
+			wantType:  "string",
+			secret:    "boom",
+		},
+		{
+			name:      "error with a secret",
+			panicWith: func() { panic(fmt.Errorf("bad token %q", "S3")) },
+			wantPanic: redactedLogValue,
+			wantType:  "*errors.errorString",
+			secret:    "S3",
+		},
+		{
+			name: "nil map write",
+			panicWith: func() {
+				var counts map[string]int
+				counts["tasks"]++
+			},
+			wantPanic: "assignment to entry in nil map",
+			wantType:  "runtime.plainError",
+		},
+		{
+			name: "index out of range",
+			panicWith: func() {
+				items, index := []int{1}, 3
+				_ = items[index]
+			},
+			wantPanic: "runtime error: index out of range [3] with length 1",
+			wantType:  "runtime.boundsError",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, buf := newRecordingLogger()
+			handler := ProcessRequest(func(http.ResponseWriter, *http.Request) { tt.panicWith() })
+
+			rec := serve(New(WithLogger(logger)).Handler(handler), http.MethodGet, "", nil)
+
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500", rec.Code)
+			}
+			record := recordNamed(t, decodeRecords(t, buf), "panic recovered")
+			if record["panic"] != tt.wantPanic || record["panic_type"] != tt.wantType {
+				t.Fatalf("panic = %v, panic_type = %v, want %q, %q", record["panic"], record["panic_type"], tt.wantPanic, tt.wantType)
+			}
+			if tt.secret != "" && strings.Contains(buf.String(), tt.secret) {
+				t.Fatalf("records contain the panic value %q: %s", tt.secret, buf)
+			}
+		})
 	}
 }
 
