@@ -1,0 +1,147 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Tasks API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/projects/{projectID}/tasks": {
+      "post": {
+        "operationId": "createTask",
+        "summary": "Create a task",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "Client request ID for tracing",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectID",
+            "in": "path",
+            "required": true,
+            "description": "Project that owns the task",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "notify",
+            "in": "query",
+            "description": "Notify the project members",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectTaskRequest"
+              },
+              "example": {
+                "title": "Write docs",
+                "priority": "high"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "description": "URL of the created task",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskResponse"
+                },
+                "example": {
+                  "id": 42,
+                  "priority": "high",
+                  "projectId": "7",
+                  "title": "Write docs"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The title is missing or the body is not valid JSON"
+          },
+          "401": {
+            "description": "The bearer token is missing or invalid"
+          },
+          "500": {
+            "description": "Unexpected server error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "CreateProjectTaskRequest": {
+        "type": "object",
+        "properties": {
+          "priority": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "ProjectTaskResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "title"
+        ]
+      }
+    }
+  }
+}
