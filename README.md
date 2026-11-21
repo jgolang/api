@@ -294,6 +294,12 @@ See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, respon
 - `api.BasicToken` with the default validator accepts the publicly known credentials `default:default` until you set `api.Username` and `api.Password` (or replace `api.ValidateBasicAuthCredentialsFunc`). Set them before exposing a route. The default validator compares credentials in constant time; a custom one should too (`crypto/subtle`). After a successful check, `BasicToken` copies the user name and the plain password into the `Basic-Client` and `Basic-Secret` request headers; do not forward or log those headers.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
 - Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
+- `api.ProcessRequest` stores the value of the `X-Forwarded-For` header up to its first `", "` as the `proxiedIPAddress` info value (and, when the request has no device UUID, as the event ID input). Only the first `X-Forwarded-For` header line is read. That value is set by the client: trust it only behind a proxy that overwrites the header, and do not use it on its own for rate limits, allow lists or audit.
+- The package sets no limit on the request body size: `api.ProcessRequest` and the request receivers read the whole body into memory. Bound it before they run, with `http.MaxBytesHandler` (or `http.MaxBytesReader` in a middleware) or a proxy limit:
+
+  ```go
+  mux.Handle("POST /tasks", http.MaxBytesHandler(api.ProcessRequest(createTask), 1<<20)) // 1 MiB
+  ```
 
 ## Trace IDs
 
