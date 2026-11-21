@@ -63,3 +63,47 @@ func TestResponseWriterKeepsStatusAndHeadersOnSuccess(t *testing.T) {
 		t.Fatalf("expected encoded content, got %q", res.Body.String())
 	}
 }
+
+// Warning and Informative default to status 100, which allows no body, so
+// writing the body fails. The failure must be reported, not exit the process.
+func TestResponseWriterReportsWriteFailureForDefaultStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		response Response
+	}{
+		{name: "Warning", response: Warning{}},
+		{name: "Informative", response: Informative{}},
+		{name: "Warning under ProcessRequest", response: processedResponse{Warning{}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			previousFatal, previousPrintError := Fatal, PrintError
+			var fatalCalled bool
+			var logged string
+			Fatal = func(...interface{}) { fatalCalled = true }
+			PrintError = func(args ...interface{}) { logged += fmt.Sprintln(args...) }
+			defer func() { Fatal, PrintError = previousFatal, previousPrintError }()
+
+			req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+			res := httptest.NewRecorder()
+			tt.response.Write(res, req)
+
+			if fatalCalled {
+				t.Fatal("expected Fatal not to be called")
+			}
+			if res.Code != http.StatusContinue {
+				t.Fatalf("expected the default status 100 to be kept, got %d", res.Code)
+			}
+			if !strings.Contains(logged, http.ErrBodyNotAllowed.Error()) {
+				t.Fatalf("expected the write error to be logged, got %q", logged)
+			}
+		})
+	}
+}
+
+// processedResponse writes its response from a handler run by ProcessRequest.
+type processedResponse struct{ response Response }
+
+func (p processedResponse) Write(w http.ResponseWriter, r *http.Request) {
+	ProcessRequest(func(w http.ResponseWriter, r *http.Request) { p.response.Write(w, r) })(w, r)
+}
