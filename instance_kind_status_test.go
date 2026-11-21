@@ -173,6 +173,17 @@ func TestWithKindStatusLaterCallForTheSameKindWins(t *testing.T) {
 	}
 }
 
+func TestWithKindStatusIgnoredCallKeepsTheEarlierOverride(t *testing.T) {
+	a := New(
+		WithKindStatus(codes.KindValidation, http.StatusUnprocessableEntity),
+		WithKindStatus(codes.KindValidation, http.StatusOK),
+	)
+
+	if got := writeErrorStatus(a, errors.NewC(planValidation, "title")); got != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", got, http.StatusUnprocessableEntity)
+	}
+}
+
 func TestWithKindStatusTitleFollowsTheDecidedStatus(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -180,6 +191,8 @@ func TestWithKindStatusTitleFollowsTheDecidedStatus(t *testing.T) {
 		wantTitle string
 	}{
 		{"500 takes the internal title", http.StatusInternalServerError, InternalServerTitle},
+		{"503 takes the internal title", http.StatusServiceUnavailable, InternalServerTitle},
+		{"501 takes the internal title", http.StatusNotImplemented, InternalServerTitle},
 		{"403 takes the unauthorized title", http.StatusForbidden, UnauthorizedTitle},
 		{"401 takes the unauthorized title", http.StatusUnauthorized, UnauthorizedTitle},
 		{"other status takes the default title", http.StatusLocked, DefaultErrorTitle},

@@ -32,8 +32,8 @@ func StatusForKind(kind codes.Kind) int {
 // WriteError writes err as an error response. The response code, message
 // and status all come from errors.CodeOf(err): the status is the request
 // instance's WithKindStatus override for the code's kind, else StatusForKind
-// of that kind, with the internal title for 500 and the unauthorized title
-// for 401 and 403 like Error500, Error401 and Error403. An error without a
+// of that kind, with the internal title for any 5xx and the unauthorized
+// title for 401 and 403 like Error500, Error501, Error401 and Error403. An error without a
 // code, and a nil err, answer 500 with the Error500 defaults. When the
 // instance has a WithErrorHook, WriteError calls it with err and the status
 // before writing.
@@ -67,12 +67,16 @@ func errorResponseFor(err error, statusFor func(codes.Kind) int) Error {
 	status := statusFor(kind)
 
 	response := Error{HTTPStatusCode: status}
-	switch status {
-	case http.StatusInternalServerError:
+	switch {
+	case status == http.StatusInternalServerError:
 		response.Title = InternalServerTitle
 		response.Message = InternalServerMessage
 		response.ResponseCode = ResponseCodes.InternalServerEerror
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case status > http.StatusInternalServerError:
+		// Only a WithKindStatus override reaches another 5xx; titled like Error501.
+		response.Title = InternalServerTitle
+		response.Message = InternalServerMessage
+	case status == http.StatusUnauthorized, status == http.StatusForbidden:
 		response.Title = UnauthorizedTitle
 	}
 	if coder != nil {
