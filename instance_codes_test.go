@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -86,7 +87,6 @@ func TestInstanceCodeCase(t *testing.T) {
 	for _, mode := range []ResponseMode{ResponseModePlain, ResponseModeEnvelope} {
 		for _, tt := range tests {
 			t.Run(string(mode)+"/"+tt.name, func(t *testing.T) {
-				useFormatterSettings(t, true)
 				usePackageModes(t, RequestModePlain, mode)
 				a := tt.instance(mode)
 
@@ -122,7 +122,6 @@ func TestBuiltInFormatterPassedAsOptionTakesTheInstanceCodeCase(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			useFormatterSettings(t, true)
 			opts := []Option{WithResponseFormatter(tt.formatter)}
 			if tt.lowercase {
 				opts = append(opts, WithLowercaseCodes())
@@ -149,7 +148,6 @@ func TestLowercaseCodesDoesNotApplyToACustomFormatter(t *testing.T) {
 }
 
 func TestInstancesServeConcurrentlyWithTheirOwnCodeCase(t *testing.T) {
-	useFormatterSettings(t, true)
 	handlers := map[string]http.Handler{
 		"PLN-001": New().Handler(codeWriters["WriteError"]),
 		"pln-001": New(WithLowercaseCodes()).Handler(codeWriters["WriteError"]),
@@ -175,4 +173,94 @@ func TestInstancesServeConcurrentlyWithTheirOwnCodeCase(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// usePackageFormatterSettings sets TraceVisibility, TraceIDLength and
+// BlankSuccess for one test and restores them afterwards.
+func usePackageFormatterSettings(t *testing.T, visibility, idLength int, blankSuccess bool) {
+	t.Helper()
+	oldVisibility, oldLength, oldBlank := TraceVisibility, TraceIDLength, BlankSuccess
+	TraceVisibility, TraceIDLength, BlankSuccess = visibility, idLength, blankSuccess
+	t.Cleanup(func() {
+		TraceVisibility, TraceIDLength, BlankSuccess = oldVisibility, oldLength, oldBlank
+	})
+}
+
+// An instance uses the v0 defaults (1, 6, true); only the default instance
+// reads the package formatter settings (ADR 0001, owner Q13).
+func TestInstanceIgnoresPackageFormatterSettings(t *testing.T) {
+	tests := []struct {
+		visibility, idLength int
+		blankSuccess         bool
+		wantDefaultMessage   string
+	}{
+		{1, 6, true, "title is required (evt-12-pln-001)"},
+		{0, 6, true, "title is required"},
+		{2, 6, true, "title is required (pln-001)"},
+		{3, 3, true, "title is required (evt)"},
+		{1, 3, false, "title is required (evt-pln-001)"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d/%d/%t", tt.visibility, tt.idLength, tt.blankSuccess), func(t *testing.T) {
+			usePackageFormatterSettings(t, tt.visibility, tt.idLength, tt.blankSuccess)
+
+			for name, a := range map[string]*API{"New()": New(), "New(WithLowercaseCodes())": New(WithLowercaseCodes())} {
+				want := "title is required (evt-12-PLN-001)"
+				if name != "New()" {
+					want = "title is required (evt-12-pln-001)"
+				}
+				if _, message := serveCode(t, a, "WriteError"); message != want {
+					t.Errorf("%s message = %q, want %q", name, message, want)
+				}
+				if _, message := serveCode(t, a, "Success"); message != "" {
+					t.Errorf("%s success message = %q, want blank", name, message)
+				}
+			}
+			if _, message := serveCode(t, nil, "WriteError"); message != tt.wantDefaultMessage {
+				t.Errorf("default instance message = %q, want %q", message, tt.wantDefaultMessage)
+			}
+			if _, message := serveCode(t, nil, "Success"); (message == "") != tt.blankSuccess {
+				t.Errorf("default instance success message = %q, BlankSuccess %t", message, tt.blankSuccess)
+			}
+		})
+	}
+}
+
+// embeddedFormatter is a custom formatter that embeds the built-in one.
+type embeddedFormatter struct{ ResponseFormatter }
+
+func TestEmbeddedFormatterLowercasesAndUsesThePackageMode(t *testing.T) {
+	usePackageModes(t, RequestModePlain, ResponseModePlain)
+	a := New(WithResponseMode(ResponseModeEnvelope), WithResponseFormatter(embeddedFormatter{}))
+
+	rec := serve(a.Handler(codeWriters["WriteError"]), http.MethodGet, "", nil)
+
+	if got := responseModeOf(rec.Body.Bytes()); got != ResponseModePlain {
+		t.Errorf("response mode = %q, want the package mode plain", got)
+	}
+	if code, _ := codeAndMessage(rec.Body.Bytes()); code != "pln-001" {
+		t.Errorf("code = %q, want pln-001", code)
+	}
+}
+
+func TestProcessRequestRejectionUsesTheInstanceCodeCase(t *testing.T) {
+	ok := func(w http.ResponseWriter, r *http.Request) { Success200().Write(w, r) }
+	tests := []struct {
+		name     string
+		wrap     func(http.Handler) http.Handler
+		wantCode string
+	}{
+		{"New()", New().Handler, "E002"},
+		{"New(WithLowercaseCodes())", New(WithLowercaseCodes()).Handler, "e002"},
+		{"default instance", func(h http.Handler) http.Handler { return h }, "e002"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serve(tt.wrap(ProcessRequest(ok)), http.MethodPost, `{"title":`, nil)
+
+			if code, _ := codeAndMessage(rec.Body.Bytes()); rec.Code != http.StatusBadRequest || code != tt.wantCode {
+				t.Fatalf("status, code = %d, %q; want 400, %q", rec.Code, code, tt.wantCode)
+			}
+		})
+	}
 }

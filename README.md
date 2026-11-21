@@ -110,7 +110,7 @@ a := api.New(
 http.ListenAndServe(":8080", a.Handler(router))
 ```
 
-`a.Handler` stores the instance in the request context, so `api.ProcessRequest`, `api.RequestBody`, the token middlewares, `Write(w, r)` on every response type (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) and `api.WriteError` use its modes; handler code does not change. Wrap the outermost chain: middlewares outside `a.Handler` (and the package-level `api.Write(data, w)`, which takes no request) use the default instance; with nested instances the innermost one wins. An instance is immutable after `api.New`, and two instances in one process (two services, or two tests) do not see each other's modes. `api.New()` with no options parses plain requests and writes envelope responses. An instance sends response codes as declared (`PLN-001`); `api.WithLowercaseCodes()` restores lowercasing, and the default instance lowercases as in v0. An instance uses the built-in request receiver, response formatter and response writer unless you pass your own:
+`a.Handler` stores the instance in the request context, so `api.ProcessRequest`, `api.RequestBody`, the token middlewares, `Write(w, r)` on every response type (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) and `api.WriteError` use its modes; handler code does not change. Wrap the outermost chain: middlewares outside `a.Handler` (and the package-level `api.Write(data, w)`, which takes no request) use the default instance, so their rejections (for example `api.ProcessRequest`'s invalid-body `e002`) are lowercase while handlers inside answer with the instance's code case; with nested instances the innermost one wins. An instance is immutable after `api.New`, and two instances in one process (two services, or two tests) do not see each other's modes. `api.New()` with no options parses plain requests and writes envelope responses. An instance sends response codes as declared (`PLN-001`); `api.WithLowercaseCodes()` restores lowercasing, and the default instance lowercases as in v0. An instance uses the built-in request receiver, response formatter and response writer unless you pass your own:
 
 ```go
 a := api.New(
@@ -209,7 +209,7 @@ created.Write(w, r)
 api.Error500(err).Write(w, r)
 ```
 
-Two settings shape the `title` and `message` of every response:
+Two settings shape the `title` and `message` of every response on the default instance; an `api.New` instance uses their defaults (`true`, `1`, ID length 6) and does not read them:
 
 - `api.BlankSuccess` (default `true`): success responses leave `title` and `message` empty. Error, warning, informative and custom response types always carry them.
 - `api.TraceVisibility` (default `1`): a trace suffix appended to a non-empty message. `1` appends ` (<event id>-<code>)`, `2` only ` (<code>)`, `3` only ` (<event id>)`; any other value appends nothing. The event ID is cut to `api.TraceIDLength` characters (default 6). For example, `Error500()` writes `"An error has occurred please try again later. (cdf606-e300)"`.

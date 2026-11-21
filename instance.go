@@ -107,10 +107,13 @@ func (o options) responseFormatter() core.APIResponseFormatter {
 }
 
 // bindFormatter binds formatter to the instance's response mode and code
-// case. Callers cannot set the code case, so it is always the instance's.
+// case, and to the v0 defaults of TraceVisibility, TraceIDLength and
+// BlankSuccess (ADR 0001: instances do not read those variables). Callers
+// cannot set these fields, so they are always the instance's.
 func (o options) bindFormatter(formatter ResponseFormatter) ResponseFormatter {
 	formatter = formatter.withMode(o.responseMode)
 	formatter.declaredCodes = !o.lowercaseCodes
+	formatter.v0Settings = true
 	return formatter
 }
 
