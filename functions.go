@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,9 +27,10 @@ var PrintError func(...interface{}) = log.Print
 // Deprecated: use api.New(api.WithLogger(...)) instead.
 var Print func(string, ...interface{}) = log.Printf
 
-// Fatal wrapper function. It affects only the default instance, which calls
-// it when a response cannot be encoded; an instance from New never exits and
-// logs the failure through its WithLogger logger.
+// Fatal wrapper function. The package no longer calls it: a response that
+// cannot be encoded is reported through PrintError and answered with 500 on
+// the default instance, and through the WithLogger logger on an instance
+// from New.
 //
 // Deprecated: use api.New(api.WithLogger(...)) instead.
 var Fatal func(...interface{}) = log.Fatal
@@ -337,17 +338,10 @@ func Context(ctx context.Context) *RequestContext {
 		rctx := ctx.(RequestContext)
 		return &rctx
 	case context.Context:
-		ctxType := reflect.TypeOf(ctx)
-		ctxValue := reflect.ValueOf(ctx)
-		if ctxType.Kind() == reflect.Ptr {
-			elem := ctxValue.Elem()
-			for i := 0; i < elem.NumField(); i++ {
-				field := elem.Field(i)
-				rctx, ok := field.Interface().(*RequestContext)
-				if ok {
-					return rctx
-				}
-			}
+		// ProcessRequest stores the request data under this key, and the value
+		// survives every context derived from the request context.
+		if rctx, ok := v.Value(RequestDataContextContextKey).(*RequestContext); ok {
+			return rctx
 		}
 		return &RequestContext{
 			RequestDataContext: &core.RequestDataContext{
@@ -365,7 +359,8 @@ func Context(ctx context.Context) *RequestContext {
 
 const redactedLogValue = "[REDACTED]"
 
-// PrintFullEvent set true value for allow print full event request
+// PrintFullEvent set true value for allow print full event request. It also
+// logs a non-JSON request body as is instead of its size.
 var PrintFullEvent bool = false
 
 // LogRequestBody enables request body logging.
@@ -377,18 +372,19 @@ var LogResponseBody bool = false
 // MaxLoggedBodyBytes limits logged request and response bodies when PrintFullEvent is false.
 var MaxLoggedBodyBytes int = 2000
 
-// SensitiveLogKeys defines fields and headers that must be redacted in logs:
-// by default authorization, token, password, secret, credential, apikey,
-// api-key and key.
+// SensitiveLogKeys defines fields, headers and query parameters that must be
+// redacted in logs: by default authorization, token, password, secret,
+// credential, apikey, api-key, key, cookie and session. A name is sensitive
+// when it contains one of the keys, ignoring case.
 // It affects only the default instance, which reads it at call time; an
-// instance from New masks the same keys plus cookie and session, and the
-// keys added with WithSensitiveLogKeys.
+// instance from New masks the default keys plus the keys added with
+// WithSensitiveLogKeys.
 //
 // Deprecated: use api.New(api.WithSensitiveLogKeys(...)) instead.
 var SensitiveLogKeys = v0SensitiveLogKeys()
 
-// v0SensitiveLogKeys returns a fresh copy of the v0 sensitive key list, so
-// changing SensitiveLogKeys never reaches an instance.
+// v0SensitiveLogKeys returns a fresh copy of the default sensitive key list,
+// so changing SensitiveLogKeys never reaches an instance.
 func v0SensitiveLogKeys() []string {
 	return []string{
 		"authorization",
@@ -399,19 +395,25 @@ func v0SensitiveLogKeys() []string {
 		"apikey",
 		"api-key",
 		"key",
+		"cookie",
+		"session",
 	}
 }
 
-// LogRequest prints API request in log. It writes only the default
-// instance's lines; an instance from New logs through its WithLogger logger.
+// LogRequest prints API request in log. The values of sensitive headers,
+// JSON body fields, query parameters in uri and form fields are masked (see
+// SensitiveLogKeys), as is the user information of an absolute-form uri. A
+// request body that is not JSON is logged as its size unless PrintFullEvent
+// is true. It writes only the default instance's lines; an instance from New
+// logs through its WithLogger logger.
 //
 // Deprecated: use api.New(api.WithLogger(...)) instead.
 func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody []byte) {
 	format := "REQUEST event_id=%q method=%q uri=%q"
-	args := []interface{}{eventID, method, uri}
+	args := []interface{}{eventID, method, redactURI(uri, SensitiveLogKeys)}
 	if form != "" {
 		format += " form=%q"
-		args = append(args, form)
+		args = append(args, redactQuery(form, SensitiveLogKeys))
 	}
 	if len(headers) != 0 {
 		format += " headers=%s"
@@ -419,7 +421,7 @@ func LogRequest(method, uri, eventID, form string, headers http.Header, rawBody 
 	}
 	if LogRequestBody && len(rawBody) != 0 {
 		format += " body=%q"
-		args = append(args, formatBodyForLog(rawBody))
+		args = append(args, formatRequestBodyForLog(rawBody))
 	}
 	Print(format, args...)
 }
@@ -450,6 +452,15 @@ func LogResponseWithDuration(eventID string, res *httptest.ResponseRecorder, dur
 		args = append(args, formatBodyForLog(rawBody))
 	}
 	Print(format, args...)
+}
+
+// formatRequestBodyForLog summarizes a non-JSON request body (a form, XML,
+// text) as its size, since its sensitive values cannot be masked by key.
+func formatRequestBodyForLog(rawBody []byte) string {
+	if !PrintFullEvent && !json.Valid(rawBody) {
+		return fmt.Sprintf("[non-JSON body, %d bytes]", len(rawBody))
+	}
+	return formatBodyForLog(rawBody)
 }
 
 func formatBodyForLog(rawBody []byte) string {
@@ -527,6 +538,108 @@ func isSensitiveKey(key string, sensitiveKeys []string) bool {
 		}
 	}
 	return false
+}
+
+// redactURI masks the query values of uri whose key is sensitive and the
+// user information of an absolute-form (scheme://user:pass@host/...),
+// network-path (//user:pass@host/...) or authority-form (CONNECT
+// user:pass@host:443) target. Path segments are not masked.
+func redactURI(uri string, sensitiveKeys []string) string {
+	// The query goes first, cut at the first "?" of the raw uri: masking the
+	// user information first would cut at an "@" inside the query (such as
+	// "?email=a@b.com&token=..."), lose the "?" and log the query in clear.
+	redacted, query, found := strings.Cut(uri, "?")
+	if found {
+		redacted += "?" + redactQuery(query, sensitiveKeys)
+	}
+	return redactUserInfo(redacted, uri)
+}
+
+// redactUserInfo replaces the user information of target with
+// redactedLogValue: everything from the start of the authority to the last
+// "@", so a raw "/", "?" or "#" in a password is masked too (an "@" in the
+// path or query over-masks). rawTarget is target before its query was
+// masked; when masking removed the only "@" (a raw "?" in a password
+// followed by a sensitive key), everything after the authority start is
+// masked.
+func redactUserInfo(target, rawTarget string) string {
+	start := authorityStart(target)
+	if start < 0 {
+		return target
+	}
+	if at := strings.LastIndex(target[start:], "@"); at >= 0 {
+		return target[:start] + redactedLogValue + target[start+at:]
+	}
+	if strings.Contains(rawTarget[start:], "@") {
+		return target[:start] + redactedLogValue
+	}
+	return target
+}
+
+// authorityStart returns where the authority of target starts, or -1 for an
+// origin-form ("/path") or asterisk-form ("*") target, which has none. A
+// target with neither "/" nor "scheme://" at its start is taken as
+// authority-form; an opaque URI such as "mailto:a@b" is then over-masked.
+func authorityStart(target string) int {
+	if strings.HasPrefix(target, "//") {
+		return len("//")
+	}
+	if strings.HasPrefix(target, "/") || target == "*" {
+		return -1
+	}
+	if scheme, _, found := strings.Cut(target, "://"); found && !strings.ContainsAny(scheme, "/?#") {
+		return len(scheme) + len("://")
+	}
+	return 0
+}
+
+// redactQuery masks the values of rawQuery whose unescaped key is sensitive,
+// and the values whose key cannot be unescaped. It reads rawQuery one
+// "&"-separated segment at a time: when the segment's own key (up to its
+// first "=") is sensitive, its whole value is masked, so a raw ";" in the
+// name or the value (token;x=..., token=abc;def) exposes nothing. Otherwise
+// the segment is split on ";" and the first part with a sensitive key masks
+// the rest of the segment. The other parameters keep their order,
+// separators and encoding; a part without "=" has no value and is kept.
+func redactQuery(rawQuery string, sensitiveKeys []string) string {
+	var redacted strings.Builder
+	redacted.Grow(len(rawQuery))
+	for i, segment := range strings.Split(rawQuery, "&") {
+		if i > 0 {
+			redacted.WriteByte('&')
+		}
+		if masked, isMasked := redactQueryPart(segment, sensitiveKeys); isMasked {
+			redacted.WriteString(masked)
+			continue
+		}
+		redacted.WriteString(redactSemicolonParts(segment, sensitiveKeys))
+	}
+	return redacted.String()
+}
+
+// redactSemicolonParts masks a ";"-separated segment from its first part
+// with a sensitive key to its end.
+func redactSemicolonParts(segment string, sensitiveKeys []string) string {
+	parts := strings.Split(segment, ";")
+	for i, part := range parts {
+		if masked, isMasked := redactQueryPart(part, sensitiveKeys); isMasked {
+			return strings.Join(append(parts[:i:i], masked), ";")
+		}
+	}
+	return segment
+}
+
+// redactQueryPart returns part with its value masked, and whether it did so.
+func redactQueryPart(part string, sensitiveKeys []string) (string, bool) {
+	rawKey, _, hasValue := strings.Cut(part, "=")
+	if !hasValue {
+		return part, false
+	}
+	key, err := url.QueryUnescape(rawKey)
+	if err != nil || isSensitiveKey(key, sensitiveKeys) {
+		return rawKey + "=" + redactedLogValue, true
+	}
+	return part, false
 }
 
 func formatLogValue(value interface{}) string {

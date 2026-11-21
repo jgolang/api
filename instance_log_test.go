@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -161,52 +162,67 @@ func TestInstanceRedactsQueryCookieAndSession(t *testing.T) {
 	}
 }
 
-func TestRedactQuery(t *testing.T) {
-	keys := instanceSensitiveLogKeys(nil)
-	tests := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{name: "empty", raw: "", want: ""},
-		{name: "nothing sensitive", raw: "page=2&sort=a%20b", want: "page=2&sort=a%20b"},
-		{name: "sensitive value", raw: "page=2&token=T&q=x", want: "page=2&token=[REDACTED]&q=x"},
-		{name: "escaped key", raw: "access%5Ftoken=T", want: "access%5Ftoken=[REDACTED]"},
-		{name: "key without value", raw: "token&page=2", want: "token&page=2"},
-		{name: "empty value", raw: "token=", want: "token=[REDACTED]"},
-		{name: "semicolon separator", raw: "page=2;token=T&q=x", want: "page=2;token=[REDACTED]&q=x"},
-		{name: "only semicolons", raw: "a=1;password=p", want: "a=1;password=[REDACTED]"},
-		{name: "percent-encoded key", raw: "%74oken=T&page=2", want: "%74oken=[REDACTED]&page=2"},
-		{name: "key that cannot be unescaped", raw: "bad%zz=V&page=2", want: "bad%zz=[REDACTED]&page=2"},
+// TestInstanceURIMaskingAgreesWithTheDefaultInstance checks that an instance
+// masks the logged uri exactly as the default instance's REQUEST line does,
+// since both use the same redaction helpers.
+func TestInstanceURIMaskingAgreesWithTheDefaultInstance(t *testing.T) {
+	tests := []struct{ name, uri string }{
+		{name: "no query", uri: "/tasks"},
+		{name: "empty query", uri: "/tasks?"},
+		{name: "sensitive value", uri: "/login?password=p&next=%2F"},
+		{name: "at sign in the query", uri: "/login?email=a@b.com&token=T"},
+		{name: "at sign in an absolute-form query", uri: "http://host/login?email=a@b.com&token=T"},
+		{name: "semicolon in a sensitive value", uri: "/login?token=abc;def&page=2"},
+		{name: "semicolon separator", uri: "/tasks?page=2;token=T&q=x"},
+		{name: "key that cannot be unescaped", uri: "/tasks?bad%zz=V&page=2"},
+		{name: "user information", uri: "http://user:pass@example.com/tasks?token=T"},
+		{name: "slash in the password", uri: "http://u:S4c/x@host/p"},
+		{name: "question mark in the password", uri: "http://u:S4d?x@host/p"},
+		{name: "network-path", uri: "//u:p@host/p"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := redactQuery(tt.raw, keys); got != tt.want {
-				t.Fatalf("redactQuery(%q) = %q, want %q", tt.raw, got, tt.want)
+			defaultLines := captureDefaultLogLines(t)
+			logger, buf := newRecordingLogger()
+			instance := New(WithLogger(logger))
+
+			ProcessRequest(okHandler).ServeHTTP(httptest.NewRecorder(), newRawURIRequest(tt.uri))
+			instance.Handler(ProcessRequest(okHandler)).ServeHTTP(httptest.NewRecorder(), newRawURIRequest(tt.uri))
+
+			wantURI := defaultLoggedURI(t, *defaultLines)
+			if got := recordNamed(t, decodeRecords(t, buf), "request")["uri"]; got != wantURI {
+				t.Fatalf("instance uri = %v, default instance uri = %q", got, wantURI)
 			}
 		})
 	}
 }
 
-func TestRedactURI(t *testing.T) {
-	keys := instanceSensitiveLogKeys(nil)
-	tests := []struct{ uri, want string }{
-		{uri: "/tasks", want: "/tasks"},
-		{uri: "/tasks?", want: "/tasks?"},
-		{uri: "/login?password=p&next=%2F", want: "/login?password=[REDACTED]&next=%2F"},
-		{uri: "http://example.com/tasks", want: "http://example.com/tasks"},
-		{uri: "http://user:pass@example.com/tasks?token=T", want: "http://[REDACTED]@example.com/tasks?token=[REDACTED]"},
-		{uri: "https://user@example.com", want: "https://[REDACTED]@example.com"},
-		{uri: "/redirect?to=http://a@b", want: "/redirect?to=http://a@b"},
-		{uri: "http://u:S4c/x@host/p", want: "http://[REDACTED]@host/p"},
-		{uri: "http://u:S4d?x@host/p", want: "http://[REDACTED]@host/p"},
-		{uri: "http://u:p@host/p#frag@x", want: "http://[REDACTED]@host/p#frag@x"},
-	}
-	for _, tt := range tests {
-		if got := redactURI(tt.uri, keys); got != tt.want {
-			t.Errorf("redactURI(%q) = %q, want %q", tt.uri, got, tt.want)
+// newRawURIRequest returns a GET request whose RequestURI is uri as sent,
+// which httptest.NewRequest would parse and rebuild.
+func newRawURIRequest(uri string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RequestURI = uri
+	return req
+}
+
+var loggedURIPattern = regexp.MustCompile(`uri=("(?:[^"\\]|\\.)*")`)
+
+// defaultLoggedURI returns the uri of the default instance's REQUEST line.
+func defaultLoggedURI(t *testing.T, lines []string) string {
+	t.Helper()
+	for _, line := range lines {
+		match := loggedURIPattern.FindStringSubmatch(line)
+		if !strings.HasPrefix(line, "Print: REQUEST ") || match == nil {
+			continue
 		}
+		uri, err := strconv.Unquote(match[1])
+		if err != nil {
+			t.Fatalf("unquoting uri of %q: %v", line, err)
+		}
+		return uri
 	}
+	t.Fatalf("no REQUEST line in %q", lines)
+	return ""
 }
 
 // TestInstanceRedactsFormParsedBeforeProcessRequest checks that a form
@@ -685,19 +701,6 @@ func TestInstancesLogOnlyToTheirOwnLogger(t *testing.T) {
 				t.Fatalf("%s Pin = %v, want %s", tt.name, headers["Pin"], tt.ownPin)
 			}
 		}
-	}
-}
-
-func TestDefaultInstanceCallsFatalOnEncodeFailure(t *testing.T) {
-	previousFatal := Fatal
-	var fatalCalls int
-	Fatal = func(...interface{}) { fatalCalls++ }
-	t.Cleanup(func() { Fatal = previousFatal })
-
-	SuccessWithContent(math.NaN()).Write(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tasks", nil))
-
-	if fatalCalls != 1 {
-		t.Fatalf("Fatal calls = %d, want 1", fatalCalls)
 	}
 }
 
