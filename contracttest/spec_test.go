@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -66,7 +67,7 @@ func TestSpecValidationRejectsWrongExample(t *testing.T) {
 
 	err := validateSpec(spec)
 
-	if err == nil {
-		t.Fatal("validation passed, want it to reject the edited 201 example")
+	if err == nil || !strings.Contains(err.Error(), "invalid example") {
+		t.Fatalf("validation error = %v, want it to reject the edited 201 example", err)
 	}
 }
