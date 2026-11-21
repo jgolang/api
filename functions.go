@@ -377,7 +377,9 @@ var LogResponseBody bool = false
 // MaxLoggedBodyBytes limits logged request and response bodies when PrintFullEvent is false.
 var MaxLoggedBodyBytes int = 2000
 
-// SensitiveLogKeys defines fields and headers that must be redacted in logs.
+// SensitiveLogKeys defines fields and headers that must be redacted in logs:
+// by default authorization, token, password, secret, credential, apikey,
+// api-key and key.
 // It affects only the default instance, which reads it at call time; an
 // instance from New masks the same keys plus cookie and session, and the
 // keys added with WithSensitiveLogKeys.

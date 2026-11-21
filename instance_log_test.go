@@ -195,9 +195,11 @@ func TestRedactURI(t *testing.T) {
 	}
 }
 
-func TestInstanceRedactsFormValues(t *testing.T) {
+// TestInstanceRedactsFormParsedBeforeProcessRequest masks the form that a
+// middleware parsed before ProcessRequest.
+func TestInstanceRedactsFormParsedBeforeProcessRequest(t *testing.T) {
 	logger, buf := newRecordingLogger()
-	a := New(WithLogger(logger), WithRequestReceiver(RequestReceiverV2{}))
+	a := New(WithLogger(logger))
 	parseForm := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if err := r.ParseForm(); err != nil {
