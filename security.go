@@ -12,14 +12,14 @@ import (
 
 var (
 	// Username is the user name that the default basic authentication
-	// validator accepts. Default: "default".
+	// validator compares against. Default: "default".
 	//
-	// Warning: with the defaults, BasicToken accepts the publicly known
-	// credentials "default:default". Set Username and Password (or
-	// ValidateBasicAuthCredentialsFunc) before using BasicToken.
+	// While Username or Password is empty or "default", the default
+	// validator rejects every request, so BasicToken answers 401. Set both
+	// (or replace ValidateBasicAuthCredentialsFunc) before using BasicToken.
 	Username = "default"
 	// Password is the password that the default basic authentication
-	// validator accepts. Default: "default". See the warning on Username.
+	// validator compares against. Default: "default". See Username.
 	Password = "default"
 )
 
@@ -45,13 +45,26 @@ func (guaranter *SecurityGuaranter) ValidateCustomToken(token string, validator 
 	return validator(token)
 }
 
-// validateCredentials compares both values in constant time. Hashing first
-// gives both sides the same length, so the compare does not return early on
-// a length mismatch, and both compares always run.
+// validateCredentials rejects every pair while the credentials are not
+// configured, so the publicly known defaults never open a route. Otherwise
+// it compares both values in constant time. Hashing first gives both sides
+// the same length, so the compare does not return early on a length
+// mismatch, and both compares always run.
 func validateCredentials(username, password string) bool {
+	if !credentialsConfigured() {
+		return false
+	}
 	usernameMatch := constantTimeEqual(username, Username)
 	passwordMatch := constantTimeEqual(password, Password)
 	return usernameMatch&passwordMatch == 1
+}
+
+func credentialsConfigured() bool {
+	return isConfiguredCredential(Username) && isConfiguredCredential(Password)
+}
+
+func isConfiguredCredential(value string) bool {
+	return value != "" && value != "default"
 }
 
 func constantTimeEqual(got, want string) int {
@@ -74,7 +87,8 @@ type ValidateCredentials func(string, string) bool
 var CustomTokenValidatorFunc core.CustomTokenValidator
 
 // ValidateBasicAuthCredentialsFunc define custom function for validate basic authentication credential.
-// The default compares against Username and Password in constant time; a
+// The default rejects every pair while Username or Password is empty or
+// "default", and otherwise compares against them in constant time; a
 // replacement should compare secrets in constant time as well (crypto/subtle).
 var ValidateBasicAuthCredentialsFunc ValidateCredentials = validateCredentials
 

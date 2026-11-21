@@ -65,22 +65,85 @@ func TestBasicTokenAcceptsConfiguredCredentials(t *testing.T) {
 	}
 }
 
-// The README and doc comments warn that the defaults accept default:default.
-func TestValidateCredentialsDefaultsAcceptDefaultCredentials(t *testing.T) {
-	tests := []struct {
+// Until Username and Password are both set to values other than "" and
+// "default", the default validator rejects every credential pair.
+func TestValidateCredentialsRejectsAllWhileNotConfigured(t *testing.T) {
+	configurations := []struct {
 		name     string
 		username string
 		password string
-		want     bool
 	}{
-		{name: "default credentials", username: "default", password: "default", want: true},
-		{name: "other credentials", username: "default", password: "other", want: false},
+		{name: "defaults", username: "default", password: "default"},
+		{name: "empty", username: "", password: ""},
+		{name: "default password", username: "service-user", password: "default"},
+		{name: "default username", username: "default", password: "service-password"},
+		{name: "empty password", username: "service-user", password: ""},
+		{name: "empty username", username: "", password: "service-password"},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := validateCredentials(tt.username, tt.password); got != tt.want {
-				t.Fatalf("validateCredentials(%q, %q) = %v, want %v", tt.username, tt.password, got, tt.want)
+	for _, configuration := range configurations {
+		t.Run(configuration.name, func(t *testing.T) {
+			previousUsername, previousPassword := Username, Password
+			Username, Password = configuration.username, configuration.password
+			defer func() { Username, Password = previousUsername, previousPassword }()
+
+			credentials := [][2]string{
+				{configuration.username, configuration.password},
+				{"default", "default"},
+				{"", ""},
+			}
+			for _, credential := range credentials {
+				if validateCredentials(credential[0], credential[1]) {
+					t.Fatalf("validateCredentials(%q, %q) = true with Username %q and Password %q, want false", credential[0], credential[1], Username, Password)
+				}
 			}
 		})
+	}
+}
+
+func TestBasicTokenRejectsDefaultCredentialsWhileNotConfigured(t *testing.T) {
+	previousUsername, previousPassword := Username, Password
+	Username, Password = "default", "default"
+	defer func() { Username, Password = previousUsername, previousPassword }()
+
+	nextCalled := false
+	handler := BasicToken(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("default:default")))
+	res := httptest.NewRecorder()
+
+	handler(res, req)
+
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, res.Code)
+	}
+	if nextCalled {
+		t.Fatal("expected next handler not to run")
+	}
+}
+
+// A replacement validator decides on its own; the configuration rule belongs
+// to the default validator only.
+func TestBasicTokenUsesCustomValidatorWhileNotConfigured(t *testing.T) {
+	previousUsername, previousPassword, previousValidator := Username, Password, ValidateBasicAuthCredentialsFunc
+	Username, Password = "default", "default"
+	ValidateBasicAuthCredentialsFunc = func(username, password string) bool {
+		return username == "custom-user" && password == "custom-password"
+	}
+	defer func() {
+		Username, Password, ValidateBasicAuthCredentialsFunc = previousUsername, previousPassword, previousValidator
+	}()
+
+	handler := BasicToken(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("custom-user:custom-password")))
+	res := httptest.NewRecorder()
+
+	handler(res, req)
+
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, res.Code)
 	}
 }
