@@ -173,6 +173,11 @@ func GenSkipPath(method string, path string) SkipPath {
 }
 
 // ProcessRequest process request information.
+//
+// The proxiedIPAddress info value is the first X-Forwarded-For entry, which
+// the client sets; trust it only behind a proxy that overwrites the header.
+// The whole request body is read into memory with no size limit; bound it
+// before this middleware runs (http.MaxBytesHandler or http.MaxBytesReader).
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
