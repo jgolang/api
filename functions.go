@@ -21,7 +21,8 @@ var PrintError func(...interface{}) = log.Print
 // Print wrapper function.
 var Print func(string, ...interface{}) = log.Printf
 
-// Fatal wrapper function.
+// Fatal wrapper function. The package no longer calls it: a response that
+// cannot be encoded is reported through PrintError and answered with 500.
 var Fatal func(...interface{}) = log.Fatal
 
 // GetHeaderValueString gets header value as string.
