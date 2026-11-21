@@ -2,7 +2,7 @@
 
 - Status: Accepted (2026-11-21); implemented step by step through the v1 stories, all in v1.0.0:
   - 5.1 lands the instance, `Handler` and the two mode options (sections 2–3 for the modes; the `Get*Value*` helpers still use the default instance);
-  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4); 5.4 kind overrides and the error hook (section 7); 5.5 the logger, redaction and an instance writer that never exits (section 6); 5.6 problem details (section 8).
+  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7); 5.5 the logger, redaction and an instance writer that never exits (section 6); 5.6 problem details (section 8).
 - Issues: API-07 (#21), API-02 (#16), API-12 (#26), the v1 part of API-01 (#15).
 - Related: ADR 0002 (stdadapter on ServeMux patterns, lands with story 5.7) will record the routing change planned for the same release (API-08).
 

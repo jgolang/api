@@ -9,10 +9,13 @@ import (
 )
 
 // ResponseFormatter implementation of core.APIResponseFormatter interface.
-// The zero value formats with CurrentResponseMode.
+// The zero value formats with CurrentResponseMode and lowercases response
+// codes, as v0 does; New binds an instance's mode and code case to it.
 type ResponseFormatter struct {
 	// mode is set by New; empty means the default instance's package variable.
 	mode ResponseMode
+	// declaredCodes is set by New; false lowercases codes, as v0 does.
+	declaredCodes bool
 }
 
 // TraceIDLength specifies the number of characters to return from the beginning of the input trace ID.
@@ -42,7 +45,7 @@ var BlankSuccess = true
 func (formatter ResponseFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
 	msg := data.Message
 	title := data.Title
-	code := strings.ToLower(string(data.ResponseCode))
+	code := formatter.responseCode(data.ResponseCode)
 
 	// A trace suffix on an empty message would show clients a bare " (id-code)".
 	if data.Message != "" {
@@ -97,6 +100,14 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 		Headers:        data.Headers,
 		Body:           body,
 	}
+}
+
+// responseCode returns code as the body and the trace suffix show it.
+func (formatter ResponseFormatter) responseCode(code core.ResponseCode) string {
+	if formatter.declaredCodes {
+		return string(code)
+	}
+	return strings.ToLower(string(code))
 }
 
 // withMode returns formatter bound to mode unless it already has one.

@@ -19,11 +19,12 @@ type API struct {
 // options collects what the Option values passed to New set. New owns it, so
 // an Option cannot reach an API after New returns.
 type options struct {
-	requestMode  RequestMode
-	responseMode ResponseMode
-	receiver     core.APIRequestReceiver
-	formatter    core.APIResponseFormatter
-	writer       core.APIResponseWriter
+	requestMode    RequestMode
+	responseMode   ResponseMode
+	lowercaseCodes bool
+	receiver       core.APIRequestReceiver
+	formatter      core.APIResponseFormatter
+	writer         core.APIResponseWriter
 }
 
 // Option configures an API in New. New skips a nil Option.
@@ -31,10 +32,12 @@ type Option func(*options)
 
 // New returns an API configured by opts. Without options it parses plain
 // requests, writes envelope responses and uses the built-in request
-// receiver, response formatter and response writer, the v0 defaults. The
-// security guarantor and param validator are shared with the default
-// instance: RegisterNewAPISecurityGuarantor and RegisterParamValidator apply
-// to every instance.
+// receiver, response formatter and response writer, the v0 defaults. Unlike
+// the default instance, its built-in formatter sends response codes as
+// declared (PLN-001 stays PLN-001); WithLowercaseCodes restores the v0
+// lowercasing. The security guarantor and param validator are shared with
+// the default instance: RegisterNewAPISecurityGuarantor and
+// RegisterParamValidator apply to every instance.
 func New(opts ...Option) *API {
 	o := options{
 		requestMode:  RequestModePlain,
@@ -81,20 +84,29 @@ func (o options) requestReceiver() core.APIRequestReceiver {
 }
 
 // responseFormatter returns the formatter New uses, bound to the instance
-// mode in the same way as requestReceiver.
+// mode in the same way as requestReceiver. A built-in formatter also takes
+// the instance's code case; a custom one is used as is.
 func (o options) responseFormatter() core.APIResponseFormatter {
 	switch formatter := o.formatter.(type) {
 	case nil:
 	case ResponseFormatter:
-		return formatter.withMode(o.responseMode)
+		return o.bindFormatter(formatter)
 	case *ResponseFormatter:
 		if formatter != nil {
-			return formatter.withMode(o.responseMode)
+			return o.bindFormatter(*formatter)
 		}
 	default:
 		return formatter
 	}
-	return ResponseFormatter{mode: o.responseMode}
+	return o.bindFormatter(ResponseFormatter{})
+}
+
+// bindFormatter binds formatter to the instance's response mode and code
+// case. Callers cannot set the code case, so it is always the instance's.
+func (o options) bindFormatter(formatter ResponseFormatter) ResponseFormatter {
+	formatter = formatter.withMode(o.responseMode)
+	formatter.declaredCodes = !o.lowercaseCodes
+	return formatter
 }
 
 func (o options) responseWriter() core.APIResponseWriter {
@@ -119,6 +131,18 @@ func WithRequestMode(mode RequestMode) Option {
 func WithResponseMode(mode ResponseMode) Option {
 	return func(o *options) {
 		o.responseMode = normalizeResponseMode(mode)
+	}
+}
+
+// WithLowercaseCodes makes the instance's built-in response formatter
+// lowercase response codes in the code field and the message trace suffix,
+// as v0 does. Without it, an instance from New sends codes as declared
+// (PLN-001 stays PLN-001). A custom formatter set with WithResponseFormatter
+// alone decides the code, and this option does not apply to it. The default
+// instance always lowercases.
+func WithLowercaseCodes() Option {
+	return func(o *options) {
+		o.lowercaseCodes = true
 	}
 }
 

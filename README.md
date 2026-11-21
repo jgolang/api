@@ -110,7 +110,7 @@ a := api.New(
 http.ListenAndServe(":8080", a.Handler(router))
 ```
 
-`a.Handler` stores the instance in the request context, so `api.ProcessRequest`, `api.RequestBody`, the token middlewares, `Write(w, r)` on every response type (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) and `api.WriteError` use its modes; handler code does not change. Wrap the outermost chain: middlewares outside `a.Handler` (and the package-level `api.Write(data, w)`, which takes no request) use the default instance; with nested instances the innermost one wins. An instance is immutable after `api.New`, and two instances in one process (two services, or two tests) do not see each other's modes. `api.New()` with no options parses plain requests and writes envelope responses. An instance uses the built-in request receiver, response formatter and response writer unless you pass your own:
+`a.Handler` stores the instance in the request context, so `api.ProcessRequest`, `api.RequestBody`, the token middlewares, `Write(w, r)` on every response type (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) and `api.WriteError` use its modes; handler code does not change. Wrap the outermost chain: middlewares outside `a.Handler` (and the package-level `api.Write(data, w)`, which takes no request) use the default instance; with nested instances the innermost one wins. An instance is immutable after `api.New`, and two instances in one process (two services, or two tests) do not see each other's modes. `api.New()` with no options parses plain requests and writes envelope responses. An instance sends response codes as declared (`PLN-001`); `api.WithLowercaseCodes()` restores lowercasing, and the default instance lowercases as in v0. An instance uses the built-in request receiver, response formatter and response writer unless you pass your own:
 
 ```go
 a := api.New(
@@ -197,7 +197,7 @@ Every response kind (`api.Success`, `api.Error`, `api.Warning`, `api.Informative
 | `api.Error500(errs...)`, `api.Error500WithMsg(msg, errs...)` | 500 | the first coded error in `errs`, else `e300` |
 | `api.Error501(errs...)` | 501 (503 before v0.10.0) | the first coded error in `errs`, else `e001` |
 
-Response codes are written in lower case. The default titles, messages and codes are package variables (`api.DefaultSuccessTitle`, `api.InternalServerMessage`, `api.ResponseCodes`, …).
+The default instance writes response codes in lower case, as in the table (`e001`); an `api.New` instance sends them as declared (`E001`) unless created with `api.WithLowercaseCodes()`. The default titles, messages and codes are package variables (`api.DefaultSuccessTitle`, `api.InternalServerMessage`, `api.ResponseCodes`, …).
 
 ```go
 api.SuccessWithContent(task).Write(w, r)

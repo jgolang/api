@@ -313,7 +313,8 @@ func TestQuickStartAnswersTheSameWithTheDefaultInstanceOptions(t *testing.T) {
 	for _, body := range []string{`{"title":"Buy milk"}`, `{"title":""}`, `{"title":`, `[1]`} {
 		t.Run(body, func(t *testing.T) {
 			withoutInstance := serve(createTask, http.MethodPost, body, nil)
-			withInstance := serve(New().Handler(createTask), http.MethodPost, body, nil)
+			// WithLowercaseCodes is the one option that keeps an instance's codes as v0 sends them.
+			withInstance := serve(New(WithLowercaseCodes()).Handler(createTask), http.MethodPost, body, nil)
 
 			if withoutInstance.Code != withInstance.Code {
 				t.Errorf("status = %d without instance, %d with", withoutInstance.Code, withInstance.Code)
