@@ -10,6 +10,7 @@ This guide takes a v0 program (v0.11.x) to `github.com/jgolang/api` v1. The desi
   - `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)). This is the change most programs must act on.
   - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too. It is a fix, not a breaking change: v0 discarded a `Content-Type` the service set. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0.
 - Configuration moves from package variables to an instance: `a := api.New(opts...)` and `a.Handler(router)` ([step 3](#step-3-move-to-apinew)). Handler code does not change.
+- One breaking change outside routing, for programs that use `api.BasicToken`: it no longer copies the password into the `Basic-Secret` request header ([details](#breaking-no-basic-secret-header)).
 
 Three steps, each one shippable on its own:
 
@@ -28,6 +29,10 @@ Requests that no `a.Handler` wraps use the default instance. It keeps v0's behav
 - `SensitiveLogKeys` keeps its v0.11.0 list (with `cookie` and `session`) and masking (headers, JSON body fields, query and form values, the user information of the `uri`).
 
 Deprecated names are reported by staticcheck (`SA1019`) and by gopls in your editor. `go vet` does not report them. Fix the routing first (step 2); the deprecations can wait until step 3.
+
+### Breaking: no Basic-Secret header
+
+After a successful check, `api.BasicToken` no longer copies the plain password into the `Basic-Secret` request header, on the default instance and on instances. It also removes a `Basic-Secret` header the client sent, so a handler never reads a client-chosen value there. `Basic-Client` (the user name) is still set. A handler that read `Basic-Secret` must take the password from its own credential source, for example the `Authorization` header (`r.BasicAuth()`) or its secret store.
 
 ## Step 2: fix routing (stdadapter)
 
@@ -222,6 +227,7 @@ a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 - [ ] Start the service once (or build its router in a test): fix every registration panic (conflicts, methods, wildcard names).
 - [ ] Check trailing-slash clients, HEAD skip paths, 405 handling and `GODEBUG=httpmuxgo121`.
 - [ ] Validate route variables that reach file paths, headers or logs.
+- [ ] Find handlers that read the `Basic-Secret` request header after `api.BasicToken`: it is no longer set.
 - [ ] Check responses that set a `Content-Type` in `Headers`: it is now sent (one set on `w.Header()` is still overwritten).
 - [ ] Create one instance with `api.New` and wrap the outermost handler with `a.Handler`.
 - [ ] Replace each deprecated name with its option (staticcheck `SA1019` lists them).
