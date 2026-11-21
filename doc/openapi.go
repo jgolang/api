@@ -15,6 +15,7 @@ import (
 type OpenAPI struct {
 	OpenAPI    string                          `json:"openapi"`
 	Info       API                             `json:"info"`
+	Servers    []Server                        `json:"servers,omitempty"`
 	Paths      map[string]map[string]Operation `json:"paths"`
 	Components *Components                     `json:"components,omitempty"`
 	Security   []map[string][]string           `json:"security,omitempty"`
@@ -147,6 +148,7 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 		return doc
 	}
 	doc.Info = docs.API()
+	doc.Servers = docs.serverList()
 	schemas := newComponentSchemaWalker()
 	for name, scheme := range docs.SecuritySchemes() {
 		ensureComponents(&doc)

@@ -308,6 +308,7 @@ func main() {
 		Title:   "Tasks API",
 		Version: "1.0.0",
 	})
+	docs.SetServers(doc.Server{URL: "http://localhost:8080"})
 	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
 	// Optional: require bearerAuth everywhere and mark exceptions with doc.Public().
 	// docs.SetDefaultSecurity("bearerAuth")
@@ -336,7 +337,7 @@ func main() {
 }
 ```
 
-`GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it; `doc.Hidden()` keeps both out of the document. The docs page is titled `API Docs` and ships a generic icon; `doc.WithTitle("Orders API")` and `doc.WithFavicon("/static/orders-icon.png")` set your own (see [Docs page title and icon](docs/openapi.md#docs-page-title-and-icon), which also shows how to pass them through the exporter registry).
+`docs.SetServers` writes the spec's `servers` (the base URL for "Try it out" and generated clients); `doc.API` also takes optional `Contact` and `License` (see [API metadata](docs/openapi.md#api-metadata)). `GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it; `doc.Hidden()` keeps both out of the document. The docs page is titled `API Docs` and ships a generic icon; `doc.WithTitle("Orders API")` and `doc.WithFavicon("/static/orders-icon.png")` set your own (see [Docs page title and icon](docs/openapi.md#docs-page-title-and-icon), which also shows how to pass them through the exporter registry).
 
 ```go
 router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json",
