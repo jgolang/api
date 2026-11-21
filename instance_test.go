@@ -333,10 +333,16 @@ func TestQuickStartAnswersTheSameWithTheDefaultInstanceOptions(t *testing.T) {
 func TestNewSkipsNilOptions(t *testing.T) {
 	var unset Option
 
+	usePackageModes(t, RequestModeEnvelope, ResponseModeEnvelope)
 	a := New(nil, unset, WithResponseMode(ResponseModePlain))
 
-	if a.responseMode != ResponseModePlain || a.requestMode != RequestModePlain {
-		t.Fatalf("modes = %s/%s, want plain/plain", a.requestMode, a.responseMode)
+	rec := serve(a.Handler(ProcessRequest(echoTitle(t))), http.MethodPost, `{"title":"task"}`, nil)
+
+	if got := responseModeOf(rec.Body.Bytes()); got != ResponseModePlain {
+		t.Fatalf("response mode = %s, want plain (%s)", got, rec.Body)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"title":"task"`)) {
+		t.Fatalf("want plain request parsing, got %s", rec.Body)
 	}
 }
 

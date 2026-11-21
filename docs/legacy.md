@@ -121,7 +121,7 @@ http.HandleFunc("/api/example", handler)
 Two exported implementations of `core.APIRequestReceiver` exist. Both follow the request mode for `ProcessBody`.
 
 - `api.RequestReceiver` is the default, wired in `api.go`. `ProcessBody` fills every field in the table above. `ProcessEncryptedBody` reads a JSON body `{"data": "...", "deviceUUID": "..."}` (`envelope.EncryptedBody`).
-- `api.RequestReceiverV2` must be registered with `api.RegisterNewAPIRequestReceiver(api.RequestReceiverV2{})`. `ProcessBody` does not fill `DeviceSerial`, `DeviceId`, `Latitude` or `Longitude`. `ProcessEncryptedBody` reads the form or query values `data` and `metadata`, both required; a missing one returns a `codes.ValRequired` error (400 through `api.WriteError`).
+- `api.RequestReceiverV2` must be passed with `api.New(api.WithRequestReceiver(api.RequestReceiverV2{}))`, or registered on the default instance with the deprecated `api.RegisterNewAPIRequestReceiver(api.RequestReceiverV2{})`. `ProcessBody` does not fill `DeviceSerial`, `DeviceId`, `Latitude` or `Longitude`. `ProcessEncryptedBody` reads the form or query values `data` and `metadata`, both required; a missing one returns a `codes.ValRequired` error (400 through `api.WriteError`).
 
 `api.ProcessEncryptedBody(r)` runs the registered receiver's `ProcessEncryptedBody` and returns an `*api.EncryptedRequest`; decrypting `Data` is left to the application.
 

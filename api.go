@@ -64,30 +64,33 @@ func ProcessBody(r *http.Request) (*RequestContext, error) {
 
 // RegisterNewAPIResponseFormatter inject a new implementation in the
 // APIResponseFormatter interface.
-// It affects only the default instance; instances from New use the built-in
-// implementation (per-instance options come later).
+//
+// Deprecated: use api.New(api.WithResponseFormatter(...)) instead. It affects only the
+// default instance.
 func RegisterNewAPIResponseFormatter(formatter core.APIResponseFormatter) {
 	api.RegisterNewAPIResponseFormatter(formatter)
 }
 
 // RegisterNewAPIResponseWriter inject a new implementation in the
 // core.APIResponseWriter interface.
-// It affects only the default instance; instances from New use the built-in
-// implementation (per-instance options come later).
+//
+// Deprecated: use api.New(api.WithResponseWriter(...)) instead. It affects only the
+// default instance.
 func RegisterNewAPIResponseWriter(writer core.APIResponseWriter) {
 	api.RegisterNewAPIResponseWriter(writer)
 }
 
 // RegisterNewAPIRequestReceiver inject a new implementation in the
 // core.APIRequestReceiver interface.
-// It affects only the default instance; instances from New use the built-in
-// implementation (per-instance options come later).
+//
+// Deprecated: use api.New(api.WithRequestReceiver(...)) instead. It affects only the
+// default instance.
 func RegisterNewAPIRequestReceiver(receiver core.APIRequestReceiver) {
 	api.RegisterNewAPIRequestReceiver(receiver)
 }
 
 // RegisterNewAPISecurityGuarantor inject a new implementation in the
-// core.APISecurityGuarantor interface
+// core.APISecurityGuarantor interface. Every instance from New shares it.
 func RegisterNewAPISecurityGuarantor(guarantor core.APISecurityGuarantor) {
 	api.RegisterNewAPISecurityGuarantor(guarantor)
 }
@@ -102,7 +105,8 @@ func AddNewMapMethod(key string, methods []string) {
 	api.AddMapMethod(key, methods)
 }
 
-// RegisterParamValidator inject a new implementation in the Validator
+// RegisterParamValidator inject a new implementation in the Validator.
+// Every instance from New shares it.
 func RegisterParamValidator(paramValidator func(any) (errMsg string, err error)) {
 	api.RegisterParamValidator(paramValidator)
 }
