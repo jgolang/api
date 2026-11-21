@@ -157,7 +157,9 @@ func (writer ResponseWriter) writeForInstance(response *core.ResponseFormatted, 
 }
 
 // writeEncodeFailure answers 500 with the internal server error body built by
-// the instance's formatter, keeping the response headers. The body carries no
+// the instance's formatter. It keeps the response headers except their
+// Content-Type, which described the body that failed, and overlays the
+// headers the formatter returns (e.g. the problem Content-Type). The body carries no
 // event ID or token, since the request is not available here. If that body
 // cannot be encoded either, it answers 500 with no body.
 func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
@@ -175,17 +177,36 @@ func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w htt
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	writer.writeEncoded(headers, http.StatusInternalServerError, body.Bytes(), w)
+	writer.writeEncoded(failureHeaders(headers, formatted.Headers), http.StatusInternalServerError, body.Bytes(), w)
+}
+
+// failureHeaders returns a new map with base, minus its Content-Type, and
+// the entries of overlay set on top, as http.Header.Set would apply them.
+// Neither input is changed.
+func failureHeaders(base, overlay map[string]string) map[string]string {
+	merged := make(map[string]string, len(base)+len(overlay))
+	for key, value := range base {
+		key = http.CanonicalHeaderKey(key)
+		if key == "Content-Type" {
+			continue
+		}
+		merged[key] = value
+	}
+	for key, value := range overlay {
+		merged[http.CanonicalHeaderKey(key)] = value
+	}
+	return merged
 }
 
 // writeEncoded writes an encoded body. http.ErrBodyNotAllowed is not logged:
 // Warning and Informative default to status 100, and the recorder that
 // ProcessRequest writes into returns it for their body.
 func (writer ResponseWriter) writeEncoded(headers map[string]string, status int, body []byte, w http.ResponseWriter) {
+	// A Content-Type set in headers wins over the JSON default.
+	w.Header().Set("Content-Type", "application/json")
 	for key := range headers {
 		w.Header().Set(key, headers[key])
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil && !errors.Is(err, http.ErrBodyNotAllowed) {
 		writer.logError("response cannot be written", err)

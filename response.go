@@ -58,10 +58,11 @@ func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.Resp
 		writer.writeForInstance(response, w)
 		return
 	}
+	// A Content-Type set in Headers wins over the JSON default.
+	w.Header().Set("Content-Type", "application/json")
 	for key := range response.Headers {
 		w.Header().Set(key, response.Headers[key])
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.HTTPStatusCode)
 	err := json.NewEncoder(w).Encode(response.Body)
 	if err != nil {

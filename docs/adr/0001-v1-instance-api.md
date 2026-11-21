@@ -2,7 +2,7 @@
 
 - Status: Accepted (2026-11-21); implemented step by step through the v1 stories, all in v1.0.0:
   - 5.1 lands the instance, `Handler` and the two mode options (sections 2–3 for the modes; the `Get*Value*` helpers still use the default instance);
-  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7; landed); 5.5 the logger, redaction and an instance writer that never exits (section 6; landed); 5.6 problem details (section 8).
+  - 5.2 the receiver, formatter and writer options; 5.3 codes as declared (section 4; landed, including a `ResponseFormatter` passed with `WithResponseFormatter`); 5.4 kind overrides and the error hook (section 7; landed); 5.5 the logger, redaction and an instance writer that never exits (section 6; landed); 5.6 problem details (section 8; landed).
 - Issues: API-07 (#21), API-02 (#16), API-12 (#26), the v1 part of API-01 (#15).
 - Related: ADR 0002 (stdadapter on ServeMux patterns, lands with story 5.7) will record the routing change planned for the same release (API-08).
 
@@ -127,12 +127,13 @@ sequenceDiagram
 - In this mode an `Error` response is written as `application/problem+json`:
 
 ```json
-{"type": "about:blank", "title": "Not found", "status": 404, "detail": "task not found", "code": "PLN-404", "event_id": "abc123"}
+{"type": "about:blank", "title": "Error response!", "status": 404, "detail": "task not found", "code": "PLN-404", "event_id": "abc123"}
 ```
 
-  `title` is the response title, `status` the HTTP status, `detail` the public message without the trace suffix, and `code` and `event_id` are extension members (RFC 9457 section 3.2); empty members are omitted. `type` is always `about:blank` (no per-code URIs) and the trace suffix is not added, since `code` and `event_id` carry it.
+  `title` is the response title (e.g. `Error response!`, not the status phrase RFC 9457 section 4.2.1 suggests for `about:blank`), `status` the HTTP status, `detail` the public message without the trace suffix, and `code` and `event_id` are extension members (RFC 9457 section 3.2); empty members are omitted. `type` is always `about:blank` (no per-code URIs) and the trace suffix is not added, since `code` and `event_id` carry it. Content, token, actions and info are never put in the problem body.
 - Success, warning and informative responses write their content as the body (as `ResponseModeNone`).
-- The built-in `ResponseWriter` sets `Content-Type: application/json` only when the formatted headers do not set one. This is a behavior change for v0 callers who put a `Content-Type` in `Headers` (it was overwritten; now it is kept) and goes in the release notes.
+- Only the built-in formatter bound by `New` writes problem details; a custom formatter, or one embedding `ResponseFormatter` (which reads the package variable), never does. The problem formatter adds `Content-Type: application/problem+json` to a copy of `Headers` only when they do not set one, so a `Content-Type` set in `Headers` wins also for problem errors. The 500 sent when an instance's body cannot be encoded is the formatter's body, so it carries the formatter's `Content-Type` (`application/json`, or `application/problem+json` in problem mode), not one set in the failed response's `Headers`.
+- The built-in `ResponseWriter` (default instance and instances) sets `Content-Type: application/json` only when the formatted headers do not set one. This is a behavior change for v0 callers who put a `Content-Type` in `Headers` (it was overwritten; now it is kept) and goes in the release notes.
 
 ## What stays package-level in v1
 

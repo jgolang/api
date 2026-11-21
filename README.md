@@ -134,8 +134,11 @@ The mode options, and for the formatter `api.WithLowercaseCodes()`, apply to the
 | `api.ResponseModeEnvelope` (default) | `{"header": {"type", "title", "message", "code", "token", "action", "event_id", "info"}, "content": ...}`; empty header fields are omitted, except `type`. |
 | `api.ResponseModePlain` | The same fields at the top level, with `content` next to them: `{"type": "success", "code": "0000", ..., "content": ...}`. Every field is present. |
 | `api.ResponseModeNone` | Only the content, as is. |
+| `api.ResponseModeProblem` (instances only) | Errors as RFC 9457 problem details, `{"type": "about:blank", "title", "status", "detail", "code", "event_id"}`, sent as `application/problem+json`; empty members are omitted, except `type`. Other responses: only the content, as `api.ResponseModeNone`. |
 
 An unknown value falls back to the default (`api.RequestModePlain`, `api.ResponseModeEnvelope`).
+
+`api.ResponseModeProblem` is accepted only by `api.WithResponseMode`, for the built-in formatter; `api.SetResponseMode` treats it as unknown, so the default instance never writes problem details. In a problem body `title` is the response title, `detail` the public message without the trace suffix, and `code` and `event_id` are extension members; `type` is always `about:blank`, and content, token, actions and info are not sent. The built-in response writer sends `Content-Type: application/json` unless the response `Headers` set a `Content-Type`, which always wins, in every mode (before v1 it was overwritten); the 500 an instance sends for a body that cannot be encoded keeps the formatter's `Content-Type`.
 
 Requests that are not wrapped by an instance's `Handler` use the default instance, which reads the package variables `api.CurrentRequestMode` and `api.CurrentResponseMode` (set with `api.SetRequestMode` and `api.SetResponseMode`). These four names are deprecated: they affect only the default instance, for the whole process. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
 
