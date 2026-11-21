@@ -135,5 +135,5 @@ func Example_migrationProblemDetails() {
 	fmt.Print(rec.Body.String())
 	// Output:
 	// 400 application/problem+json
-	// {"type":"about:blank","title":"Error response!","status":400,"detail":"title is required","code":"TSK-001","event_id":"evt1"}
+	// {"type":"about:blank","title":"Bad Request","status":400,"detail":"title is required","code":"TSK-001","event_id":"evt1"}
 }

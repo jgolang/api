@@ -1,6 +1,6 @@
 # Migrating to v1
 
-This guide takes a v0 program (v0.10.x) to `github.com/jgolang/api` v1. The design is recorded in [ADR 0001](adr/0001-v1-instance-api.md) (the instance) and [ADR 0002](adr/0002-stdadapter-servemux.md) (routing; it lands with PR #38).
+This guide takes a v0 program (v0.11.x) to `github.com/jgolang/api` v1. The design is recorded in [ADR 0001](adr/0001-v1-instance-api.md) (the instance) and [ADR 0002](adr/0002-stdadapter-servemux.md) (routing; it lands with PR #38).
 
 ## Summary
 
@@ -8,7 +8,7 @@ This guide takes a v0 program (v0.10.x) to `github.com/jgolang/api` v1. The desi
 - v1 removes nothing. Every v0 name still compiles. Names replaced by an instance option are deprecated, and each one points at its option.
 - A program that does not change its code sends the same bodies as v0. Two things change for it:
   - `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)). This is the change most programs must act on.
-  - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0. This change may also be listed as breaking in the release notes (Q40, open).
+  - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too. It is a fix, not a breaking change: v0 discarded a `Content-Type` the service set. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0.
 - Configuration moves from package variables to an instance: `a := api.New(opts...)` and `a.Handler(router)` ([step 3](#step-3-move-to-apinew)). Handler code does not change.
 
 Three steps, each one shippable on its own:
@@ -24,8 +24,8 @@ Requests that no `a.Handler` wraps use the default instance. It keeps v0's behav
 - Response codes are lowercased (`e001`, `tsk-001`).
 - The package variables are read at call time: `CurrentRequestMode`, `CurrentResponseMode`, `TraceVisibility`, `TraceIDLength`, `BlankSuccess` and the body-logging variables.
 - The components set with `RegisterNewAPIRequestReceiver`, `RegisterNewAPIResponseFormatter` and `RegisterNewAPIResponseWriter` are used.
-- Logging goes through `Print` and `PrintError`, as in v0. A response that cannot be encoded still calls `Fatal` until the SEC-01 fix (PR #46) reaches v1.
-- `SensitiveLogKeys` keeps its v0 list, without `cookie` and `session`.
+- Logging goes through `Print` and `PrintError` and writes the same lines as v0.11.0. A response that cannot be encoded is answered with 500, as in v0.11.0; `Fatal` is never called.
+- `SensitiveLogKeys` keeps its v0.11.0 list (with `cookie` and `session`) and masking (headers, JSON body fields, query and form values, the user information of the `uri`).
 
 Deprecated names are reported by staticcheck (`SA1019`) and by gopls in your editor. `go vet` does not report them. Fix the routing first (step 2); the deprecations can wait until step 3.
 
@@ -37,11 +37,11 @@ Deprecated names are reported by staticcheck (`SA1019`) and by gopls in your edi
 |---|---|---|---|
 | 1 | Precedence is "most specific wins" (`/tasks/new` beats `/tasks/{id}`). Two routes conflict when a path matches both and neither is more specific: `/tasks/{id}` and `/tasks/{name}`, or `/tasks/{id}/notes` and `/tasks/new/{kind}`. | Duplicate routes and overlapping wildcards. They now panic at start-up. | Remove the duplicate, or make one route more specific. |
 | 2 | A trailing slash no longer matches a route without one: `/tasks/42/` is 404 for `/tasks/{id}`. A registered `/tasks/` still matches only `/tasks/` (unchanged). | Clients that send a trailing slash. | Register the trailing-slash path too, if clients send it. |
-| 3 | An escaped `%2F` matches a wildcard: `/files/a%2Fb` gives `name` = `a/b`, and `/files/..%2F..%2Fetc` gives `../../etc`. v0.10.0 answered 404. | Route variables used in file paths or other trusted lookups. | Validate the value first (see the security note below). |
+| 3 | An escaped `%2F` matches a wildcard: `/files/a%2Fb` gives `name` = `a/b`, and `/files/..%2F..%2Fetc` gives `../../etc`. v0.11.0 answered 404. | Route variables used in file paths or other trusted lookups. | Validate the value first (see the security note below). |
 | 4 | Wildcard names must be Go identifiers and whole segments. `{name}` is the only wildcard syntax. The method must be an upper-case token. | `{user-id}`, `{name}.json`, `{name...}`, `{$}`, and methods such as `get` or `""`. They now panic at registration. | `{user_id}`; split `{name}.json` into whole segments; drop `{name...}` and `{$}`; use `GET`. |
 | 5 | 405 is decided by the whole mux and carries an `Allow` header (`GET, HEAD, PUT`). A catch-all `/` on your mux takes these requests instead. | Clients or tests that expect a 405 body or no `Allow` header; a catch-all `/` route. | Expect `Allow` on 405; with a catch-all `/`, expect its answer. |
-| 6 | A GET route also answers HEAD (v0.10.0 answered 405). Method-keyed logic sees `HEAD`. | Skip paths: `GET:/health` (`api.GenSkipPath`) does not cover `HEAD /health`. | Add a `HEAD:` skip path where needed. |
-| 7 | Unclean paths (`//tasks`, `/a/../tasks`) redirect to the cleaned path with 307. Unchanged from v0.10.0 (earlier notes said 301). | Nothing. | None. |
+| 6 | A GET route also answers HEAD (v0.11.0 answered 405). Method-keyed logic sees `HEAD`. | Skip paths: `GET:/health` (`api.GenSkipPath`) does not cover `HEAD /health`. | Add a `HEAD:` skip path where needed. |
+| 7 | Unclean paths (`//tasks`, `/a/../tasks`) redirect to the cleaned path with 307. Unchanged from v0.11.0 (earlier notes said 301). | Nothing. | None. |
 | 8 | `GODEBUG=httpmuxgo121=1` turns off pattern matching: every route breaks, and the conflict panic is off too. | The environment, `//go:debug httpmuxgo121=1` directives, and `godebug` lines in your `go.mod`. | Remove the setting. |
 
 **Panics at registration.** `Router.Handle`, and so `api.Get`/`Post`/…, panics on:
@@ -185,11 +185,10 @@ a := api.New(
 
 **Logging.** An instance logs only through its `WithLogger` logger, as `slog` records (`request`, `response`, and error records). Without a logger it logs nothing. Compared with the default instance:
 
-- the sensitive keys are the v0 list plus `cookie` and `session`; `WithSensitiveLogKeys` only adds;
-- query values in `uri` are masked by key (`/login?access_token=[REDACTED]&page=2`); path segments are not;
+- the sensitive keys are the default `SensitiveLogKeys` list, copied when the instance is built, plus `WithSensitiveLogKeys`, which only adds; changing `SensitiveLogKeys` does not reach an instance;
+- header values, query values in `uri` (`/login?access_token=[REDACTED]&page=2`) and the user information of the `uri` (`http://[REDACTED]@host/...`) are masked with the same rules as the default instance; path segments are not;
 - bodies and the parsed form are never logged;
 - a failed `Get*Value*` helper logs the name as `key`; for a sensitive name the `error` gives only the kind of failure, never the value;
-- the user information of an absolute-form URI is masked (`http://[REDACTED]@host/...`);
 - the built-in writer never calls `Fatal` and never exits: a body that cannot be encoded is logged and answered with 500 and the `Error500()` body, with the formatter's `Content-Type`. The failed response's headers that describe its body (`Content-Type`, `Content-Encoding`, `Content-Length`, `ETag`, …) are dropped from that 500; the others are kept.
 
 See the README "Logging" section for every record.
@@ -197,10 +196,10 @@ See the README "Logging" section for every record.
 **Problem details.** `api.WithResponseMode(api.ResponseModeProblem)` writes errors as RFC 9457 `application/problem+json`. That includes the library's own rejections under the instance: `ProcessRequest`'s invalid body (400, `E002`) and panic (500, `E300`), the token and header middlewares (401, 415) and `RequestBody`. Other responses are written as their content alone. Only instances accept this mode; `SetResponseMode(ResponseModeProblem)` falls back to envelope. A non-empty `Content-Type` in the response's `Headers` still wins over `application/problem+json`.
 
 ```json
-{"type":"about:blank","title":"Error response!","status":400,"detail":"title is required","code":"TSK-001","event_id":"evt1"}
+{"type":"about:blank","title":"Bad Request","status":400,"detail":"title is required","code":"TSK-001","event_id":"evt1"}
 ```
 
-`detail` has no trace suffix. Content, token, actions and info are not sent. `Example_migrationProblemDetails` is the compiled version.
+`title` is the HTTP status phrase when the response title is a library default (`Error response!`, `Sorry!`, `Unauthorized!`, …); a title the service set is kept. `detail` has no trace suffix. Content, token, actions and info are not sent. `Example_migrationProblemDetails` is the compiled version.
 
 ## Tests
 
@@ -216,12 +215,8 @@ a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 
 These are not decided and may change before v1.0.0:
 
-- **Q33:** whether the v0 security fixes ship first as v0.10.1.
-- **Q34:** whether the default instance also masks `cookie`/`session` and query strings in its logs, and whether Basic auth stops accepting the `default:default` fallback when no credentials are set.
 - **Q35:** a request body limit, possibly as a `WithMaxBodyBytes` option with a 10 MiB default. Not built.
 - **Q36:** whether instances stop echoing the request token in the response `token` field. Today they echo it, as v0 does (problem bodies never carry it).
-- **Q39:** whether the problem `title` becomes the HTTP status phrase (`Bad Request`) instead of the response title.
-- **Q40:** whether the `Content-Type`-in-`Headers` change on the default instance is called a breaking change in the release notes. This guide lists it as a wire change either way.
 
 ## Checklist
 
