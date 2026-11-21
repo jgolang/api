@@ -48,14 +48,25 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // The route becomes the Go 1.22 ServeMux pattern "METHOD path" and is matched
 // exactly: a trailing slash matches only itself, not the paths below it.
 // {name} segments must be whole segments named by Go identifiers; their values
-// are read with api.GetRouteVar. Precedence, 404, 405 and HEAD for GET routes
-// come from http.ServeMux.
+// are read with api.GetRouteVar or r.PathValue. {name} is the only wildcard
+// syntax: ServeMux's {name...} and {$} are not supported. Precedence, 404, 405
+// and HEAD for GET routes come from http.ServeMux.
 //
-// Handle panics, as http.ServeMux.Handle does, when path is not a valid pattern
-// or conflicts with a route registered before (the same method and path, or
-// wildcards in the same place). A rejected route is not documented. See
-// docs/adr/0002-stdadapter-servemux.md.
+// Handle panics, as http.ServeMux.Handle does, when method is not an
+// upper-case RFC 9110 token ("GET", not "get" or ""), when path is not a valid
+// pattern or uses {name...} or {$}, or when the route conflicts with one
+// registered before: some request path matches both and neither is more
+// specific (the same method and path, wildcards in the same place, or crossing
+// routes such as /tasks/{id}/notes and /tasks/new/{kind}). A conflict is a
+// programming error in the route table. A rejected route is neither served nor
+// documented. See docs/adr/0002-stdadapter-servemux.md.
 func (router *Router) Handle(method string, path string, handler http.HandlerFunc, opts ...doc.RouteOption) {
+	if !validMethod(method) {
+		panic(fmt.Sprintf("stdadapter: invalid method %q for %q: want an upper-case RFC 9110 token such as GET", method, path))
+	}
+	if strings.Contains(path, "...}") || strings.Contains(path, "{$}") {
+		panic(fmt.Sprintf("stdadapter: unsupported wildcard in %q: only {name} is supported", path))
+	}
 	names := pathVarNames(path)
 	router.mux.HandleFunc(method+" "+exactPattern(path), func(w http.ResponseWriter, r *http.Request) {
 		if len(names) > 0 {
@@ -70,6 +81,30 @@ func (router *Router) Handle(method string, path string, handler http.HandlerFun
 	if router.docs != nil {
 		router.docs.Register(method, path, opts...)
 	}
+}
+
+// validMethod reports whether method is a non-empty RFC 9110 token with no
+// lower-case letters, so it matches the methods clients send and the
+// documented route.
+func validMethod(method string) bool {
+	if method == "" {
+		return false
+	}
+	for _, char := range method {
+		if !isTokenChar(char) || (char >= 'a' && char <= 'z') {
+			return false
+		}
+	}
+	return true
+}
+
+// isTokenChar reports whether char is an RFC 9110 tchar.
+func isTokenChar(char rune) bool {
+	switch {
+	case char >= 'A' && char <= 'Z', char >= 'a' && char <= 'z', char >= '0' && char <= '9':
+		return true
+	}
+	return strings.ContainsRune("!#$%&'*+-.^_`|~", char)
 }
 
 func normalizePath(path string) string {
@@ -97,8 +132,8 @@ func exactPattern(path string) string {
 func pathVarNames(path string) []string {
 	var names []string
 	for _, part := range strings.Split(normalizePath(path), "/") {
-		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") && part != "{$}" {
-			names = append(names, strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(part, "{"), "}"), "..."))
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			names = append(names, strings.TrimSuffix(strings.TrimPrefix(part, "{"), "}"))
 		}
 	}
 	return names

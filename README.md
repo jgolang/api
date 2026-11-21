@@ -292,22 +292,27 @@ See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, respon
 
 `stdadapter` registers each route as one Go 1.22 `ServeMux` pattern (`GET /tasks/{id}`), so matching, precedence, 404 and 405 come from `net/http`. Compared with earlier versions, which matched routes themselves:
 
-1. The most specific route wins (`/tasks/new` beats `/tasks/{id}`); routes that overlap with equal specificity (`/tasks/{id}` and `/tasks/{name}`) conflict.
-2. A trailing slash is exact: `/tasks/42/` is 404 for `/tasks/{id}`, and a registered `/tasks/` still matches only `/tasks/`.
-3. An escaped `%2F` inside a segment matches a wildcard (`/files/a%2Fb` gives `name` = `a/b` for `/files/{name}`).
-4. Wildcard names must be Go identifiers (`{user_id}`, not `{user-id}`) and whole segments (`/files/{name}`, not `/files/{name}.json`).
-5. 405 is decided by the whole mux and carries an `Allow` header.
-6. A GET route also answers HEAD.
-7. Unclean paths (`//tasks`, `/a/../tasks`) keep ServeMux's redirect to the cleaned path (307); this did not change, though earlier notes said 301.
-8. `GODEBUG=httpmuxgo121=1` turns off `ServeMux` patterns and breaks every route; the adapter requires the Go 1.22 mux.
+- **Precedence:** The most specific route wins (`/tasks/new` beats `/tasks/{id}`). Two routes conflict when some request path matches both and neither is more specific: `/tasks/{id}` and `/tasks/{name}`, or crossing routes such as `/tasks/{id}/notes` and `/tasks/new/{kind}`. A catch-all `/` already on the `*http.ServeMux` you pass to `stdadapter.New` still answers every path no route matches.
+- **Trailing slash:** A trailing slash is exact: `/tasks/42/` is 404 for `/tasks/{id}`.
+- **Escaped slash:** An escaped `%2F` inside a segment matches a wildcard: `/files/a%2Fb` gives `name` = `a/b` for `/files/{name}`, and `/files/..%2F..%2Fetc` gives `../../etc` (see [Security notes](#security-notes)).
+- **Wildcards:** Wildcard names must be Go identifiers (`{user_id}`, not `{user-id}`) and whole segments (`/files/{name}`, not `/files/{name}.json`). `{name}` is the only supported wildcard; `{name...}` and `{$}` panic.
+- **405:** 405 is decided by the whole mux and carries an `Allow` header. A catch-all `/` on the mux you pass in takes those requests instead, so they get its answer, not 405.
+- **HEAD:** A GET route also answers HEAD. Method-keyed logic sees `HEAD`: a skip path `GET:/health` (`api.GenSkipPath`) does not cover `HEAD /health`.
+- **Method:** `Handle` panics unless the method is an upper-case RFC 9110 token (`GET`, not `get` or `""`).
+- **GODEBUG:** `GODEBUG=httpmuxgo121=1` turns off `ServeMux` patterns and breaks every route; it also turns off the conflict panic. It can be set in the environment, by a `//go:debug httpmuxgo121=1` directive, or by a `godebug` line in your `go.mod`. The adapter requires the Go 1.22 mux.
 
-Registering a route that conflicts with an earlier one (the same method and path, or wildcards in the same place), or an invalid pattern, panics in `Handle` as it does in `http.ServeMux.Handle`; the route is not documented. See [ADR 0002](docs/adr/0002-stdadapter-servemux.md).
+A route that conflicts with an earlier one, or an invalid method or pattern, panics in `Handle`, as `http.ServeMux.Handle` does; the route is neither served nor documented. A conflict is a bug in the route table, found at start-up.
+
+Unchanged: a registered `/tasks/` matches only `/tasks/`, and `GET /tasks` redirects to it; unclean paths (`//tasks`, `/a/../tasks`) are redirected to the cleaned path.
+
+See [ADR 0002](docs/adr/0002-stdadapter-servemux.md).
 
 ## Security notes
 
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
 - Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
+- With `stdadapter`, a route variable can contain `/` and `..` (`/files/..%2F..%2Fetc` gives `name` = `../../etc`). Validate it before using it in a file path or another lookup that trusts it.
 
 ## Trace IDs
 
