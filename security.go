@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
@@ -9,13 +11,15 @@ import (
 )
 
 var (
-	// Username basic authentication
-	// Default: admin
-	// Change this, it's insecure.
+	// Username is the user name that the default basic authentication
+	// validator accepts. Default: "default".
+	//
+	// Warning: with the defaults, BasicToken accepts the publicly known
+	// credentials "default:default". Set Username and Password (or
+	// ValidateBasicAuthCredentialsFunc) before using BasicToken.
 	Username = "default"
-	// Password basic authentication
-	// Default: admin
-	// Change this, it's insecure.
+	// Password is the password that the default basic authentication
+	// validator accepts. Default: "default". See the warning on Username.
 	Password = "default"
 )
 
@@ -37,11 +41,19 @@ func (guaranter *SecurityGuaranter) ValidateCustomToken(token string, validator 
 	return validator(token)
 }
 
+// validateCredentials compares both values in constant time. Hashing first
+// gives both sides the same length, so the compare does not return early on
+// a length mismatch, and both compares always run.
 func validateCredentials(username, password string) bool {
-	if username == Username && password == Password {
-		return true
-	}
-	return false
+	usernameMatch := constantTimeEqual(username, Username)
+	passwordMatch := constantTimeEqual(password, Password)
+	return usernameMatch&passwordMatch == 1
+}
+
+func constantTimeEqual(got, want string) int {
+	gotSum := sha256.Sum256([]byte(got))
+	wantSum := sha256.Sum256([]byte(want))
+	return subtle.ConstantTimeCompare(gotSum[:], wantSum[:])
 }
 
 // ValidateCustomToken validate token with a custom method.
@@ -56,6 +68,8 @@ type ValidateCredentials func(string, string) bool
 var CustomTokenValidatorFunc core.CustomTokenValidator
 
 // ValidateBasicAuthCredentialsFunc define custom function for validate basic authentication credential.
+// The default compares against Username and Password in constant time; a
+// replacement should compare secrets in constant time as well (crypto/subtle).
 var ValidateBasicAuthCredentialsFunc ValidateCredentials = validateCredentials
 
 // ValidateBasicToken validate token with a basic auth token validation method.

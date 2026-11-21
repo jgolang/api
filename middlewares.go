@@ -35,6 +35,12 @@ var (
 var MiddlewaresChain = core.MiddlewaresChain
 
 // BasicToken validates basic authentication token middleware.
+//
+// Warning: with the default validator it accepts the publicly known
+// credentials "default:default" until Username and Password (or
+// ValidateBasicAuthCredentialsFunc) are set. After a successful check it
+// copies the user name and the plain password into the Basic-Client and
+// Basic-Secret request headers; do not forward or log those headers.
 func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
