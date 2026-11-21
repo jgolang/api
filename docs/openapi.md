@@ -66,8 +66,8 @@ func main() {
 		doc.Status(200, envelope.Success[[]TaskResponse]()),
 	)
 
-	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
-	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
+	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs), doc.Hidden())
+	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"), doc.Hidden())
 
 	http.ListenAndServe(":8080", router)
 }
@@ -83,7 +83,7 @@ The `doc` subpackage contains the OpenAPI metadata helpers, schema generation, r
 router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json",
 	doc.WithTitle("Orders API"),
 	doc.WithFavicon("/static/orders-icon.png"),
-))
+), doc.Hidden())
 ```
 
 `WithTitle` sets the `<title>`. `WithFavicon` replaces the default icon with a URL or a `data:` URI (PNG, SVG, ICO). Both values are HTML-escaped; an empty value keeps the default. Percent-encode (`url.PathEscape`) or base64-encode an SVG `data:` URI: a raw `#` (as in `fill="#fff"`) starts a URL fragment and cuts the image.
@@ -124,7 +124,9 @@ doc.Status(http.StatusBadRequest, envelope.Error())
 ```
 
 The typed response wrapper also documents `content` as optional, so successful
-responses may use only `header` when there is no payload.
+responses may use only `header` when there is no payload. `header` is required
+in `envelope.Success` and `envelope.Error`, as on the wire, and its `code`
+example is `0000`, the default success code; an error sends its own code.
 
 Use `doc.BodyWithExample` and `doc.StatusWithExample` to add complete request or
 response examples to the generated OpenAPI media type.
@@ -133,6 +135,11 @@ These types are for documentation only. They do not change the runtime request o
 In generated OpenAPI documents, inferred Go types are emitted under
 `components.schemas` and referenced with `$ref` to avoid repeating schemas per
 operation.
+A reference that also needs `nullable` (a pointer field, slice item or map
+value, such as `*Owner` or `[]*Owner`) or a tag such as `description` is
+written as `allOf: [{$ref}]` with those keys beside `allOf`, because OpenAPI
+3.0.3 ignores every key next to `$ref`. A body passed as a pointer
+(`doc.Body(&CreateTaskRequest{})`) is a sample value and stays a plain `$ref`.
 
 ## API metadata
 
@@ -177,6 +184,7 @@ docs.SetServers(
 - `doc.PathWithDescription("id", doc.Int, true, "Resource ID")`
 - `doc.PathEnum("status", doc.String, true, "Task status.", "open", "done")`
 - `doc.Public()` (writes `security: []`; overrides `doc.Security` and the default)
+- `doc.Hidden()` (keeps the route out of the spec, e.g. `/openapi.json` and `/docs`; `docs.Routes()` still returns it with `Hidden` set)
 - `doc.Security("bearerAuth")`
 
 ## Security schemes

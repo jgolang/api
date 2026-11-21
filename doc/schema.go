@@ -20,6 +20,9 @@ type Schema struct {
 	Nullable             bool               `json:"nullable,omitempty"`
 	Ref                  string             `json:"$ref,omitempty"`
 	Example              interface{}        `json:"example,omitempty"`
+	// AllOf holds a $ref that has sibling keys, such as nullable or a
+	// description, because OpenAPI 3.0.3 ignores every key beside $ref.
+	AllOf []*Schema `json:"allOf,omitempty"`
 }
 
 // SchemaFromType infers an OpenAPI schema from a Go value or reflect.Type.

@@ -66,8 +66,8 @@ func main() {
 		doc.Status(201, envelope.Success[TaskResponse]()),
 	)
 
-	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
-	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
+	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs), doc.Hidden())
+	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"), doc.Hidden())
 
 	http.ListenAndServe(":8080", a.Handler(router))
 }
@@ -330,20 +330,20 @@ func main() {
 		doc.Status(200, envelope.Success[[]TaskResponse]()),
 	)
 
-	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
-	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
+	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs), doc.Hidden())
+	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"), doc.Hidden())
 
 	http.ListenAndServe(":8080", router)
 }
 ```
 
-`docs.SetServers` writes the spec's `servers` (the base URL for "Try it out" and generated clients); `doc.API` also takes optional `Contact` and `License` (see [API metadata](docs/openapi.md#api-metadata)). `GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it. The docs page is titled `API Docs` and ships a generic icon; `doc.WithTitle("Orders API")` and `doc.WithFavicon("/static/orders-icon.png")` set your own (see [Docs page title and icon](docs/openapi.md#docs-page-title-and-icon), which also shows how to pass them through the exporter registry).
+`docs.SetServers` writes the spec's `servers` (the base URL for "Try it out" and generated clients); `doc.API` also takes optional `Contact` and `License` (see [API metadata](docs/openapi.md#api-metadata)). `GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it; `doc.Hidden()` keeps both out of the document. The docs page is titled `API Docs` and ships a generic icon; `doc.WithTitle("Orders API")` and `doc.WithFavicon("/static/orders-icon.png")` set your own (see [Docs page title and icon](docs/openapi.md#docs-page-title-and-icon), which also shows how to pass them through the exporter registry).
 
 ```go
 router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json",
 	doc.WithTitle("Orders API"),
 	doc.WithFavicon("/static/orders-icon.png"),
-))
+), doc.Hidden())
 ```
 
 Document the body in the shape the request mode expects: the content type itself in plain mode (`doc.Body(CreateTaskRequest{})`), or `doc.Body(envelope.Request[CreateTaskRequest]())` in envelope mode. `envelope.Success[T]()` and `envelope.Error()` document the envelope response mode.
