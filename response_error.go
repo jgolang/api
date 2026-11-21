@@ -135,10 +135,10 @@ func Error500(errs ...error) Error {
 	}
 }
 
-// Error501 returns a new HTTP Not Implement Error code.
-// and internal server error default title and default mesage. The code and
-// message come from the first coded error in errs (see getErrCode) when there
-// is one.
+// Error501 returns a new HTTP 501 Not Implemented error with the internal
+// server error default title and message. The code and message come from the
+// first coded error in errs (see getErrCode) when there is one. Before v0.10.0
+// it answered 503.
 func Error501(errs ...error) Error {
 	code, msg := getErrCode(errs...)
 	if code == "" {
@@ -151,7 +151,7 @@ func Error501(errs ...error) Error {
 		Title:          InternalServerTitle,
 		Message:        msg,
 		ResponseCode:   code,
-		HTTPStatusCode: http.StatusServiceUnavailable,
+		HTTPStatusCode: http.StatusNotImplemented,
 	}
 }
 

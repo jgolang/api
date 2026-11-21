@@ -178,7 +178,7 @@ Every response kind (`api.Success`, `api.Error`, `api.Warning`, `api.Informative
 | `api.Error400(errs...)`, `api.ErrorWithMsg(msg, errs...)` | 400 | the first coded error in `errs`, else `e001` |
 | `api.Error401()`, `api.Error403()` | 401, 403 | `b001`, `b002` |
 | `api.Error500(errs...)`, `api.Error500WithMsg(msg, errs...)` | 500 | the first coded error in `errs`, else `e300` |
-| `api.Error501(errs...)` | 503 | the first coded error in `errs`, else `e001` |
+| `api.Error501(errs...)` | 501 (503 before v0.10.0) | the first coded error in `errs`, else `e001` |
 
 Response codes are written in lower case. The default titles, messages and codes are package variables (`api.DefaultSuccessTitle`, `api.InternalServerMessage`, `api.ResponseCodes`, …).
 
