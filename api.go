@@ -41,7 +41,9 @@ var api = core.New(
 )
 
 // Write API response in JSON format in screen. You can to define response
-// JSON format implemented the APIResponseFormatter interface.
+// JSON format implemented the APIResponseFormatter interface. Write takes no
+// request, so it always uses the default instance, never one attached by
+// (*API).Handler.
 func Write(data core.ResponseData, w http.ResponseWriter) {
 	api.Write(data, w)
 }
@@ -49,7 +51,7 @@ func Write(data core.ResponseData, w http.ResponseWriter) {
 // ProcessEncryptedBody API request. You can to define request url encoding format and how to
 // validate it implemented the APIRequestReciver interface.
 func ProcessEncryptedBody(r *http.Request) (*EncryptedRequest, error) {
-	requestData, err := api.ProcessEncryptedBody(r)
+	requestData, err := instanceFrom(r).core.ProcessEncryptedBody(r)
 	return &EncryptedRequest{
 		RequestEncryptedData: requestData,
 	}, err
@@ -58,7 +60,7 @@ func ProcessEncryptedBody(r *http.Request) (*EncryptedRequest, error) {
 // ProcessBody API request. You can to define request JSON format and how to
 // validate it implemented the APIRequestReciver interface.
 func ProcessBody(r *http.Request) (*RequestContext, error) {
-	requestDataContext, err := api.ProcessBody(r)
+	requestDataContext, err := instanceFrom(r).core.ProcessBody(r)
 	return &RequestContext{
 		RequestDataContext: requestDataContext,
 	}, err
@@ -66,6 +68,8 @@ func ProcessBody(r *http.Request) (*RequestContext, error) {
 
 // RegisterNewAPIResponseFormatter inject a new implementation in the
 // APIResponseFormatter interface.
+// It affects only the default instance; instances from New use the built-in
+// implementation (per-instance options come later).
 func RegisterNewAPIResponseFormatter(formatter core.APIResponseFormatter) {
 	responseFormatter = formatter
 	api.RegisterNewAPIResponseFormatter(formatter)
@@ -73,12 +77,16 @@ func RegisterNewAPIResponseFormatter(formatter core.APIResponseFormatter) {
 
 // RegisterNewAPIResponseWriter inject a new implementation in the
 // core.APIResponseWriter interface.
+// It affects only the default instance; instances from New use the built-in
+// implementation (per-instance options come later).
 func RegisterNewAPIResponseWriter(writer core.APIResponseWriter) {
 	api.RegisterNewAPIResponseWriter(writer)
 }
 
 // RegisterNewAPIRequestReceiver inject a new implementation in the
 // core.APIRequestReceiver interface.
+// It affects only the default instance; instances from New use the built-in
+// implementation (per-instance options come later).
 func RegisterNewAPIRequestReceiver(receiver core.APIRequestReceiver) {
 	api.RegisterNewAPIRequestReceiver(receiver)
 }
