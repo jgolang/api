@@ -227,14 +227,14 @@ func (writer ResponseWriter) writeForInstance(response *core.ResponseFormatted, 
 }
 
 // writeEncodeFailure answers 500 with the internal server error body built by
-// the instance's formatter, keeping the response headers except their
-// Content-Type, which described the failed body; the error body's own
+// the instance's formatter, keeping the response headers except the ones
+// that described the failed body (withoutBodyHeaders); the error body's own
 // Content-Type applies. The body carries no event ID or token, since the
 // request is not available here. If the formatter returns no body, or it
 // cannot be encoded either, it answers 500 with no body and no Content-Type,
-// still with the other response headers.
+// still with the other kept headers.
 func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
-	headers = withoutContentType(headers)
+	headers = withoutBodyHeaders(headers)
 	failure := Error500()
 	formatted := writer.formatter.Format(core.ResponseData{
 		Title:          failure.Title,
@@ -295,15 +295,28 @@ func formattedContentType(headers map[string]string) string {
 	return ""
 }
 
-// withoutContentType returns a copy of headers without their Content-Type.
-func withoutContentType(headers map[string]string) map[string]string {
+// withoutBodyHeaders returns a copy of headers without the headers that
+// describe the body (see isBodyHeader), for a response whose body is
+// replaced by an error body.
+func withoutBodyHeaders(headers map[string]string) map[string]string {
 	kept := make(map[string]string, len(headers)+1)
 	for key, value := range headers {
-		if !strings.EqualFold(key, "Content-Type") {
+		if !isBodyHeader(key) {
 			kept[key] = value
 		}
 	}
 	return kept
+}
+
+// isBodyHeader reports whether key, whatever its case, names a header that
+// describes a response body.
+func isBodyHeader(key string) bool {
+	switch http.CanonicalHeaderKey(key) {
+	case "Content-Type", "Content-Encoding", "Content-Length", "Content-Range",
+		"Content-Disposition", "Content-Language", "Content-Location", "Etag", "Last-Modified":
+		return true
+	}
+	return false
 }
 
 func setHeaders(headers map[string]string, w http.ResponseWriter) {

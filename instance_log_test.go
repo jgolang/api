@@ -997,3 +997,43 @@ func TestEveryGetValueHelperFailureIsRecorded(t *testing.T) {
 		})
 	}
 }
+
+func TestInstanceEncodeFailureDropsTheFailedBodyHeaders(t *testing.T) {
+	bodyHeaders := map[string]string{
+		"Content-Encoding":    "gzip",
+		"Content-Length":      "20",
+		"Content-Disposition": "attachment",
+		"content-range":       "bytes 0-19/20",
+		"Content-Language":    "en",
+		"Content-Location":    "/tasks/1",
+		"ETag":                `"v1"`,
+		"Last-Modified":       "Sat, 21 Nov 2026 00:00:00 GMT",
+	}
+	headers := maps.Clone(bodyHeaders)
+	headers["X-Trace"] = "t"
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Success{Content: math.NaN(), Headers: headers}.Write(w, r)
+	})
+
+	rec := serve(New().Handler(handler), http.MethodGet, "", nil)
+
+	if rec.Code != http.StatusInternalServerError || !json.Valid(rec.Body.Bytes()) {
+		t.Fatalf("response = %d %q, want 500 with a JSON body", rec.Code, rec.Body)
+	}
+	if rec.Header().Get("X-Trace") != "t" || rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("headers = %v, want X-Trace kept and application/json", rec.Header())
+	}
+	for key := range bodyHeaders {
+		if got := rec.Header().Get(key); got != "" {
+			t.Errorf("header %s = %q, want it dropped", key, got)
+		}
+	}
+}
+
+func TestWithoutBodyHeaders(t *testing.T) {
+	got := withoutBodyHeaders(map[string]string{"content-type": "text/html", "ETAG": "x", "X-Trace": "t"})
+
+	if want := map[string]string{"X-Trace": "t"}; !maps.Equal(got, want) {
+		t.Fatalf("withoutBodyHeaders = %v, want %v", got, want)
+	}
+}
