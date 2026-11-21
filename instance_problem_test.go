@@ -56,7 +56,9 @@ func TestProblemDetailsMembers(t *testing.T) {
 		a       *API
 		handler http.HandlerFunc
 		body    string
-		// ignoreEventID drops event_id before comparing.
+		headers map[string]string
+		// ignoreEventID drops event_id before comparing: only ProcessRequest
+		// generates one for a request without an event ID header.
 		ignoreEventID bool
 		want          map[string]any
 	}{
@@ -103,19 +105,111 @@ func TestProblemDetailsMembers(t *testing.T) {
 			want:    map[string]any{"type": "about:blank", "title": "Error response!", "status": 404.0, "detail": "task not found", "code": "PLN-404"},
 		},
 		{
+			// The rejection comes before ProcessRequest generates an event ID.
 			name:    "ProcessRequest bad JSON",
 			a:       problemInstance(),
-			handler: ProcessRequest(func(w http.ResponseWriter, r *http.Request) { Success200().Write(w, r) }),
+			handler: ProcessRequest(writeSuccess),
 			body:    `{"title":`,
-			// ProcessRequest generates the event ID.
+			want:    map[string]any{"type": "about:blank", "title": "Invalid request content", "status": 400.0, "detail": "Request content empty json structure", "code": "E002"},
+		},
+		{
+			name:          "ProcessRequest panic",
+			a:             problemInstance(),
+			handler:       ProcessRequest(func(http.ResponseWriter, *http.Request) { panic("boom") }),
 			ignoreEventID: true,
-			want:          map[string]any{"type": "about:blank", "title": "Invalid request content", "status": 400.0, "detail": "Request content empty json structure", "code": "E002"},
+			want:          map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 500.0, "detail": InternalServerMessage, "code": "E300"},
+		},
+		{
+			name:    "WithKindStatus 410",
+			a:       problemInstance(WithKindStatus(codes.KindNotFound, http.StatusGone)),
+			handler: writeTaskNotFound,
+			want:    map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 410.0, "detail": "task not found", "code": "PLN-404"},
+		},
+		{
+			name:    "WithKindStatus 503",
+			a:       problemInstance(WithKindStatus(codes.KindNotFound, http.StatusServiceUnavailable)),
+			handler: writeTaskNotFound,
+			want:    map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 503.0, "detail": "task not found", "code": "PLN-404"},
+		},
+		{
+			name:    "BasicToken",
+			a:       problemInstance(),
+			handler: BasicToken(writeSuccess),
+			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 401.0, "detail": DefaultInvalidAuthHeaderMsg, "code": "B001"},
+		},
+		{
+			name:    "CustomToken",
+			a:       problemInstance(),
+			handler: CustomToken(writeSuccess),
+			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 401.0, "detail": DefaultInvalidAuthHeaderMsg, "code": "B001"},
+		},
+		{
+			name:    "RequestHeaderJSON",
+			a:       problemInstance(),
+			handler: RequestHeaderJSON(writeSuccess),
+			body:    `{}`,
+			headers: map[string]string{"Content-Type": "text/plain"},
+			want:    map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 415.0, "detail": "Content-Type not is JSON!", "code": "E002"},
+		},
+		{
+			name:    "RequestHeaderSession",
+			a:       problemInstance(),
+			handler: RequestHeaderSession(writeSuccess),
+			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 401.0, "detail": "Invalid session ID", "code": "B001"},
+		},
+		{
+			name:    "RequestBody",
+			a:       problemInstance(),
+			handler: RequestBody(writeSuccess),
+			body:    `{"title":`,
+			want:    map[string]any{"type": "about:blank", "title": "Invalid request content", "status": 400.0, "detail": "Request content empty json structure", "code": "E002"},
+		},
+		{
+			name:    "Error403",
+			a:       problemInstance(),
+			handler: func(w http.ResponseWriter, r *http.Request) { Error403().Write(w, r) },
+			want:    map[string]any{"type": "about:blank", "title": UnauthorizedTitle, "status": 403.0, "detail": UnauthorizedMessage, "code": "B002"},
+		},
+		{
+			name:    "Error500",
+			a:       problemInstance(),
+			handler: func(w http.ResponseWriter, r *http.Request) { Error500().Write(w, r) },
+			want:    map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 500.0, "detail": InternalServerMessage, "code": "E300"},
+		},
+		{
+			name:    "Error501",
+			a:       problemInstance(),
+			handler: func(w http.ResponseWriter, r *http.Request) { Error501().Write(w, r) },
+			want:    map[string]any{"type": "about:blank", "title": InternalServerTitle, "status": 501.0, "detail": InternalServerMessage, "code": "E001"},
+		},
+		{
+			// Token, content, actions and info never reach a problem body.
+			name: "token, content and info left out",
+			a:    problemInstance(),
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				response := Error400()
+				response.Content = map[string]string{"field": "title"}
+				response.SecurityToken = "s3cr3t"
+				response.Actions = "retry"
+				response.Info = map[string]string{"k": "v"}
+				response.Write(w, r)
+			},
+			headers: map[string]string{"Authorization": "Bearer t0k3n"},
+			want:    map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 400.0, "detail": DefaultErrorMessage, "code": "E001"},
+		},
+		{
+			name: "empty Content-Type in Headers",
+			a:    problemInstance(),
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				Error{Headers: map[string]string{"Content-Type": ""}}.Write(w, r)
+			},
+			want: map[string]any{"type": "about:blank", "title": DefaultErrorTitle, "status": 400.0, "detail": DefaultErrorMessage, "code": "E001"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := serve(tt.a.Handler(tt.handler), http.MethodPost, tt.body, nil)
+			rec := serve(tt.a.Handler(tt.handler), http.MethodPost, tt.body, tt.headers)
 
 			if got := rec.Header().Get("Content-Type"); got != problemContentType {
 				t.Fatalf("Content-Type = %q, want %q", got, problemContentType)
@@ -146,6 +240,14 @@ func TestProblemInstanceWritesOtherResponsesAsContent(t *testing.T) {
 		}},
 		{"Informative", func(w http.ResponseWriter, r *http.Request) {
 			Informative{HTTPStatusCode: http.StatusOK, Content: content}.Write(w, r)
+		}},
+		// A Content-Type the handler put on w.Header() never labels the body.
+		{"handler preset text/html", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			SuccessWithContent(content).Write(w, r)
+		}},
+		{"empty Content-Type in Headers", func(w http.ResponseWriter, r *http.Request) {
+			Success{Content: content, Headers: map[string]string{"Content-Type": ""}}.Write(w, r)
 		}},
 	}
 
@@ -202,6 +304,13 @@ func TestBuiltInWriterKeepsAContentTypeSetInHeaders(t *testing.T) {
 		Success{Headers: map[string]string{"Content-Type": "text/csv"}}.Write(w, r)
 	}
 	plain := func(w http.ResponseWriter, r *http.Request) { Success200().Write(w, r) }
+	empty := func(w http.ResponseWriter, r *http.Request) {
+		Success{Headers: map[string]string{"content-type": ""}}.Write(w, r)
+	}
+	preset := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		Success200().Write(w, r)
+	}
 	plainInstance := New(WithResponseMode(ResponseModePlain))
 	tests := []struct {
 		name    string
@@ -212,6 +321,9 @@ func TestBuiltInWriterKeepsAContentTypeSetInHeaders(t *testing.T) {
 		{"default instance without Content-Type", http.HandlerFunc(plain), "application/json"},
 		{"plain instance with Content-Type", plainInstance.Handler(http.HandlerFunc(csv)), "text/csv"},
 		{"plain instance without Content-Type", plainInstance.Handler(http.HandlerFunc(plain)), "application/json"},
+		{"default instance with empty Content-Type", http.HandlerFunc(empty), "application/json"},
+		{"plain instance with empty Content-Type", plainInstance.Handler(http.HandlerFunc(empty)), "application/json"},
+		{"default instance with handler preset text/html", http.HandlerFunc(preset), "application/json"},
 	}
 
 	for _, tt := range tests {

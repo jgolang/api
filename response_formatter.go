@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/jgolang/api/core"
@@ -158,18 +157,18 @@ func (formatter ResponseFormatter) formatProblem(data core.ResponseData) *core.R
 }
 
 // problemHeaders returns a copy of headers with the problem Content-Type,
-// unless headers already set one (a set Content-Type always wins). It copies
-// so the caller's map is never changed.
+// unless headers already set a non-empty one (a set Content-Type always
+// wins; an empty value counts as unset, as in the writers). It copies so the
+// caller's map is never changed.
 func problemHeaders(headers map[string]string) map[string]string {
 	problem := make(map[string]string, len(headers)+1)
-	hasContentType := false
 	for key, value := range headers {
-		problem[key] = value
-		if http.CanonicalHeaderKey(key) == "Content-Type" {
-			hasContentType = true
+		if value == "" && strings.EqualFold(key, "Content-Type") {
+			continue
 		}
+		problem[key] = value
 	}
-	if !hasContentType {
+	if formattedContentType(problem) == "" {
 		problem["Content-Type"] = problemContentType
 	}
 	return problem

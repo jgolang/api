@@ -44,7 +44,9 @@ func getEventID(r *http.Request) string {
 // ResponseWriter implementation of core.APIResponseWriter interface.
 // The zero value calls Fatal when a body cannot be encoded, as v0 does; New
 // binds its logger and formatter to it, so an instance's built-in writer
-// logs the failure and answers 500 instead.
+// logs the failure and answers 500 instead. Both send the Content-Type set
+// in the formatted Headers (any key case; an empty value counts as unset),
+// else application/json; one a handler set on w.Header() is overwritten.
 type ResponseWriter struct {
 	// fromNew is set by New; false is the default instance's v0 behavior.
 	fromNew   bool
@@ -58,11 +60,14 @@ func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.Resp
 		writer.writeForInstance(response, w)
 		return
 	}
-	// A Content-Type set in Headers wins over the JSON default.
-	w.Header().Set("Content-Type", "application/json")
 	for key := range response.Headers {
 		w.Header().Set(key, response.Headers[key])
 	}
+	contentType := formattedContentType(response.Headers)
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(response.HTTPStatusCode)
 	err := json.NewEncoder(w).Encode(response.Body)
 	if err != nil {
