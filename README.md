@@ -233,6 +233,19 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 
 401 and 403 use the unauthorized title, like `Error401`/`Error403`; a nil error answers 500. `ExampleWriteError` in `example_write_error_test.go` is the compiled version.
 
+An `api.New` instance can change the status of a kind and observe every error `WriteError` writes:
+
+```go
+a := api.New(
+	api.WithKindStatus(codes.KindValidation, http.StatusUnprocessableEntity), // repeat per kind
+	api.WithErrorHook(func(r *http.Request, err error, status int) {
+		slog.ErrorContext(r.Context(), "request failed", "status", status, "error", err)
+	}),
+)
+```
+
+Kinds without an override keep `api.StatusForKind`. Only statuses 400–599 are accepted: other calls are ignored and leave any earlier override for the kind in place, and a later valid call wins. Errors without a kind always answer 500. The title follows the decided status: the internal title for any 5xx, the unauthorized title for 401 and 403. The hook runs on the request goroutine with the original error and the status `WriteError` decided (a handler that already wrote a header, or a custom formatter or writer, can send another), before anything is written; it is shared by all requests the instance serves and may run concurrently, so it must be safe for concurrent use. A panic in it is not recovered: `api.ProcessRequest` turns it into a logged 500, and without `api.ProcessRequest` `net/http` aborts the connection; the log shows a non-`error` panic value only once the SEC-03 fix (#48) is in. Only `WriteError` calls the hook: not `Error400`/`Error500`/the other helpers, and not the library's own rejections (body-parse failures in `api.RequestBody`/`api.ProcessRequest`, the token middlewares' 401s, `api.ProcessRequest`'s panic 500). The default instance has no overrides and no hook. `ExampleWithKindStatus` and `ExampleWithErrorHook` are the compiled versions.
+
 ## Routing and OpenAPI
 
 The package includes a router-agnostic registration layer for OpenAPI 3 and Swagger UI. The native adapter uses only Go's standard `net/http` package, while adapters for Gin, Echo, chi, gorilla/mux, or other routers should live in the application that chooses those routers (`api.RegisterAdapter` and `api.NewRouter` register and build them by name).

@@ -28,3 +28,30 @@ func ExampleWriteError() {
 	// Output:
 	// 404
 }
+
+func ExampleWithKindStatus() {
+	a := api.New(api.WithKindStatus(codes.KindValidation, http.StatusUnprocessableEntity))
+	handler := a.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.WriteError(w, r, errors.NewC(codes.ValRequired, "title"))
+	}))
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/tasks", nil))
+
+	fmt.Println(recorder.Code)
+	// Output:
+	// 422
+}
+
+func ExampleWithErrorHook() {
+	a := api.New(api.WithErrorHook(func(r *http.Request, err error, status int) {
+		fmt.Println(status, err) // log or count the error here
+	}))
+	handler := a.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.WriteError(w, r, fmt.Errorf("loading task: database unavailable"))
+	}))
+
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tasks/42", nil))
+	// Output:
+	// 500 loading task: database unavailable
+}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/jgolang/api/core"
+	"github.com/jgolang/errors/codes"
 )
 
 // API holds one service's api configuration. Create it with New. It is
@@ -16,9 +17,13 @@ import (
 // ResponseFormatter is used as given, so its promoted methods read the
 // package mode variables. An API from New sends response codes as declared
 // unless built with WithLowercaseCodes; the default instance lowercases them.
+// WriteError answers with the instance's WithKindStatus overrides and calls
+// its WithErrorHook; the default instance has neither.
 // A zero or nil API is the default instance.
 type API struct {
-	core *core.API
+	core       *core.API
+	kindStatus map[codes.Kind]int
+	errorHook  func(r *http.Request, err error, status int)
 }
 
 // options collects what the Option values passed to New set. New owns it, so
@@ -30,6 +35,8 @@ type options struct {
 	receiver       core.APIRequestReceiver
 	formatter      core.APIResponseFormatter
 	writer         core.APIResponseWriter
+	kindStatus     map[codes.Kind]int
+	errorHook      func(r *http.Request, err error, status int)
 }
 
 // Option configures an API in New. New skips a nil Option.
@@ -42,7 +49,8 @@ type Option func(*options)
 // declared (PLN-001 stays PLN-001); WithLowercaseCodes restores the v0
 // lowercasing. The security guarantor and param validator are shared with
 // the default instance: RegisterNewAPISecurityGuarantor and
-// RegisterParamValidator apply to every instance.
+// RegisterParamValidator apply to every instance. WriteError has no kind
+// overrides and no error hook unless WithKindStatus or WithErrorHook set them.
 func New(opts ...Option) *API {
 	o := options{
 		requestMode:  RequestModePlain,
@@ -53,14 +61,18 @@ func New(opts ...Option) *API {
 			opt(&o)
 		}
 	}
-	return &API{core: core.New(
-		o.requestReceiver(),
-		o.responseFormatter(),
-		o.responseWriter(),
-		sharedSecurityGuarantor{},
-		&mapMethods,
-		sharedParamValidator,
-	)}
+	return &API{
+		core: core.New(
+			o.requestReceiver(),
+			o.responseFormatter(),
+			o.responseWriter(),
+			sharedSecurityGuarantor{},
+			&mapMethods,
+			sharedParamValidator,
+		),
+		kindStatus: o.kindStatus, // built by WithKindStatus inside New; nothing else holds it
+		errorHook:  o.errorHook,
+	}
 }
 
 // requestReceiver returns the receiver New uses. A built-in receiver without
@@ -151,6 +163,50 @@ func WithResponseMode(mode ResponseMode) Option {
 func WithLowercaseCodes() Option {
 	return func(o *options) {
 		o.lowercaseCodes = true
+	}
+}
+
+// WithKindStatus makes WriteError answer errors whose code has kind with
+// status instead of StatusForKind(kind). Repeat it to override more kinds;
+// a later valid call for the same kind wins, and kinds without an override
+// keep StatusForKind. Only error statuses (400 to 599) are accepted: any
+// other status is ignored, so an error never answers 2xx or 3xx. The empty
+// kind is ignored too, so errors without a kind, and nil errors, always
+// answer 500. An ignored call leaves any earlier override in place. The
+// response title follows the status as in WriteError: the internal title
+// for any 5xx, the unauthorized title for 401 and 403.
+func WithKindStatus(kind codes.Kind, status int) Option {
+	return func(o *options) {
+		if kind == "" || status < http.StatusBadRequest || status > maxErrorStatus {
+			return
+		}
+		if o.kindStatus == nil {
+			o.kindStatus = make(map[codes.Kind]int)
+		}
+		o.kindStatus[kind] = status
+	}
+}
+
+// maxErrorStatus is the highest status WithKindStatus accepts.
+const maxErrorStatus = 599
+
+// WithErrorHook sets fn to observe every error the instance's WriteError
+// writes, for example to log or count it. fn receives the request, the
+// error exactly as passed to WriteError (nil included) and the status
+// WriteError decided. That status may differ from the one sent when the
+// handler already wrote a header or a custom formatter or writer changes it.
+// It runs synchronously on the request goroutine, after the status is
+// decided and before anything is written. Only WriteError calls fn: the
+// other error helpers (Error400, Error500, ...) and the library's own
+// rejections (body-parse failures in RequestBody and ProcessRequest, the
+// token middlewares' 401s, ProcessRequest's panic 500) do not. A panic in fn is not recovered:
+// it propagates out of WriteError with nothing written. fn is shared by all
+// requests the instance serves and may run concurrently, so it must be safe
+// for concurrent use. A later WithErrorHook replaces an earlier one, and nil
+// means no hook.
+func WithErrorHook(fn func(r *http.Request, err error, status int)) Option {
+	return func(o *options) {
+		o.errorHook = fn
 	}
 }
 
