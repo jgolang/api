@@ -337,36 +337,6 @@ func TestBuiltInWriterKeepsAContentTypeSetInHeaders(t *testing.T) {
 	}
 }
 
-func TestSetResponseModeTreatsProblemAsUnknown(t *testing.T) {
-	usePackageModes(t, CurrentRequestMode, CurrentResponseMode)
-
-	SetResponseMode(ResponseModeProblem)
-	rec := serve(http.HandlerFunc(writeTaskNotFound), http.MethodGet, "", nil)
-
-	if CurrentResponseMode != ResponseModeEnvelope {
-		t.Fatalf("CurrentResponseMode = %s, want envelope", CurrentResponseMode)
-	}
-	assertEnvelopeError(t, rec.Header().Get("Content-Type"), rec.Body.Bytes())
-}
-
-func TestDefaultInstanceWritesEnvelopeWhenThePackageModeIsProblem(t *testing.T) {
-	usePackageModes(t, RequestModePlain, ResponseModeProblem)
-
-	rec := serve(http.HandlerFunc(writeTaskNotFound), http.MethodGet, "", nil)
-
-	assertEnvelopeError(t, rec.Header().Get("Content-Type"), rec.Body.Bytes())
-}
-
-func assertEnvelopeError(t *testing.T, contentType string, body []byte) {
-	t.Helper()
-	if contentType != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", contentType)
-	}
-	if got := responseModeOf(body); got != ResponseModeEnvelope {
-		t.Fatalf("response mode = %s, want envelope (%s)", got, body)
-	}
-}
-
 func TestProblemInstanceAnswersProblem500WhenResponseCannotBeEncoded(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		SuccessWithContent(math.NaN()).Write(w, r)

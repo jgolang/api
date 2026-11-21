@@ -7,8 +7,9 @@
 // handler (usually the router) with (*API).Handler; the package-level
 // writers and middlewares then use that instance for the request.
 //
-// Without an instance, the package-level functions use a deprecated default
-// instance configured by package variables and the RegisterNew* functions.
-// It behaves as in v0 so existing programs keep working; see
+// Without an instance, the package-level functions use a default instance
+// that answers like New() with its defaults. It logs through Print and
+// PrintError, and the deprecated package variables and RegisterNew*
+// functions still configure its modes, sensitive keys and components; see
 // docs/migration-v1.md for the move to New.
 package api

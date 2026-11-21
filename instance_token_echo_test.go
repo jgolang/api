@@ -17,7 +17,7 @@ var tokenWriters = map[string]http.HandlerFunc{
 	"informative": func(w http.ResponseWriter, r *http.Request) { Informative{HTTPStatusCode: http.StatusOK}.Write(w, r) },
 }
 
-// tokenRequests carry the request token in each place getSecurityToken reads.
+// tokenRequests carry the request token in each place v0 read it from to echo it.
 var tokenRequests = map[string]map[string]string{
 	"bearer":       {"Authorization": "Bearer request-token"},
 	"token header": {SecurityTokenHeaderKey: "request-token"},
@@ -128,13 +128,13 @@ func TestInstanceCustomFormatterGetsNoRequestToken(t *testing.T) {
 	}
 }
 
-func TestDefaultInstanceStillEchoesTheRequestToken(t *testing.T) {
+func TestDefaultInstanceDoesNotEchoTheRequestTokenFromAnySource(t *testing.T) {
 	usePackageModes(t, RequestModePlain, ResponseModePlain)
 	for writer, handler := range tokenWriters {
 		for source, headers := range tokenRequests {
 			t.Run(writer+"/"+source, func(t *testing.T) {
-				if got := responseToken(t, handler, headers); got != "request-token" {
-					t.Fatalf("token = %v, want request-token", got)
+				if got := responseToken(t, handler, headers); got != "" {
+					t.Fatalf("token = %v, want empty", got)
 				}
 			})
 		}
@@ -153,7 +153,7 @@ func TestRequestHeaderSessionResponseHeader(t *testing.T) {
 		want    []string
 	}{
 		{name: "instance does not copy the token", handler: New().Handler(RequestHeaderSession(writeSuccess)), want: nil},
-		{name: "default instance copies the token", handler: RequestHeaderSession(writeSuccess), want: []string{"request-token"}},
+		{name: "default instance does not copy the token", handler: RequestHeaderSession(writeSuccess), want: nil},
 		// A guard for the documented way to return a token on an instance.
 		{name: "instance keeps a token the handler sets", handler: New().Handler(RequestHeaderSession(setRenewedToken)), want: []string{"renewed-token"}},
 	}

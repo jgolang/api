@@ -35,10 +35,10 @@ func TestInternalServerErrorCode(t *testing.T) {
 		wantDefault  string
 		wantInstance string
 	}{
-		{name: "default code", wantDefault: "e300", wantInstance: "E300"},
-		{name: "only the deprecated field set", deprecated: "X1", wantDefault: "x1", wantInstance: "X1"},
-		{name: "only the new field set", current: "X2", wantDefault: "x2", wantInstance: "X2"},
-		{name: "both set, new wins", deprecated: "X1", current: "X2", wantDefault: "x2", wantInstance: "X2"},
+		{name: "default code", wantDefault: "E300", wantInstance: "E300"},
+		{name: "only the deprecated field set", deprecated: "X1", wantDefault: "X1", wantInstance: "X1"},
+		{name: "only the new field set", current: "X2", wantDefault: "X2", wantInstance: "X2"},
+		{name: "both set, new wins", deprecated: "X1", current: "X2", wantDefault: "X2", wantInstance: "X2"},
 	}
 
 	for _, tt := range tests {

@@ -76,8 +76,8 @@ func TestInstanceCodeCase(t *testing.T) {
 		{"declared Error400", declaredInstance, "Error400", "PLN-001", "title is required (evt-12-PLN-001)"},
 		{"lowercase WriteError", lowercaseInstance, "WriteError", "pln-001", "title is required (evt-12-pln-001)"},
 		{"lowercase Error400", lowercaseInstance, "Error400", "pln-001", "title is required (evt-12-pln-001)"},
-		{"default instance WriteError", noInstance, "WriteError", "pln-001", "title is required (evt-12-pln-001)"},
-		{"default instance Error400", noInstance, "Error400", "pln-001", "title is required (evt-12-pln-001)"},
+		{"default instance WriteError", noInstance, "WriteError", "PLN-001", "title is required (evt-12-PLN-001)"},
+		{"default instance Error400", noInstance, "Error400", "PLN-001", "title is required (evt-12-PLN-001)"},
 		{"declared default error code", declaredInstance, "Error400 default code", "E001", "The service has not completed the operation! (evt-12-E001)"},
 		{"declared success", declaredInstance, "Success", "0000", ""},
 		{"declared warning", declaredInstance, "Warning", "0000", "The application has been successful but with potential problems! (evt-12-0000)"},
@@ -152,7 +152,7 @@ func TestInstancesServeConcurrentlyWithTheirOwnCodeCase(t *testing.T) {
 		"PLN-001": New().Handler(codeWriters["WriteError"]),
 		"pln-001": New(WithLowercaseCodes()).Handler(codeWriters["WriteError"]),
 	}
-	// The default instance lowercases as in v0.
+	// The default instance sends codes as declared, like New().
 	defaultHandler := codeWriters["WriteError"]
 
 	var wg sync.WaitGroup
@@ -167,8 +167,8 @@ func TestInstancesServeConcurrentlyWithTheirOwnCodeCase(t *testing.T) {
 		}
 		wg.Go(func() {
 			rec := serve(defaultHandler, http.MethodGet, "", nil)
-			if code, _ := codeAndMessage(rec.Body.Bytes()); code != "pln-001" {
-				t.Errorf("default instance code = %q, want pln-001", code)
+			if code, _ := codeAndMessage(rec.Body.Bytes()); code != "PLN-001" {
+				t.Errorf("default instance code = %q, want PLN-001", code)
 			}
 		})
 	}
@@ -194,11 +194,11 @@ func TestInstanceIgnoresPackageFormatterSettings(t *testing.T) {
 		blankSuccess         bool
 		wantDefaultMessage   string
 	}{
-		{1, 6, true, "title is required (evt-12-pln-001)"},
+		{1, 6, true, "title is required (evt-12-PLN-001)"},
 		{0, 6, true, "title is required"},
-		{2, 6, true, "title is required (pln-001)"},
+		{2, 6, true, "title is required (PLN-001)"},
 		{3, 3, true, "title is required (evt)"},
-		{1, 3, false, "title is required (evt-pln-001)"},
+		{1, 3, false, "title is required (evt-PLN-001)"},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%d/%d/%t", tt.visibility, tt.idLength, tt.blankSuccess), func(t *testing.T) {
@@ -229,7 +229,7 @@ func TestInstanceIgnoresPackageFormatterSettings(t *testing.T) {
 // embeddedFormatter is a custom formatter that embeds the built-in one.
 type embeddedFormatter struct{ ResponseFormatter }
 
-func TestEmbeddedFormatterLowercasesAndUsesThePackageMode(t *testing.T) {
+func TestEmbeddedFormatterDeclaresCodesAndUsesThePackageMode(t *testing.T) {
 	usePackageModes(t, RequestModePlain, ResponseModePlain)
 	a := New(WithResponseMode(ResponseModeEnvelope), WithResponseFormatter(embeddedFormatter{}))
 
@@ -238,8 +238,8 @@ func TestEmbeddedFormatterLowercasesAndUsesThePackageMode(t *testing.T) {
 	if got := responseModeOf(rec.Body.Bytes()); got != ResponseModePlain {
 		t.Errorf("response mode = %q, want the package mode plain", got)
 	}
-	if code, _ := codeAndMessage(rec.Body.Bytes()); code != "pln-001" {
-		t.Errorf("code = %q, want pln-001", code)
+	if code, _ := codeAndMessage(rec.Body.Bytes()); code != "PLN-001" {
+		t.Errorf("code = %q, want PLN-001", code)
 	}
 }
 
@@ -252,7 +252,7 @@ func TestProcessRequestRejectionUsesTheInstanceCodeCase(t *testing.T) {
 	}{
 		{"New()", New().Handler, "E002"},
 		{"New(WithLowercaseCodes())", New(WithLowercaseCodes()).Handler, "e002"},
-		{"default instance", func(h http.Handler) http.Handler { return h }, "e002"},
+		{"default instance", func(h http.Handler) http.Handler { return h }, "E002"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

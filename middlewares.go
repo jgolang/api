@@ -121,10 +121,9 @@ func RequestHeaderJSON(next http.HandlerFunc) http.HandlerFunc {
 // RequestHeaderSession checks that the request carries a session ID.
 //
 // It answers 401 when the SecurityTokenHeaderKey request header is empty.
-// On the default instance it copies that header into the response header,
-// as in v0. On an instance from New it does not, so the request token is
-// never echoed (SEC-08); a handler that wants to return a token sets the
-// header itself.
+// Since v1.0.0 it no longer copies that header into the response header, so
+// the request token is never echoed (SEC-08); a handler that wants to return
+// a token sets the header itself.
 func RequestHeaderSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID := r.Header.Get(SecurityTokenHeaderKey)
@@ -133,9 +132,6 @@ func RequestHeaderSession(next http.HandlerFunc) http.HandlerFunc {
 			response.Message = "Invalid session ID"
 			response.Write(w, r)
 			return
-		}
-		if !instanceFrom(r).fromNew {
-			w.Header().Set(SecurityTokenHeaderKey, sessionID)
 		}
 		next.ServeHTTP(w, r)
 	}
@@ -150,10 +146,11 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if ValidateMethods(keyListMethods, r.Method) {
 				a := instanceFrom(r)
+				boundDefaultBody(w, r)
 				requestData, err := a.core.ProcessBody(r)
 				if err != nil {
 					a.logError(r, "request body rejected", err)
-					bodyRejection(a, err).Write(w, r)
+					bodyRejection(err).Write(w, r)
 					return
 				}
 				r.Body = io.NopCloser(bytes.NewBuffer(requestData.RawBody))
@@ -163,11 +160,10 @@ func NewRequestBodyMiddleware(keyListMethods string) core.Middleware {
 	}
 }
 
-// bodyRejection returns the error response for a request body that a's
-// receiver rejected with err: 413 when it exceeds an instance's body limit,
-// else the v0 400.
-func bodyRejection(a *API, err error) Error {
-	if bodyTooLarge(a, err) {
+// bodyRejection returns the error response for a request body that the
+// receiver rejected with err: 413 when it exceeds a body limit, else 400.
+func bodyRejection(err error) Error {
+	if bodyTooLarge(err) {
 		return bodyTooLargeError()
 	}
 	return Error{
@@ -177,15 +173,14 @@ func bodyRejection(a *API, err error) Error {
 	}
 }
 
-// bodyTooLarge reports whether err comes from the body limit of an instance
-// from New. The default instance keeps its v0 400 even for a limit the
-// service installed itself.
-func bodyTooLarge(a *API, err error) bool {
+// bodyTooLarge reports whether err comes from a request body limit: the
+// instance's, the default one, or one the service installed itself.
+func bodyTooLarge(err error) bool {
 	var maxBytesErr *http.MaxBytesError
-	return a.fromNew && errors.As(err, &maxBytesErr)
+	return errors.As(err, &maxBytesErr)
 }
 
-// bodyTooLargeError is the 413 an instance answers for a body over its limit.
+// bodyTooLargeError is the 413 answered for a body over a limit.
 func bodyTooLargeError() Error {
 	return Error{
 		Title:          "Request content too large",
@@ -234,9 +229,8 @@ func GenSkipPath(method string, path string) SkipPath {
 // to its first ", ", which the client sets; trust it only behind a proxy that
 // overwrites the header.
 // The whole request body is read into memory. Under an instance's Handler it
-// is bounded by WithMaxBodyBytes (10 MiB by default) and a larger body is
-// answered with 413; the default instance has no limit, so bound it before
-// this middleware runs (http.MaxBytesHandler or http.MaxBytesReader).
+// is bounded by WithMaxBodyBytes (10 MiB by default); without an instance it
+// is bounded at 10 MiB. A larger body is answered with 413.
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -247,10 +241,11 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		rctx, err := ProcessBody(r)
+		boundDefaultBody(w, r)
+		rctx, err := processBody(r)
 		if err != nil {
 			a.logError(r, "request body rejected", err)
-			bodyRejection(a, err).Write(w, r)
+			bodyRejection(err).Write(w, r)
 			return
 		}
 

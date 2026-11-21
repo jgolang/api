@@ -50,7 +50,7 @@ The `header` carries metadata about the request and the device making it: device
 }
 ```
 
-`envelope.RequestInfo` is the Go type of this header. Each field fills a field of the request context (`api.Context(r.Context())`) and has an HTTP header equivalent. **The HTTP header wins**: a `header` field is used only when its HTTP header is absent.
+`envelope.RequestInfo` is the Go type of this header. Each field fills a field of the request context (`api.Context(r.Context())`) and has an HTTP header equivalent (`token` is read, never echoed back in the response since v1.0.0). **The HTTP header wins**: a `header` field is used only when its HTTP header is absent.
 
 | JSON `header` field | HTTP header | Request context field |
 | --- | --- | --- |
@@ -97,7 +97,7 @@ The envelope response mode (the default) writes a `header` with the response met
 }
 ```
 
-Empty header fields are omitted, except `type`. With the default `api.BlankSuccess = true`, success responses leave `title` and `message` empty; see [Responses](../README.md#responses) for `api.TraceVisibility` and the codes.
+Empty header fields are omitted, except `type`. Since v1.0.0 the response `token` is sent only when the handler sets `SecurityToken`; the request token (`header.token` above, the `SecurityToken` or `Authorization: Bearer` header) is no longer echoed. With the default `api.BlankSuccess = true`, success responses leave `title` and `message` empty; see [Responses](../README.md#responses) for `api.TraceVisibility` and the codes.
 
 ## The v1 request flow
 
@@ -127,7 +127,7 @@ Two exported implementations of `core.APIRequestReceiver` exist. Both follow the
 
 ### Method maps and the body middleware
 
-`api.RequestBody` (`api.NewRequestBodyMiddleware(api.PPPMethodsKey)`) runs `ProcessBody` only for the methods in a named method map and answers `e002` when the body cannot be parsed. The maps are `api.PPPGMethodsKey` (POST, PUT, PATCH, GET), `api.PPPMethodsKey` (POST, PUT, PATCH) and `api.PPMethodsKey` (POST, PUT), plus `api.MethodPostKey`, `api.MethodGetKey` and `api.MethodPutKey` for single methods. `api.AddNewMapMethod` adds a map and `api.ValidateMethods` checks a method against one.
+`api.RequestBody` (`api.NewRequestBodyMiddleware(api.PPPMethodsKey)`) runs `ProcessBody` only for the methods in a named method map and answers `E002` when the body cannot be parsed (413 for a body over the 10 MiB limit). The maps are `api.PPPGMethodsKey` (POST, PUT, PATCH, GET), `api.PPPMethodsKey` (POST, PUT, PATCH) and `api.PPMethodsKey` (POST, PUT), plus `api.MethodPostKey`, `api.MethodGetKey` and `api.MethodPutKey` for single methods. `api.AddNewMapMethod` adds a map and `api.ValidateMethods` checks a method against one.
 
 ### `api.Response`-returning helpers
 

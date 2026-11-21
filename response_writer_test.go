@@ -40,7 +40,7 @@ func TestResponseWriterAnswers500WhenBodyCannotBeEncoded(t *testing.T) {
 		t.Fatalf("expected a single JSON body, got %q: %v", res.Body.String(), err)
 	}
 	header, _ := body["header"].(map[string]any)
-	wantCode := strings.ToLower(string(ResponseCodes.InternalServerEerror))
+	wantCode := string(ResponseCodes.InternalServerEerror)
 	if header["code"] != wantCode {
 		t.Fatalf("expected code %q, got %#v", wantCode, body)
 	}
@@ -173,7 +173,7 @@ func TestResponseWriterFailureAfterStatusWrittenKeepsEarlierStatus(t *testing.T)
 	if res.Code != http.StatusAccepted {
 		t.Fatalf("expected the earlier status 202 to stay, got %d", res.Code)
 	}
-	wantCode := strings.ToLower(string(ResponseCodes.InternalServerEerror))
+	wantCode := string(ResponseCodes.InternalServerEerror)
 	if !strings.Contains(res.Body.String(), `"code":"`+wantCode+`"`) {
 		t.Fatalf("expected the internal server error body, got %q", res.Body.String())
 	}

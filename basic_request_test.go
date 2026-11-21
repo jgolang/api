@@ -37,12 +37,12 @@ func TestRequestBasicGettersSendTheRequestInfoError(t *testing.T) {
 		"GetRequestFullInfo":  "The session id was not obtained",
 	}
 	// The message ends with the trace suffix; without an event ID it holds
-	// only the code, lowercased on the default instance.
+	// only the code, as declared on both.
 	instances := map[string]struct {
 		wrap        func(http.Handler) http.Handler
 		traceSuffix string
 	}{
-		"default instance": {func(next http.Handler) http.Handler { return next }, " (-e001)"},
+		"default instance": {func(next http.Handler) http.Handler { return next }, " (-E001)"},
 		"instance":         {New().Handler, " (-E001)"},
 	}
 	for instanceName, instance := range instances {

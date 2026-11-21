@@ -49,9 +49,6 @@ func (err Error) Write(w http.ResponseWriter, r *http.Request) {
 	if err.ResponseCode == "" {
 		err.ResponseCode = ResponseCodes.DefaultError
 	}
-	if err.SecurityToken == "" {
-		err.SecurityToken = getSecurityToken(r)
-	}
 	instanceFrom(r).core.Write(core.ResponseData(err), w)
 }
 

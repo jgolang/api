@@ -39,8 +39,5 @@ func (info Informative) Write(w http.ResponseWriter, r *http.Request) {
 	if info.ResponseCode == "" {
 		info.ResponseCode = ResponseCodes.Informative
 	}
-	if info.SecurityToken == "" {
-		info.SecurityToken = getSecurityToken(r)
-	}
 	instanceFrom(r).core.Write(core.ResponseData(info), w)
 }
