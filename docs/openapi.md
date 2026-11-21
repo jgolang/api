@@ -132,6 +132,11 @@ These types are for documentation only. They do not change the runtime request o
 In generated OpenAPI documents, inferred Go types are emitted under
 `components.schemas` and referenced with `$ref` to avoid repeating schemas per
 operation.
+A reference that also needs `nullable` (a pointer field, slice item or map
+value, such as `*Owner` or `[]*Owner`) or a tag such as `description` is
+written as `allOf: [{$ref}]` with those keys beside `allOf`, because OpenAPI
+3.0.3 ignores every key next to `$ref`. A body passed as a pointer
+(`doc.Body(&CreateTaskRequest{})`) is a sample value and stays a plain `$ref`.
 
 ## Route metadata options
 
