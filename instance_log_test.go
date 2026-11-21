@@ -164,21 +164,26 @@ func TestInstanceRedactsQueryCookieAndSession(t *testing.T) {
 
 // TestInstanceURIMaskingAgreesWithTheDefaultInstance checks that an instance
 // masks the logged uri exactly as the default instance's REQUEST line does,
-// since both use the same redaction helpers.
+// since both use the same redaction helpers, and pins the masked uri.
 func TestInstanceURIMaskingAgreesWithTheDefaultInstance(t *testing.T) {
-	tests := []struct{ name, uri string }{
-		{name: "no query", uri: "/tasks"},
-		{name: "empty query", uri: "/tasks?"},
-		{name: "sensitive value", uri: "/login?password=p&next=%2F"},
-		{name: "at sign in the query", uri: "/login?email=a@b.com&token=T"},
-		{name: "at sign in an absolute-form query", uri: "http://host/login?email=a@b.com&token=T"},
-		{name: "semicolon in a sensitive value", uri: "/login?token=abc;def&page=2"},
-		{name: "semicolon separator", uri: "/tasks?page=2;token=T&q=x"},
-		{name: "key that cannot be unescaped", uri: "/tasks?bad%zz=V&page=2"},
-		{name: "user information", uri: "http://user:pass@example.com/tasks?token=T"},
-		{name: "slash in the password", uri: "http://u:S4c/x@host/p"},
-		{name: "question mark in the password", uri: "http://u:S4d?x@host/p"},
-		{name: "network-path", uri: "//u:p@host/p"},
+	tests := []struct{ name, uri, want string }{
+		{name: "no query", uri: "/tasks", want: "/tasks"},
+		{name: "empty query", uri: "/tasks?", want: "/tasks?"},
+		{name: "sensitive value", uri: "/login?password=p&next=%2F", want: "/login?password=[REDACTED]&next=%2F"},
+		{name: "at sign in the query", uri: "/login?email=a@b.com&token=T", want: "/login?email=a@b.com&token=[REDACTED]"},
+		{name: "at sign in an absolute-form query", uri: "http://host/login?email=a@b.com&token=T", want: "http://[REDACTED]@b.com&token=[REDACTED]"},
+		{name: "semicolon in a sensitive value", uri: "/login?token=abc;def&page=2", want: "/login?token=[REDACTED]&page=2"},
+		{name: "semicolon separator", uri: "/tasks?page=2;token=T&q=x", want: "/tasks?page=2;token=[REDACTED]&q=x"},
+		{name: "escaped key", uri: "/tasks?access%5Ftoken=T", want: "/tasks?access%5Ftoken=[REDACTED]"},
+		{name: "key without value", uri: "/tasks?token&page=2", want: "/tasks?token&page=2"},
+		{name: "empty value", uri: "/tasks?token=", want: "/tasks?token=[REDACTED]"},
+		{name: "key that cannot be unescaped", uri: "/tasks?bad%zz=V&page=2", want: "/tasks?bad%zz=[REDACTED]&page=2"},
+		{name: "user information", uri: "http://user:pass@example.com/tasks?token=T", want: "http://[REDACTED]@example.com/tasks?token=[REDACTED]"},
+		{name: "user without password", uri: "https://user@example.com", want: "https://[REDACTED]@example.com"},
+		{name: "url in a non-sensitive value", uri: "/redirect?to=http://a@b", want: "/redirect?to=http://a@b"},
+		{name: "slash in the password", uri: "http://u:S4c/x@host/p", want: "http://[REDACTED]@host/p"},
+		{name: "question mark in the password", uri: "http://u:S4d?x@host/p", want: "http://[REDACTED]@host/p"},
+		{name: "network-path", uri: "//u:p@host/p", want: "//[REDACTED]@host/p"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -189,9 +194,11 @@ func TestInstanceURIMaskingAgreesWithTheDefaultInstance(t *testing.T) {
 			ProcessRequest(okHandler).ServeHTTP(httptest.NewRecorder(), newRawURIRequest(tt.uri))
 			instance.Handler(ProcessRequest(okHandler)).ServeHTTP(httptest.NewRecorder(), newRawURIRequest(tt.uri))
 
-			wantURI := defaultLoggedURI(t, *defaultLines)
-			if got := recordNamed(t, decodeRecords(t, buf), "request")["uri"]; got != wantURI {
-				t.Fatalf("instance uri = %v, default instance uri = %q", got, wantURI)
+			if got := defaultLoggedURI(t, *defaultLines); got != tt.want {
+				t.Fatalf("default instance uri = %q, want %q", got, tt.want)
+			}
+			if got := recordNamed(t, decodeRecords(t, buf), "request")["uri"]; got != tt.want {
+				t.Fatalf("instance uri = %v, want %q", got, tt.want)
 			}
 		})
 	}
@@ -266,7 +273,7 @@ func TestWithSensitiveLogKeysOnlyAddsKeys(t *testing.T) {
 	if !slices.Equal(a.sensitiveLogKeys, want) {
 		t.Fatalf("keys = %q, want %q", a.sensitiveLogKeys, want)
 	}
-	for _, key := range append(slices.Clone(SensitiveLogKeys), "cookie", "session") {
+	for _, key := range defaultSensitiveLogKeys() {
 		if !slices.Contains(a.sensitiveLogKeys, key) {
 			t.Errorf("default key %q missing", key)
 		}

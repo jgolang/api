@@ -381,11 +381,11 @@ var MaxLoggedBodyBytes int = 2000
 // WithSensitiveLogKeys.
 //
 // Deprecated: use api.New(api.WithSensitiveLogKeys(...)) instead.
-var SensitiveLogKeys = v0SensitiveLogKeys()
+var SensitiveLogKeys = defaultSensitiveLogKeys()
 
-// v0SensitiveLogKeys returns a fresh copy of the default sensitive key list,
-// so changing SensitiveLogKeys never reaches an instance.
-func v0SensitiveLogKeys() []string {
+// defaultSensitiveLogKeys returns a fresh copy of the built-in sensitive key
+// list, so changing SensitiveLogKeys never reaches an instance.
+func defaultSensitiveLogKeys() []string {
 	return []string{
 		"authorization",
 		"token",
