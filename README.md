@@ -291,6 +291,7 @@ See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, respon
 ## Security notes
 
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
+- `api.BasicToken` with the default validator accepts the publicly known credentials `default:default` until you set `api.Username` and `api.Password` (or replace `api.ValidateBasicAuthCredentialsFunc`). Set them before exposing a route. The default validator compares credentials in constant time; a custom one should too (`crypto/subtle`). After a successful check, `BasicToken` copies the user name and the plain password into the `Basic-Client` and `Basic-Secret` request headers; do not forward or log those headers.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
 - Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
 
