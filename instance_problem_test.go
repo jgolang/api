@@ -529,3 +529,17 @@ func TestProblemTitleOfEveryResponseHelper(t *testing.T) {
 		})
 	}
 }
+
+// TestProblemTitleKeepsAReassignedDefaultTitle checks that a default title
+// the service reassigned through the package variable counts as its own.
+func TestProblemTitleKeepsAReassignedDefaultTitle(t *testing.T) {
+	previous := DefaultErrorTitle
+	DefaultErrorTitle = "Task error"
+	t.Cleanup(func() { DefaultErrorTitle = previous })
+
+	rec := serve(problemInstance().Handler(http.HandlerFunc(writeTaskNotFound)), http.MethodGet, "", nil)
+
+	if got := decodeMembers(t, rec.Body.Bytes())["title"]; got != "Task error" {
+		t.Fatalf("title = %v, want the reassigned title", got)
+	}
+}
