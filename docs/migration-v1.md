@@ -7,8 +7,8 @@ This guide takes a v0 program (v0.10.x) to `github.com/jgolang/api` v1. The desi
 - The module path does not change. When v1.0.0 is tagged, upgrade with `go get github.com/jgolang/api@v1.0.0`; no import changes.
 - v1 removes nothing. Every v0 name still compiles. Names replaced by an instance option are deprecated, and each one points at its option.
 - A program that does not change its code sends the same bodies as v0. Two things change for it:
-  - `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)). This is the only breaking change for unchanged code.
-  - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0.
+  - `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)). This is the change most programs must act on.
+  - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0. This change may also be listed as breaking in the release notes (Q40, open).
 - Configuration moves from package variables to an instance: `a := api.New(opts...)` and `a.Handler(router)` ([step 3](#step-3-move-to-apinew)). Handler code does not change.
 
 Three steps, each one shippable on its own:
@@ -96,20 +96,20 @@ func main() {
 
 `createTask` does not change. `a.Handler` stores the instance in the request context. `ProcessRequest`, `RequestBody`, the token middlewares, the `Get*Value*` helpers, `WriteError` and `Write(w, r)` on every response type find it there. Route registration (`api.Get`/`Post`/…), `*doc.Docs` and the adapters do not change.
 
-With `WithLowercaseCodes()` the instance answers byte for byte like the v0 program. Without it, codes are sent as declared:
+With `WithLowercaseCodes()` the handler answers byte for byte as on the default instance. Without it, codes are sent as declared:
 
 ```json
 {"action":"","code":"tsk-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-tsk-001)","title":"Error response!","token":"","type":"error"}
 {"action":"","code":"TSK-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-TSK-001)","title":"Error response!","token":"","type":"error"}
 ```
 
-`Example_migrationBeforeAndAfter` in `example_migration_test.go` is the compiled version.
+`Example_migrationBeforeAndAfter` in `example_migration_test.go` proves it for the handler, served without `ProcessRequest`. Under `ProcessRequest` the bodies also match apart from the generated event IDs; `TestQuickStartAnswersLikeTheDefaultInstanceExceptCodeCase` in `instance_test.go` covers that.
 
 **Wrap the outermost chain.** Middlewares outside `a.Handler` use the default instance. So does `api.Write(data, w)`, which takes no request. Put `a.Handler` around everything, or a rejection from an outer `ProcessRequest` (invalid body, `e002`) keeps v0's code case and settings. With nested instances, the innermost one wins.
 
 ### Deprecated names and their options
 
-Each name keeps working, but only for the default instance.
+The names replaced by an instance option keep working, but only for the default instance. The `GetQueryParamValue*` helpers keep working everywhere, instances included.
 
 | Deprecated (v0) | Use instead |
 |---|---|
@@ -204,7 +204,7 @@ See the README "Logging" section for every record.
 
 ## Tests
 
-Wrap the handler under test with its own instance. Two instances in one test binary do not see each other's options, and no package variable has to be reset:
+Wrap the handler under test with its own instance. Two instances in one test binary do not see each other's options, and nothing the instance owns (modes, components, code case, logger, sensitive keys, kind overrides, hook) has to be reset. The shared package-level settings (`ResponseCodes`, `SkipPaths`, credentials, the guarantor, the param validator, default titles) still need resetting if a test changes them:
 
 ```go
 a := api.New(api.WithResponseMode(api.ResponseModePlain))
@@ -217,7 +217,7 @@ a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 These are not decided and may change before v1.0.0:
 
 - **Q33:** whether the v0 security fixes ship first as v0.10.1.
-- **Q34:** whether the default instance also masks `cookie`/`session` and query strings in its logs.
+- **Q34:** whether the default instance also masks `cookie`/`session` and query strings in its logs, and whether Basic auth stops accepting the `default:default` fallback when no credentials are set.
 - **Q35:** a request body limit, possibly as a `WithMaxBodyBytes` option with a 10 MiB default. Not built.
 - **Q36:** whether instances stop echoing the request token in the response `token` field. Today they echo it, as v0 does (problem bodies never carry it).
 - **Q39:** whether the problem `title` becomes the HTTP status phrase (`Bad Request`) instead of the response title.

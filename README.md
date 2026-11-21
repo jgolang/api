@@ -92,7 +92,7 @@ func main() {
 2. **`api.ProcessRequest`.** Wrap a handler with this middleware to get the full flow. It:
    - reads the body and parses it according to the [request mode](#request-and-response-modes); an invalid JSON body answers 400 with code `E002` on an `api.New` instance (`e002` on the default instance);
    - collects request metadata from HTTP headers (see [Reading the request](#reading-the-request));
-   - assigns an [event ID](#trace-ids) and logs the request and the response;
+   - assigns an [event ID](#trace-ids) and logs the request and the response (on an `api.New` instance only through its `api.WithLogger` logger, and nothing without one; see [Logging](#logging));
    - stores the request context, replaces `r.Body` with the endpoint content, and answers 500 if the handler panics.
 
    Use `api.MiddlewaresChain(...)` to compose it with your own middlewares. `api.AddSkipPath(api.GenSkipPath(method, path), true)` makes it pass a route through untouched.
