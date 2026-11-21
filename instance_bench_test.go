@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -68,12 +69,16 @@ func BenchmarkWriteError(b *testing.B) {
 }
 
 // BenchmarkProcessRequest measures ProcessRequest's logging on the default
-// instance (with Print as a no-op), on an instance without a logger and on
-// one whose logger discards every record.
+// instance (with slog.Default discarding every record), on an instance
+// without a logger and on one whose logger discards every record.
 func BenchmarkProcessRequest(b *testing.B) {
-	previousPrint := Print
-	Print = func(string, ...interface{}) {}
-	b.Cleanup(func() { Print = previousPrint })
+	previous, previousOutput, previousFlags := slog.Default(), log.Writer(), log.Flags()
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	b.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(previousOutput)
+		log.SetFlags(previousFlags)
+	})
 	handler := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
 		Success200().Write(w, r)
 	})

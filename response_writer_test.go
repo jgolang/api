@@ -8,27 +8,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/jgolang/api/core"
 )
 
 func TestResponseWriterAnswers500WhenBodyCannotBeEncoded(t *testing.T) {
-	previousFatal, previousPrintError := Fatal, PrintError
-	var fatalCalled bool
-	var logged string
-	Fatal = func(...interface{}) { fatalCalled = true }
-	PrintError = func(args ...interface{}) { logged += fmt.Sprintln(args...) }
-	defer func() { Fatal, PrintError = previousFatal, previousPrintError }()
+	buf := captureDefaultLogger(t)
+	failOnPackageLoggers(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/ratio", nil)
 	res := httptest.NewRecorder()
 	SuccessWithContent(map[string]float64{"ratio": math.NaN()}).Write(res, req)
 
-	if fatalCalled {
-		t.Fatal("expected Fatal not to be called")
-	}
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", res.Code)
 	}
@@ -44,8 +36,9 @@ func TestResponseWriterAnswers500WhenBodyCannotBeEncoded(t *testing.T) {
 	if header["code"] != wantCode {
 		t.Fatalf("expected code %q, got %#v", wantCode, body)
 	}
-	if !strings.Contains(logged, "NaN") {
-		t.Fatalf("expected the encoding error to be logged, got %q", logged)
+	record := recordNamed(t, decodeRecords(t, buf), "response cannot be encoded")
+	if !strings.Contains(fmt.Sprint(record["error"]), "NaN") {
+		t.Fatalf("expected the encoding error to be logged, got %v", record)
 	}
 }
 
@@ -71,7 +64,7 @@ func TestResponseWriterKeepsStatusAndHeadersOnSuccess(t *testing.T) {
 // Warning and Informative default to status 100. A real server sends it as an
 // informational status and delivers the body with 200; the recorder that
 // ProcessRequest writes into rejects the body with http.ErrBodyNotAllowed,
-// which must neither exit the process nor be logged.
+// which must neither exit the process nor be logged as an error.
 func TestDefaultInformationalStatusReachesClientWithoutFatal(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -84,14 +77,10 @@ func TestDefaultInformationalStatusReachesClientWithoutFatal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			previousFatal, previousPrintError := Fatal, PrintError
-			var mu sync.Mutex
-			var fatalCalled bool
-			var logged string
-			Fatal = func(...interface{}) { mu.Lock(); fatalCalled = true; mu.Unlock() }
-			PrintError = func(args ...interface{}) { mu.Lock(); logged += fmt.Sprintln(args...); mu.Unlock() }
+			// The server goroutine logs into buf; it is read after server.Close.
+			buf := captureDefaultLogger(t)
+			failOnPackageLoggers(t)
 			server := httptest.NewServer(tt.handler)
-			defer func() { Fatal, PrintError = previousFatal, previousPrintError }()
 			defer server.Close()
 
 			res, err := http.Get(server.URL + "/tasks")
@@ -105,19 +94,16 @@ func TestDefaultInformationalStatusReachesClientWithoutFatal(t *testing.T) {
 			}
 			server.Close()
 
-			mu.Lock()
-			defer mu.Unlock()
-			if fatalCalled {
-				t.Fatal("expected Fatal not to be called")
-			}
 			if res.StatusCode != http.StatusOK {
 				t.Fatalf("expected the client to get status 200, got %d", res.StatusCode)
 			}
 			if !strings.Contains(string(body), `"type":"`+tt.wantType+`"`) {
 				t.Fatalf("expected a %s body, got %q", tt.wantType, body)
 			}
-			if logged != "" {
-				t.Fatalf("expected nothing logged, got %q", logged)
+			for _, record := range decodeRecords(t, buf) {
+				if record["level"] != "INFO" {
+					t.Fatalf("expected only the request and response records, got %v", record)
+				}
 			}
 		})
 	}
@@ -136,13 +122,9 @@ func (errorMarkerFormatter) Format(data core.ResponseData) *core.ResponseFormatt
 }
 
 func TestResponseWriterBuildsFailureWithRegisteredFormatterAndHeaders(t *testing.T) {
-	previousPrintError := PrintError
-	PrintError = func(...interface{}) {}
+	captureDefaultLogger(t)
 	RegisterNewAPIResponseFormatter(errorMarkerFormatter{})
-	defer func() {
-		PrintError = previousPrintError
-		RegisterNewAPIResponseFormatter(ResponseFormatter{})
-	}()
+	defer RegisterNewAPIResponseFormatter(ResponseFormatter{})
 
 	res := httptest.NewRecorder()
 	Success{
@@ -162,9 +144,7 @@ func TestResponseWriterBuildsFailureWithRegisteredFormatterAndHeaders(t *testing
 }
 
 func TestResponseWriterFailureAfterStatusWrittenKeepsEarlierStatus(t *testing.T) {
-	previousPrintError := PrintError
-	PrintError = func(...interface{}) {}
-	defer func() { PrintError = previousPrintError }()
+	captureDefaultLogger(t)
 
 	res := httptest.NewRecorder()
 	res.WriteHeader(http.StatusAccepted)
@@ -227,13 +207,9 @@ func TestDefaultEncodeFailureHeaders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			previousPrintError := PrintError
-			PrintError = func(...interface{}) {}
+			captureDefaultLogger(t)
 			RegisterNewAPIResponseFormatter(tt.formatter)
-			t.Cleanup(func() {
-				PrintError = previousPrintError
-				RegisterNewAPIResponseFormatter(ResponseFormatter{})
-			})
+			t.Cleanup(func() { RegisterNewAPIResponseFormatter(ResponseFormatter{}) })
 			res := httptest.NewRecorder()
 			res.Header().Set("Content-Type", "text/html")
 

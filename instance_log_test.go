@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -163,8 +162,8 @@ func TestInstanceRedactsQueryCookieAndSession(t *testing.T) {
 }
 
 // TestInstanceURIMaskingAgreesWithTheDefaultInstance checks that an instance
-// masks the logged uri exactly as the default instance's REQUEST line does,
-// since both use the same redaction helpers, and pins the masked uri.
+// masks the logged uri exactly as the default instance does, since both share
+// one code path, and pins the masked uri.
 func TestInstanceURIMaskingAgreesWithTheDefaultInstance(t *testing.T) {
 	tests := []struct{ name, uri, want string }{
 		{name: "no query", uri: "/tasks", want: "/tasks"},
@@ -187,15 +186,15 @@ func TestInstanceURIMaskingAgreesWithTheDefaultInstance(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defaultLines := captureDefaultLogLines(t)
+			defaultBuf := captureDefaultLogger(t)
 			logger, buf := newRecordingLogger()
 			instance := New(WithLogger(logger))
 
 			ProcessRequest(okHandler).ServeHTTP(httptest.NewRecorder(), newRawURIRequest(tt.uri))
 			instance.Handler(ProcessRequest(okHandler)).ServeHTTP(httptest.NewRecorder(), newRawURIRequest(tt.uri))
 
-			if got := defaultLoggedURI(t, *defaultLines); got != tt.want {
-				t.Fatalf("default instance uri = %q, want %q", got, tt.want)
+			if got := recordNamed(t, decodeRecords(t, defaultBuf), "request")["uri"]; got != tt.want {
+				t.Fatalf("default instance uri = %v, want %q", got, tt.want)
 			}
 			if got := recordNamed(t, decodeRecords(t, buf), "request")["uri"]; got != tt.want {
 				t.Fatalf("instance uri = %v, want %q", got, tt.want)
@@ -210,26 +209,6 @@ func newRawURIRequest(uri string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RequestURI = uri
 	return req
-}
-
-var loggedURIPattern = regexp.MustCompile(`uri=("(?:[^"\\]|\\.)*")`)
-
-// defaultLoggedURI returns the uri of the default instance's REQUEST line.
-func defaultLoggedURI(t *testing.T, lines []string) string {
-	t.Helper()
-	for _, line := range lines {
-		match := loggedURIPattern.FindStringSubmatch(line)
-		if !strings.HasPrefix(line, "Print: REQUEST ") || match == nil {
-			continue
-		}
-		uri, err := strconv.Unquote(match[1])
-		if err != nil {
-			t.Fatalf("unquoting uri of %q: %v", line, err)
-		}
-		return uri
-	}
-	t.Fatalf("no REQUEST line in %q", lines)
-	return ""
 }
 
 // TestInstanceRedactsFormParsedBeforeProcessRequest checks that a form

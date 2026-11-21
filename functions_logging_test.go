@@ -312,20 +312,14 @@ func TestLogRequestRedactsSensitiveFormValues(t *testing.T) {
 	}
 }
 
-// The built-in receivers reject a non-JSON body before ProcessRequest logs,
-// so this end-to-end case covers the cookie, the query and a JSON body.
-func TestProcessRequestLogRedactsCookieQueryAndJSONBody(t *testing.T) {
+// TestProcessRequestLogRedactsCookieQueryAndBody checks the default
+// ProcessRequest records: the cookie and query token are masked and the body
+// is never logged, even with LogRequestBody set.
+func TestProcessRequestLogRedactsCookieQueryAndBody(t *testing.T) {
+	buf := captureDefaultLogger(t)
 	previousLogRequestBody := LogRequestBody
-	previousPrint := Print
 	LogRequestBody = true
-	var lines []string
-	Print = func(format string, args ...interface{}) {
-		lines = append(lines, fmt.Sprintf(format, args...))
-	}
-	defer func() {
-		LogRequestBody = previousLogRequestBody
-		Print = previousPrint
-	}()
+	t.Cleanup(func() { LogRequestBody = previousLogRequestBody })
 
 	body := `{"password":"secret-password","title":"task"}`
 	req := httptest.NewRequest(http.MethodPost, "/login?token=secret-token&page=1", strings.NewReader(body))
@@ -336,19 +330,16 @@ func TestProcessRequestLogRedactsCookieQueryAndJSONBody(t *testing.T) {
 
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
-	output := strings.Join(lines, "\n")
-	for _, value := range []string{"secret-password", "secret-token", "secret-cookie"} {
-		if strings.Contains(output, value) {
-			t.Fatalf("expected %q to be absent from the log, got %q", value, output)
+	for _, value := range []string{"secret-password", "secret-token", "secret-cookie", "title"} {
+		if strings.Contains(buf.String(), value) {
+			t.Fatalf("expected %q to be absent from the log, got %s", value, buf)
 		}
 	}
-	for _, want := range []string{
-		`uri="/login?token=[REDACTED]&page=1"`,
-		`"Cookie":["[REDACTED]"]`,
-		`title`,
-	} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("expected %s in the log, got %q", want, output)
-		}
+	request := recordNamed(t, decodeRecords(t, buf), "request")
+	if request["uri"] != "/login?token=[REDACTED]&page=1" {
+		t.Fatalf("uri = %v, want the token masked", request["uri"])
+	}
+	if cookie := request["headers"].(map[string]any)["Cookie"].([]any)[0]; cookie != redactedLogValue {
+		t.Fatalf("Cookie = %v, want %s", cookie, redactedLogValue)
 	}
 }

@@ -265,7 +265,7 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		rctx.EventID = generateEventID(r.Context(), prefixEventID, r.RequestURI)
 		rctx.AddInfo("proxiedIPAddress", proxiedIPAddress)
 
-		a.logRequest(r, rctx.EventID, rctx.RawBody)
+		a.logRequest(r, rctx.EventID)
 
 		r = UpdateRequestContext(rctx, r)
 		rctx.Context = r.Context()

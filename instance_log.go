@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -22,44 +21,53 @@ func instanceSensitiveLogKeys(added []string) []string {
 	return append(defaultSensitiveLogKeys(), added...)
 }
 
-// logs reports whether a writes records at level. The default instance and
-// an instance without WithLogger never do.
-func (a *API) logs(ctx context.Context, level slog.Level) bool {
-	return a.logger != nil && a.logger.Enabled(ctx, level)
+// log returns the logger a writes through: its own, or slog.Default at call
+// time on the default instance.
+func (a *API) log() *slog.Logger {
+	if a.logger == nil {
+		return slog.Default()
+	}
+	return a.logger
 }
 
-// logError reports err, met while serving r. The default instance passes it
-// to PrintError as v0 does; an instance from New writes an error record with
-// message msg through its logger, if it has one.
-func (a *API) logError(r *http.Request, msg string, err error) {
-	if !a.fromNew {
-		PrintError(err)
-		return
+// sensitiveKeys returns the keys a masks: its own, or on the default
+// instance the default keys plus SensitiveLogKeys at call time, so the
+// variable can add keys but never remove a default one.
+func (a *API) sensitiveKeys() []string {
+	if a.sensitiveLogKeys == nil {
+		return append(defaultSensitiveLogKeys(), SensitiveLogKeys...)
 	}
+	return a.sensitiveLogKeys
+}
+
+// logs reports whether a writes records at level. An instance without
+// WithLogger never does.
+func (a *API) logs(ctx context.Context, level slog.Level) bool {
+	return a.log().Enabled(ctx, level)
+}
+
+// logError writes an error record with message msg for err, met while
+// serving r.
+func (a *API) logError(r *http.Request, msg string, err error) {
 	if !a.logs(r.Context(), slog.LevelError) {
 		return
 	}
-	a.logger.LogAttrs(r.Context(), slog.LevelError, msg, slog.Any("error", err))
+	a.log().LogAttrs(r.Context(), slog.LevelError, msg, slog.Any("error", err))
 }
 
 // logNamedError reports err from reading the value of the header, query
-// parameter or route variable called name. The default instance passes it to
-// PrintError as v0 does. An instance from New adds the name as "key"; when
+// parameter or route variable called name. It adds the name as "key"; when
 // the name is sensitive it logs only the kind of error, since errors such as
 // strconv's quote the value.
 func (a *API) logNamedError(r *http.Request, msg, name string, err error) {
-	if !a.fromNew {
-		PrintError(err)
-		return
-	}
 	if !a.logs(r.Context(), slog.LevelError) {
 		return
 	}
 	errAttr := slog.Any("error", err)
-	if isSensitiveKey(name, a.sensitiveLogKeys) {
+	if isSensitiveKey(name, a.sensitiveKeys()) {
 		errAttr = slog.String("error", sensitiveValueError(err))
 	}
-	a.logger.LogAttrs(r.Context(), slog.LevelError, msg, slog.String("key", name), errAttr)
+	a.log().LogAttrs(r.Context(), slog.LevelError, msg, slog.String("key", name), errAttr)
 }
 
 // sensitiveValueError describes err without the value it was reading: the
@@ -72,62 +80,44 @@ func sensitiveValueError(err error) string {
 	return "invalid value"
 }
 
-// logRequest logs the request ProcessRequest received. The default instance
-// writes the v0 line through LogRequest, body included when LogRequestBody
-// is set; an instance from New never logs the body or the parsed form (it
-// may come from the body) and masks the query values whose key is sensitive.
-func (a *API) logRequest(r *http.Request, eventID string, rawBody []byte) {
-	if !a.fromNew {
-		LogRequest(r.Method, r.RequestURI, eventID, r.Form.Encode(), r.Header, rawBody)
-		return
-	}
+// logRequest logs the request ProcessRequest received. It never logs the
+// body or the parsed form (it may come from the body) and masks the query
+// values whose key is sensitive.
+func (a *API) logRequest(r *http.Request, eventID string) {
 	if !a.logs(r.Context(), slog.LevelInfo) {
 		return
 	}
+	sensitiveKeys := a.sensitiveKeys()
 	attrs := []slog.Attr{
 		slog.String("event_id", eventID),
 		slog.String("method", r.Method),
-		slog.String("uri", redactURI(r.RequestURI, a.sensitiveLogKeys)),
+		slog.String("uri", redactURI(r.RequestURI, sensitiveKeys)),
 	}
 	if len(r.Header) != 0 {
-		attrs = append(attrs, slog.Any("headers", redactHeaders(r.Header, a.sensitiveLogKeys)))
+		attrs = append(attrs, slog.Any("headers", redactHeaders(r.Header, sensitiveKeys)))
 	}
-	a.logger.LogAttrs(r.Context(), slog.LevelInfo, "request", attrs...)
+	a.log().LogAttrs(r.Context(), slog.LevelInfo, "request", attrs...)
 }
 
 // logResponse logs the response ProcessRequest wrote, as logRequest does.
 func (a *API) logResponse(r *http.Request, eventID string, rec *httptest.ResponseRecorder, duration time.Duration) {
-	if !a.fromNew {
-		LogResponseWithDuration(eventID, rec, duration)
-		return
-	}
 	if !a.logs(r.Context(), slog.LevelInfo) {
 		return
 	}
-	a.logger.LogAttrs(r.Context(), slog.LevelInfo, "response",
+	a.log().LogAttrs(r.Context(), slog.LevelInfo, "response",
 		slog.String("event_id", eventID),
 		slog.String("method", r.Method),
-		slog.String("uri", redactURI(r.RequestURI, a.sensitiveLogKeys)),
+		slog.String("uri", redactURI(r.RequestURI, a.sensitiveKeys())),
 		slog.Int("status", rec.Code),
 		slog.String("status_text", http.StatusText(rec.Code)),
 		slog.Int64("duration_ms", duration.Milliseconds()),
 	)
 }
 
-// logPanic logs a panic ProcessRequest recovered. The default instance keeps
-// the PrintError calls of v0.11.0, which log the panic value; an instance
-// from New logs the panic value with the event ID. A panic with
-// http.ErrAbortHandler is a deliberate abort, so it is logged at debug level
-// as "handler aborted".
+// logPanic logs a panic ProcessRequest recovered, with the panic value and
+// the event ID. A panic with http.ErrAbortHandler is a deliberate abort, so
+// it is logged at debug level as "handler aborted".
 func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
-	if !a.fromNew {
-		if err, ok := recovered.(error); ok {
-			PrintError(err)
-		} else {
-			PrintError("Not response: ", fmt.Sprintf("%v", recovered))
-		}
-		return
-	}
 	level, msg := slog.LevelError, "panic recovered"
 	if err, ok := recovered.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 		level, msg = slog.LevelDebug, "handler aborted"
@@ -135,17 +125,24 @@ func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 	if !a.logs(r.Context(), level) {
 		return
 	}
-	a.logger.LogAttrs(r.Context(), level, msg,
+	a.log().LogAttrs(r.Context(), level, msg,
 		slog.String("event_id", eventID),
 		slog.Any("panic", recovered),
 	)
 }
 
-// writeForInstance is the Write of an instance's built-in writer. It encodes
-// the body before writing anything, so a body that cannot be encoded (e.g. a
-// NaN float) is logged and answered with 500 and the instance formatter's
-// internal server error body instead of exiting the process.
-func (writer ResponseWriter) writeForInstance(response *core.ResponseFormatted, w http.ResponseWriter) {
+// Write the API response in screen. It encodes the body before writing
+// anything, so a body that cannot be encoded (e.g. a NaN float) is logged as
+// "response cannot be encoded" and answered with 500 and the formatter's
+// internal server error body (see writeEncodeFailure) instead of exiting the
+// process. If the handler already wrote a status, that status stays and the
+// error body is written under it.
+//
+// http.ErrBodyNotAllowed from writing the body is not reported: Warning and
+// Informative default to status 100, which a server sends as informational
+// before delivering the body with 200, while the recorder that ProcessRequest
+// writes into returns this error.
+func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.ResponseWriter) {
 	var body bytes.Buffer
 	if err := json.NewEncoder(&body).Encode(response.Body); err != nil {
 		writer.logError("response cannot be encoded", err)
@@ -156,7 +153,7 @@ func (writer ResponseWriter) writeForInstance(response *core.ResponseFormatted, 
 }
 
 // writeEncodeFailure answers 500 with the internal server error body built by
-// the instance's formatter, keeping the response headers except the ones
+// the writer's formatter, keeping the response headers except the ones
 // that described the failed body (withoutBodyHeaders); the error body's own
 // Content-Type applies. The body carries no event ID or token, since the
 // request is not available here. If the formatter returns no body, or it
@@ -165,7 +162,7 @@ func (writer ResponseWriter) writeForInstance(response *core.ResponseFormatted, 
 func (writer ResponseWriter) writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
 	headers = withoutBodyHeaders(headers)
 	failure := Error500()
-	formatted := writer.formatter.Format(core.ResponseData{
+	formatted := writer.responseFormatter().Format(core.ResponseData{
 		Title:          failure.Title,
 		Message:        failure.Message,
 		ResponseCode:   failure.ResponseCode,
@@ -255,11 +252,21 @@ func setHeaders(headers map[string]string, w http.ResponseWriter) {
 	}
 }
 
-// logError writes an error record through the instance logger, if any. The
-// writer has no request, so the record carries no request context.
+// logError writes an error record through the writer's logger. The writer
+// has no request, so the record carries no request context.
 func (writer ResponseWriter) logError(msg string, err error) {
-	if writer.logger == nil {
-		return
+	logger := writer.logger
+	if logger == nil {
+		logger = slog.Default()
 	}
-	writer.logger.LogAttrs(context.Background(), slog.LevelError, msg, slog.Any("error", err))
+	logger.LogAttrs(context.Background(), slog.LevelError, msg, slog.Any("error", err))
+}
+
+// responseFormatter returns the formatter that builds the writer's 500 body:
+// the instance's, or the registered one on the default instance's writer.
+func (writer ResponseWriter) responseFormatter() core.APIResponseFormatter {
+	if writer.formatter == nil {
+		return responseFormatter
+	}
+	return writer.formatter
 }

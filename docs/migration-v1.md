@@ -6,7 +6,7 @@ This guide takes a v0 program (v0.11.x) to `github.com/jgolang/api` v1. The desi
 
 - The module path does not change. When v1.0.0 is tagged, upgrade with `go get github.com/jgolang/api@v1.0.0`; no import changes.
 - v1 removes nothing. Every v0 name still compiles. Names replaced by an instance option are deprecated, and each one points at its option or says it is ignored.
-- **Breaking: the default instance behaves like `api.New()`** (owner decision, 2026-11-21). A program that does not change its code still gets v1's defaults: codes as declared, no request token echo and request bodies bounded at 10 MiB ([step 1](#step-1-upgrade-what-changes-without-code-changes)). A program that needs v0.11.0 behavior stays on v0.11.x.
+- **Breaking: the default instance behaves like `api.New()`** (owner decision, 2026-11-21). A program that does not change its code still gets v1's defaults: codes as declared, no request token echo, request bodies bounded at 10 MiB, and `slog` records through `slog.Default` instead of `Print`/`PrintError` ([step 1](#step-1-upgrade-what-changes-without-code-changes)). A program that needs v0.11.0 behavior stays on v0.11.x.
 - `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)).
 - Configuration moves from package variables to an instance: `a := api.New(opts...)` and `a.Handler(router)` ([step 3](#step-3-move-to-apinew)). Handler code does not change, and it is the only way back to v0's lowercase codes (`api.WithLowercaseCodes()`).
 - Programs that use `api.BasicToken` no longer get the password in the `Basic-Secret` request header ([details](#breaking-no-basic-secret-header)).
@@ -19,7 +19,7 @@ Three steps. Step 1 is the upgrade itself; read it before you ship it.
 
 ## Step 1: upgrade: what changes without code changes
 
-Requests that no `a.Handler` wraps use the default instance. Since v1.0.0 it answers like `api.New()` with its defaults. `TestDefaultInstanceAnswersLikeNew` in `default_instance_test.go` checks that status, headers and body are the same as under `api.New().Handler`, apart from event IDs.
+Requests that no `a.Handler` wraps use the default instance. Since v1.0.0 it answers and logs like `api.New()` with its defaults. `TestDefaultInstanceAnswersLikeNew` in `default_instance_test.go` checks that status, headers and body are the same as under `api.New().Handler`, apart from event IDs.
 
 **Wire changes** (clients, alerts and dashboards may need to change):
 
@@ -31,12 +31,15 @@ Requests that no `a.Handler` wraps use the default instance. Since v1.0.0 it ans
 - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. It is a fix, not a breaking change: v0 discarded a `Content-Type` the service set. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0.
 - `RequestBasic.GetSecurityToken`, `GetUserID` and `GetEventID` (and so `GetRequestBasicInfo` and `GetRequestFullInfo`) return their own error: title `Request info error!` and the message `The session id was not obtained` (`user id`, `event id`). v0 meant to send it but returned the generic `Error getting header value!` / `The <key> key header has not been obtained` instead (#63).
 
-**Logging** is unchanged from v0.11.0:
+**Logging changes:**
 
-- Logging goes through `Print` and `PrintError` and writes the same lines as v0.11.0. A response that cannot be encoded is answered with 500, as in v0.11.0; `Fatal` is never called. That 500 now drops the failed body's `Content-Type`, `Content-Encoding`, `Content-Length` and similar headers, and answers with no body instead of panicking when a registered formatter returns nil.
-- `SensitiveLogKeys` keeps its v0.11.0 list (with `cookie` and `session`) and masking (headers, JSON body fields, query and form values, the user information of the `uri`).
+- `ProcessRequest` writes `slog` records through `slog.Default()`, read at call time: `request` and `response` info records, `request body rejected`, `panic recovered` and the `Get*Value*` helper failures as error records, the same records an instance writes with `WithLogger` (see the README "Logging" section). `slog.Default()` writes through the standard `log` package unless you call `slog.SetDefault`.
+- `Print` and `PrintError` are never called by the package any more; only the deprecated `LogRequest`, `LogResponse` and `LogResponseWithDuration` call `Print`. A service that replaced them to route logs must call `slog.SetDefault` with its handler, or move to `api.WithLogger` ([step 3](#step-3-move-to-apinew)). `Fatal` is never called, as since v0.11.0.
+- Bodies and the parsed form are never logged. `LogRequestBody`, `LogResponseBody`, `PrintFullEvent` and `MaxLoggedBodyBytes` now affect only the deprecated `Log*` functions.
+- Header values and the query values in `uri` whose key is sensitive are masked, as is the `uri`'s user information. The keys are the built-in list plus `SensitiveLogKeys`: the variable can add keys but no longer remove a built-in one.
+- A response that cannot be encoded is answered with 500 and the registered formatter's `Error500()` body (bare 500 if it returns nil), and logged as `response cannot be encoded`.
 
-**What still configures the default instance:** `SetRequestMode`, `SetResponseMode` (`CurrentRequestMode`, `CurrentResponseMode`), `TraceVisibility`, `TraceIDLength`, `BlankSuccess`, `SensitiveLogKeys`, the body-logging variables and the components set with `RegisterNewAPIRequestReceiver`, `RegisterNewAPIResponseFormatter` and `RegisterNewAPIResponseWriter`.
+**What still configures the default instance:** `SetRequestMode`, `SetResponseMode` (`CurrentRequestMode`, `CurrentResponseMode`), `TraceVisibility`, `TraceIDLength`, `BlankSuccess`, `SensitiveLogKeys` (adds only) and the components set with `RegisterNewAPIRequestReceiver`, `RegisterNewAPIResponseFormatter` and `RegisterNewAPIResponseWriter`.
 
 Deprecated names are reported by staticcheck (`SA1019`) and by gopls in your editor. `go vet` does not report them. Fix the routing first (step 2); the deprecations can wait until step 3.
 
@@ -120,11 +123,11 @@ The handler answers byte for byte as on the default instance. `WithLowercaseCode
 
 `Example_migrationBeforeAndAfter` in `example_migration_test.go` proves it for the handler, served without `ProcessRequest`. Under `ProcessRequest` the bodies also match apart from the generated event IDs; `TestQuickStartAnswersLikeTheDefaultInstance` in `instance_test.go` covers that.
 
-**Wrap the outermost chain.** Middlewares outside `a.Handler` use the default instance. So does `api.Write(data, w)`, which takes no request. Put `a.Handler` around everything, or a rejection from an outer `ProcessRequest` uses the package modes, logs through `Print`/`PrintError` instead of the instance logger and is bounded at 10 MiB instead of the instance's limit. With nested instances, the innermost one wins.
+**Wrap the outermost chain.** Middlewares outside `a.Handler` use the default instance. So does `api.Write(data, w)`, which takes no request. Put `a.Handler` around everything, or a rejection from an outer `ProcessRequest` uses the package modes, logs through `slog.Default` instead of the instance logger and is bounded at 10 MiB instead of the instance's limit. With nested instances, the innermost one wins.
 
 ### Deprecated names and their options
 
-The names replaced by an instance option keep working, but only for the default instance. The `GetQueryParamValue*` helpers and `ResponseCodes.InternalServerEerror` keep working everywhere, instances included.
+The names replaced by an instance option keep working, but only for the default instance; the ones marked "ignored" have no effect on the package any more. The `GetQueryParamValue*` helpers and `ResponseCodes.InternalServerEerror` keep working everywhere, instances included.
 
 | Deprecated (v0) | Use instead |
 |---|---|
@@ -135,12 +138,13 @@ The names replaced by an instance option keep working, but only for the default 
 | `RegisterNewAPIRequestReceiver` | `api.New(api.WithRequestReceiver(...))` |
 | `RegisterNewAPIResponseFormatter` | `api.New(api.WithResponseFormatter(...))` |
 | `RegisterNewAPIResponseWriter` | `api.New(api.WithResponseWriter(...))` |
-| `Print` | `api.New(api.WithLogger(...))` |
-| `PrintError` | `api.New(api.WithLogger(...))` |
-| `Fatal` | `api.New(api.WithLogger(...))` |
+| `Print` | `api.New(api.WithLogger(...))` or `slog.SetDefault` (called only by the deprecated `Log*`) |
+| `PrintError` | `api.New(api.WithLogger(...))` or `slog.SetDefault` (ignored) |
+| `Fatal` | `api.New(api.WithLogger(...))` or `slog.SetDefault` (ignored) |
 | `LogRequest` | `api.New(api.WithLogger(...))` |
 | `LogResponse` | `api.New(api.WithLogger(...))` |
 | `LogResponseWithDuration` | `api.New(api.WithLogger(...))` |
+| `LogRequestBody`, `LogResponseBody`, `PrintFullEvent`, `MaxLoggedBodyBytes` | none: bodies are never logged (they affect only the deprecated `Log*`) |
 | `SensitiveLogKeys` | `api.New(api.WithSensitiveLogKeys(...))` |
 | `GetQueryParamValueString` | `api.QueryString` (deprecated since v0.9.0) |
 | `GetQueryParamValueInt` | `api.QueryInt` (deprecated since v0.9.0) |
@@ -156,14 +160,14 @@ a := api.New(
 	api.WithRequestReceiver(api.RequestReceiver{}),     // RegisterNewAPIRequestReceiver
 	api.WithResponseFormatter(api.ResponseFormatter{}), // RegisterNewAPIResponseFormatter
 	api.WithResponseWriter(api.ResponseWriter{}),       // RegisterNewAPIResponseWriter
-	api.WithLogger(logger),                             // Print, PrintError, Fatal, Log*
+	api.WithLogger(logger),                             // slog.Default; Print, PrintError, Fatal, Log*
 	api.WithSensitiveLogKeys("pin"),                    // SensitiveLogKeys
 )
 ```
 
 `Example_migrationOptions` is the compiled version. Pass only the options you need: `api.New()` already uses the built-in receiver, formatter and writer.
 
-**Custom components.** The mode options, and `WithLowercaseCodes` for the formatter, apply to the built-in `RequestReceiver`, `RequestReceiverV2` and `ResponseFormatter`, also when you pass them with an option. A custom receiver or formatter decides on its own how it parses, what body it writes and its code text. A type that embeds a built-in one is custom: its promoted methods read the deprecated package mode variables and send codes as declared. A type that embeds `ResponseWriter` behaves as the default instance's writer: it logs through `PrintError` and builds its 500 body with the registered formatter. A nil value keeps the built-in.
+**Custom components.** The mode options, and `WithLowercaseCodes` for the formatter, apply to the built-in `RequestReceiver`, `RequestReceiverV2` and `ResponseFormatter`, also when you pass them with an option. A custom receiver or formatter decides on its own how it parses, what body it writes and its code text. A type that embeds a built-in one is custom: its promoted methods read the deprecated package mode variables and send codes as declared. A type that embeds `ResponseWriter` behaves as the default instance's writer: it logs through `slog.Default` and builds its 500 body with the registered formatter. A nil value keeps the built-in.
 
 ### What stays package-level
 
@@ -178,7 +182,7 @@ These are not deprecated and are shared by every instance:
 - `RegisterNewAPISecurityGuarantor` and `RegisterParamValidator`: every instance forwards to them;
 - `Write(data, w)`.
 
-`TraceVisibility`, `TraceIDLength`, `BlankSuccess`, `PrintFullEvent`, `LogRequestBody`, `LogResponseBody` and `MaxLoggedBodyBytes` are not deprecated either, but they affect only the default instance. Instances use their v0 defaults and never log bodies.
+`TraceVisibility`, `TraceIDLength` and `BlankSuccess` are not deprecated either (no instance option replaces them), but they affect only the default instance.
 
 ## What an instance adds
 
@@ -199,13 +203,13 @@ a := api.New(
 
 `Example_migrationKindStatusAndHook` is the compiled version.
 
-**Logging.** An instance logs only through its `WithLogger` logger, as `slog` records (`request`, `response`, and error records). Without a logger it logs nothing. Compared with the default instance:
+**Logging.** An instance logs only through its `WithLogger` logger, with the same `slog` records as the default instance (`request`, `response`, and error records). Without a logger it logs nothing; the default instance logs through `slog.Default` instead. Both:
 
-- the sensitive keys are the default `SensitiveLogKeys` list, copied when the instance is built, plus `WithSensitiveLogKeys`, which only adds; changing `SensitiveLogKeys` does not reach an instance;
-- header values, query values in `uri` (`/login?access_token=[REDACTED]&page=2`) and the user information of the `uri` (`http://[REDACTED]@host/...`) are masked with the same rules as the default instance; path segments are not;
-- bodies and the parsed form are never logged;
-- a failed `Get*Value*` helper logs the name as `key`; for a sensitive name the `error` gives only the kind of failure, never the value;
-- the built-in writer never calls `Fatal` and never exits: a body that cannot be encoded is logged and answered with 500 and the `Error500()` body, with the formatter's `Content-Type`. The failed response's headers that describe its body (`Content-Type`, `Content-Encoding`, `Content-Length`, `ETag`, …) are dropped from that 500; the others are kept.
+- mask the built-in sensitive keys plus the added ones: `WithSensitiveLogKeys` on an instance, `SensitiveLogKeys` on the default instance; changing `SensitiveLogKeys` does not reach an instance;
+- mask header values, query values in `uri` (`/login?access_token=[REDACTED]&page=2`) and the user information of the `uri` (`http://[REDACTED]@host/...`); path segments are not;
+- never log bodies or the parsed form;
+- log a failed `Get*Value*` helper with the name as `key`; for a sensitive name the `error` gives only the kind of failure, never the value;
+- never call `Fatal` or exit from the built-in writer: a body that cannot be encoded is logged and answered with 500 and the `Error500()` body, with the formatter's `Content-Type`. The failed response's headers that describe its body (`Content-Type`, `Content-Encoding`, `Content-Length`, `ETag`, …) are dropped from that 500; the others are kept.
 
 See the README "Logging" section for every record.
 
@@ -236,6 +240,7 @@ a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 - [ ] Upgrade and build. Nothing is removed, so the program compiles.
 - [ ] Check clients, alerts and dashboards that match lowercase codes (`e001`), read the request token back from responses or from the `SecurityToken` response header, or send bodies over 10 MiB ([step 1](#step-1-upgrade-what-changes-without-code-changes)).
 - [ ] If clients send bodies over 10 MiB, raise the limit with `api.New(api.WithMaxBodyBytes(n)).Handler`; `http.MaxBytesHandler` can only lower it.
+- [ ] If you replaced `Print` or `PrintError` to route logs, call `slog.SetDefault` (or move to `api.WithLogger`).
 - [ ] Start the service once (or build its router in a test): fix every registration panic (conflicts, methods, wildcard names).
 - [ ] Check trailing-slash clients, HEAD skip paths, 405 handling and `GODEBUG=httpmuxgo121`.
 - [ ] Validate route variables that reach file paths, headers or logs.
