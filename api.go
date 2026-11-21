@@ -37,7 +37,9 @@ var api = core.New(
 )
 
 // Write API response in JSON format in screen. You can to define response
-// JSON format implemented the APIResponseFormatter interface.
+// JSON format implemented the APIResponseFormatter interface. Write takes no
+// request, so it always uses the default instance, never one attached by
+// (*API).Handler.
 func Write(data core.ResponseData, w http.ResponseWriter) {
 	api.Write(data, w)
 }

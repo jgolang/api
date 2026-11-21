@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jgolang/api/core"
 	"github.com/jgolang/errors"
 	"github.com/jgolang/errors/codes"
 )
@@ -138,6 +139,9 @@ func TestPackageModesKeepV0Bodies(t *testing.T) {
 		"success":    func(w http.ResponseWriter, r *http.Request) { Success200().Write(w, r) },
 		"error400":   func(w http.ResponseWriter, r *http.Request) { Error400().Write(w, r) },
 		"writeError": func(w http.ResponseWriter, r *http.Request) { WriteError(w, r, notFound) },
+		// 200: the v0 default status of Warning and Informative (100) cannot carry a body.
+		"warning":     func(w http.ResponseWriter, r *http.Request) { Warning{HTTPStatusCode: http.StatusOK}.Write(w, r) },
+		"informative": func(w http.ResponseWriter, r *http.Request) { Informative{HTTPStatusCode: http.StatusOK}.Write(w, r) },
 	}
 	tests := []struct {
 		mode       ResponseMode
@@ -151,6 +155,15 @@ func TestPackageModesKeepV0Bodies(t *testing.T) {
 		{ResponseModeEnvelope, "success", 200, `{"header":{"type":"success","code":"0000","event_id":"evt-123456789"}}` + "\n"},
 		{ResponseModeEnvelope, "error400", 400, `{"header":{"type":"error","title":"Error response!","message":"The service has not completed the operation! (evt-12-e001)","code":"e001","event_id":"evt-123456789"}}` + "\n"},
 		{ResponseModeEnvelope, "writeError", 404, `{"header":{"type":"error","title":"Error response!","message":"task not found (evt-12-pln-111)","code":"pln-111","event_id":"evt-123456789"}}` + "\n"},
+		{ResponseModePlain, "warning", 200, `{"action":"","code":"0000","content":null,"event_id":"evt-123456789","info":null,"message":"The application has been successful but with potential problems! (evt-12-0000)","title":"Alert!","token":"","type":"warning"}` + "\n"},
+		{ResponseModePlain, "informative", 200, `{"action":"","code":"0000","content":null,"event_id":"evt-123456789","info":null,"message":"The request has been successful! (evt-12-0000)","title":"Information!","token":"","type":"info"}` + "\n"},
+		{ResponseModeEnvelope, "warning", 200, `{"header":{"type":"warning","title":"Alert!","message":"The application has been successful but with potential problems! (evt-12-0000)","code":"0000","event_id":"evt-123456789"}}` + "\n"},
+		{ResponseModeEnvelope, "informative", 200, `{"header":{"type":"info","title":"Information!","message":"The request has been successful! (evt-12-0000)","code":"0000","event_id":"evt-123456789"}}` + "\n"},
+		{ResponseModeNone, "success", 200, "null\n"},
+		{ResponseModeNone, "error400", 400, "null\n"},
+		{ResponseModeNone, "writeError", 404, "null\n"},
+		{ResponseModeNone, "warning", 200, "null\n"},
+		{ResponseModeNone, "informative", 200, "null\n"},
 	}
 
 	for _, tt := range tests {
@@ -186,6 +199,9 @@ func TestInstanceAnswersMiddlewareRejectionsInItsMode(t *testing.T) {
 		{name: "RequestBody bad JSON", handler: RequestBody(ok), body: `{"title":`, wantStatus: http.StatusBadRequest},
 		{name: "BasicToken bad header", handler: BasicToken(ok), headers: map[string]string{"Authorization": "Nope"}, wantStatus: http.StatusUnauthorized},
 		{name: "CustomToken bad header", handler: CustomToken(ok), headers: map[string]string{"Authorization": "Nope"}, wantStatus: http.StatusUnauthorized},
+		{name: "Warning", handler: func(w http.ResponseWriter, r *http.Request) { Warning{HTTPStatusCode: http.StatusOK}.Write(w, r) }, wantStatus: http.StatusOK},
+		{name: "Informative", handler: func(w http.ResponseWriter, r *http.Request) { Informative{HTTPStatusCode: http.StatusOK}.Write(w, r) }, wantStatus: http.StatusOK},
+		{name: "WriteError", handler: func(w http.ResponseWriter, r *http.Request) { WriteError(w, r, nil) }, wantStatus: http.StatusInternalServerError},
 	}
 
 	for _, tt := range tests {
@@ -253,8 +269,6 @@ func TestInstanceFromFallsBackToTheDefaultInstance(t *testing.T) {
 	}{
 		{name: "nil request", r: nil},
 		{name: "request without instance", r: httptest.NewRequest(http.MethodGet, "/", nil)},
-		{name: "zero API", r: requestWithInstance(&API{})},
-		{name: "typed nil API", r: requestWithInstance((*API)(nil))},
 	}
 
 	for _, tt := range tests {
@@ -314,4 +328,139 @@ func TestQuickStartAnswersTheSameWithTheDefaultInstanceOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewSkipsNilOptions(t *testing.T) {
+	var unset Option
+
+	a := New(nil, unset, WithResponseMode(ResponseModePlain))
+
+	if a.responseMode != ResponseModePlain || a.requestMode != RequestModePlain {
+		t.Fatalf("modes = %s/%s, want plain/plain", a.requestMode, a.responseMode)
+	}
+}
+
+func TestHandlerOnAZeroOrNilAPIKeepsTheOuterInstance(t *testing.T) {
+	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
+	outer := New(WithResponseMode(ResponseModePlain))
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { Success200().Write(w, r) })
+
+	for name, inner := range map[string]*API{"zero API": {}, "nil API": nil} {
+		t.Run(name, func(t *testing.T) {
+			rec := serve(outer.Handler(inner.Handler(ok)), http.MethodGet, "", nil)
+
+			if got := responseModeOf(rec.Body.Bytes()); got != ResponseModePlain {
+				t.Fatalf("response mode = %s, want the outer instance's plain", got)
+			}
+		})
+	}
+	t.Run("alone", func(t *testing.T) {
+		rec := serve((&API{}).Handler(ok), http.MethodGet, "", nil)
+
+		if got := responseModeOf(rec.Body.Bytes()); got != ResponseModeEnvelope {
+			t.Fatalf("response mode = %s, want the default instance's envelope", got)
+		}
+	})
+}
+
+func TestTheInnermostInstanceWins(t *testing.T) {
+	usePackageModes(t, RequestModePlain, ResponseModeNone)
+	outer := New(WithResponseMode(ResponseModePlain))
+	inner := New(WithResponseMode(ResponseModeEnvelope))
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { Success200().Write(w, r) })
+
+	rec := serve(outer.Handler(inner.Handler(ok)), http.MethodGet, "", nil)
+
+	if got := responseModeOf(rec.Body.Bytes()); got != ResponseModeEnvelope {
+		t.Fatalf("response mode = %s, want the inner instance's envelope", got)
+	}
+}
+
+func TestNormalizeModes(t *testing.T) {
+	requestModes := map[RequestMode]RequestMode{
+		RequestModeNone:     RequestModeNone,
+		RequestModePlain:    RequestModePlain,
+		RequestModeEnvelope: RequestModeEnvelope,
+		RequestModeAuto:     RequestModeAuto,
+		"":                  RequestModePlain,
+		"unknown":           RequestModePlain,
+	}
+	for in, want := range requestModes {
+		if got := normalizeRequestMode(in); got != want {
+			t.Errorf("normalizeRequestMode(%q) = %q, want %q", in, got, want)
+		}
+	}
+	responseModes := map[ResponseMode]ResponseMode{
+		ResponseModeNone:     ResponseModeNone,
+		ResponseModePlain:    ResponseModePlain,
+		ResponseModeEnvelope: ResponseModeEnvelope,
+		"":                   ResponseModeEnvelope,
+		"unknown":            ResponseModeEnvelope,
+	}
+	for in, want := range responseModes {
+		if got := normalizeResponseMode(in); got != want {
+			t.Errorf("normalizeResponseMode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestAutoInstanceParsesEnvelopeAndPlainBodies(t *testing.T) {
+	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
+	a := New(WithRequestMode(RequestModeAuto))
+
+	for _, body := range []string{`{"header":{},"content":{"title":"task"}}`, `{"title":"task"}`} {
+		rec := serve(a.Handler(ProcessRequest(echoTitle(t))), http.MethodPost, body, nil)
+
+		if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"title":"task"`)) {
+			t.Errorf("body %s: got %d %s, want 200 with the unwrapped title", body, rec.Code, rec.Body)
+		}
+	}
+}
+
+type stubFormatter struct{}
+
+func (stubFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
+	return &core.ResponseFormatted{HTTPStatusCode: data.HTTPStatusCode, Body: "stub"}
+}
+
+type stubReceiver struct{ RequestReceiver }
+
+func (stubReceiver) ProcessEncryptedBody(r *http.Request) (*core.RequestEncryptedData, error) {
+	return &core.RequestEncryptedData{Data: "stub"}, nil
+}
+
+func TestRegisteredImplementationsServeOnlyTheDefaultInstance(t *testing.T) {
+	RegisterNewAPIResponseFormatter(stubFormatter{})
+	RegisterNewAPIRequestReceiver(stubReceiver{})
+	t.Cleanup(func() {
+		RegisterNewAPIResponseFormatter(ResponseFormatter{})
+		RegisterNewAPIRequestReceiver(RequestReceiver{})
+	})
+	write := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { Success200().Write(w, r) })
+	var encryptedData any
+	readEncrypted := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request, _ := ProcessEncryptedBody(r)
+		encryptedData = request.Data
+	})
+	encryptedBody := `{"data":"built-in"}`
+
+	t.Run("default instance", func(t *testing.T) {
+		if got := serve(write, http.MethodGet, "", nil).Body.String(); got != "\"stub\"\n" {
+			t.Errorf("body = %q, want the stub formatter's", got)
+		}
+		serve(readEncrypted, http.MethodPost, encryptedBody, nil)
+		if encryptedData != "stub" {
+			t.Errorf("encrypted data = %v, want the stub receiver's", encryptedData)
+		}
+	})
+	t.Run("instance", func(t *testing.T) {
+		a := New()
+		if got := responseModeOf(serve(a.Handler(write), http.MethodGet, "", nil).Body.Bytes()); got != ResponseModeEnvelope {
+			t.Errorf("response mode = %q, want the built-in formatter's envelope", got)
+		}
+		serve(a.Handler(readEncrypted), http.MethodPost, encryptedBody, nil)
+		if encryptedData != "built-in" {
+			t.Errorf("encrypted data = %v, want the built-in receiver's", encryptedData)
+		}
+	})
 }

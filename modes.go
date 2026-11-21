@@ -29,7 +29,9 @@ const (
 // instance, the one that serves requests not wrapped by (*API).Handler.
 //
 // Deprecated: use api.New(api.WithRequestMode(...)) instead. It affects only
-// the default instance.
+// the default instance. A service that registers a custom receiver,
+// formatter or writer keeps using the default instance until the With*
+// options for them land.
 var CurrentRequestMode = RequestModePlain
 
 // CurrentResponseMode defines the active response formatting mode of the
@@ -37,14 +39,18 @@ var CurrentRequestMode = RequestModePlain
 // (*API).Handler.
 //
 // Deprecated: use api.New(api.WithResponseMode(...)) instead. It affects only
-// the default instance.
+// the default instance. A service that registers a custom receiver,
+// formatter or writer keeps using the default instance until the With*
+// options for them land.
 var CurrentResponseMode = ResponseModeEnvelope
 
 // SetRequestMode updates the request parsing mode of the default instance.
 // An unknown mode resets it to RequestModePlain.
 //
 // Deprecated: use api.New(api.WithRequestMode(...)) instead. It affects only
-// the default instance.
+// the default instance. A service that registers a custom receiver,
+// formatter or writer keeps using the default instance until the With*
+// options for them land.
 func SetRequestMode(mode RequestMode) {
 	CurrentRequestMode = normalizeRequestMode(mode)
 }
@@ -53,7 +59,9 @@ func SetRequestMode(mode RequestMode) {
 // instance. An unknown mode resets it to ResponseModeEnvelope.
 //
 // Deprecated: use api.New(api.WithResponseMode(...)) instead. It affects only
-// the default instance.
+// the default instance. A service that registers a custom receiver,
+// formatter or writer keeps using the default instance until the With*
+// options for them land.
 func SetResponseMode(mode ResponseMode) {
 	CurrentResponseMode = normalizeResponseMode(mode)
 }
