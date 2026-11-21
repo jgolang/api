@@ -17,9 +17,9 @@ import (
 )
 
 // instanceSensitiveLogKeys returns a fresh list of the keys an instance from
-// New masks: the default list, then added.
+// New masks: the built-in default list, then added.
 func instanceSensitiveLogKeys(added []string) []string {
-	return append(v0SensitiveLogKeys(), added...)
+	return append(defaultSensitiveLogKeys(), added...)
 }
 
 // logs reports whether a writes records at level. The default instance and
@@ -116,8 +116,9 @@ func (a *API) logResponse(r *http.Request, eventID string, rec *httptest.Respons
 
 // logPanic logs a panic ProcessRequest recovered. The default instance keeps
 // the PrintError calls of v0.11.0, which log the panic value; an instance
-// from New logs the panic value with the event ID. A panic with http.ErrAbortHandler is a deliberate abort, so it
-// is logged at debug level as "handler aborted".
+// from New logs the panic value with the event ID. A panic with
+// http.ErrAbortHandler is a deliberate abort, so it is logged at debug level
+// as "handler aborted".
 func (a *API) logPanic(r *http.Request, eventID string, recovered any) {
 	if !a.fromNew {
 		if err, ok := recovered.(error); ok {
