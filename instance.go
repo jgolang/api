@@ -14,7 +14,9 @@ import (
 // CurrentResponseMode; their modes come only from its options. A custom
 // component that embeds RequestReceiver, RequestReceiverV2 or
 // ResponseFormatter is used as given, so its promoted methods read the
-// package mode variables. A zero or nil API is the default instance.
+// package mode variables. An API from New sends response codes as declared
+// unless built with WithLowercaseCodes; the default instance lowercases them.
+// A zero or nil API is the default instance.
 type API struct {
 	core *core.API
 }
@@ -164,9 +166,10 @@ func WithRequestReceiver(receiver core.APIRequestReceiver) Option {
 
 // WithResponseFormatter sets the formatter that builds the instance's
 // response bodies. ResponseFormatter formats with the instance's response
-// mode; a custom formatter alone decides the body, and WithResponseMode does
-// not apply to it. A type that embeds ResponseFormatter is custom: its
-// promoted methods read CurrentResponseMode. A nil interface value keeps the
+// mode and code case; a custom formatter alone decides the body and its code
+// text, and WithResponseMode and WithLowercaseCodes do not apply to it. A
+// type that embeds ResponseFormatter is custom: its promoted methods read
+// CurrentResponseMode and lowercase codes. A nil interface value keeps the
 // built-in; a typed nil pointer to a custom formatter is used as given.
 func WithResponseFormatter(formatter core.APIResponseFormatter) Option {
 	return func(o *options) {

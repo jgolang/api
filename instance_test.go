@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 
@@ -288,7 +289,7 @@ func requestWithInstance(a *API) *http.Request {
 	return served
 }
 
-func TestQuickStartAnswersTheSameWithTheDefaultInstanceOptions(t *testing.T) {
+func TestQuickStartAnswersLikeTheDefaultInstanceExceptCodeCase(t *testing.T) {
 	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
 	titleRequired := codes.New("TSK-001", "title is required").WithKind(codes.KindValidation)
 	createTask := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
@@ -314,18 +315,24 @@ func TestQuickStartAnswersTheSameWithTheDefaultInstanceOptions(t *testing.T) {
 		t.Run(body, func(t *testing.T) {
 			withoutInstance := serve(createTask, http.MethodPost, body, nil)
 			// WithLowercaseCodes is the one option that keeps an instance's codes as v0 sends them.
-			withInstance := serve(New(WithLowercaseCodes()).Handler(createTask), http.MethodPost, body, nil)
+			lowercase := serve(New(WithLowercaseCodes()).Handler(createTask), http.MethodPost, body, nil)
+			declared := serve(New().Handler(createTask), http.MethodPost, body, nil)
 
-			if withoutInstance.Code != withInstance.Code {
-				t.Errorf("status = %d without instance, %d with", withoutInstance.Code, withInstance.Code)
-			}
-			if a, b := withoutInstance.Header().Get("Content-Type"), withInstance.Header().Get("Content-Type"); a != b {
-				t.Errorf("Content-Type = %q without instance, %q with", a, b)
+			for name, withInstance := range map[string]*httptest.ResponseRecorder{"New(WithLowercaseCodes())": lowercase, "New()": declared} {
+				if withoutInstance.Code != withInstance.Code {
+					t.Errorf("status = %d without instance, %d with %s", withoutInstance.Code, withInstance.Code, name)
+				}
+				if a, b := withoutInstance.Header().Get("Content-Type"), withInstance.Header().Get("Content-Type"); a != b {
+					t.Errorf("Content-Type = %q without instance, %q with %s", a, b, name)
+				}
 			}
 			a := eventIDs.ReplaceAllString(withoutInstance.Body.String(), "ID")
-			b := eventIDs.ReplaceAllString(withInstance.Body.String(), "ID")
-			if a != b {
-				t.Errorf("body without instance: %s\nbody with instance:    %s", a, b)
+			if b := eventIDs.ReplaceAllString(lowercase.Body.String(), "ID"); a != b {
+				t.Errorf("body without instance: %s\nbody with lowercase instance: %s", a, b)
+			}
+			// New() differs only in code case, so lowercasing both bodies must make them equal.
+			if b := eventIDs.ReplaceAllString(declared.Body.String(), "ID"); strings.ToLower(a) != strings.ToLower(b) {
+				t.Errorf("body without instance: %s\nbody with New():        %s", a, b)
 			}
 		})
 	}

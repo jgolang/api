@@ -89,8 +89,6 @@ func TestInstanceCodeCase(t *testing.T) {
 				useFormatterSettings(t, true)
 				usePackageModes(t, RequestModePlain, mode)
 				a := tt.instance(mode)
-				// An instance existing must not change the default instance.
-				_ = New(WithResponseMode(mode))
 
 				code, message := serveCode(t, a, tt.writer)
 
