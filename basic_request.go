@@ -29,7 +29,7 @@ func (request *RequestBasic) GetSecurityToken() Response {
 		resp := response.(Error)
 		resp.Title = "Request info error!"
 		resp.Message = "The session id was not obtained"
-		return response
+		return resp
 	}
 	request.SessionID = sessionID
 	return nil
@@ -45,7 +45,7 @@ func (request *RequestBasic) GetUserID() Response {
 		resp := response.(Error)
 		resp.Title = "Request info error!"
 		resp.Message = "The user id was not obtained"
-		return response
+		return resp
 	}
 	request.UserID = userID
 	return nil
@@ -58,7 +58,7 @@ func (request *RequestBasic) GetEventID() Response {
 		resp := response.(Error)
 		resp.Title = "Request info error!"
 		resp.Message = "The event id was not obtained"
-		return response
+		return resp
 	}
 	request.EventID = eventID
 	return nil

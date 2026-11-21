@@ -6,9 +6,10 @@ This guide takes a v0 program (v0.11.x) to `github.com/jgolang/api` v1. The desi
 
 - The module path does not change. When v1.0.0 is tagged, upgrade with `go get github.com/jgolang/api@v1.0.0`; no import changes.
 - v1 removes nothing. Every v0 name still compiles. Names replaced by an instance option are deprecated, and each one points at its option.
-- A program that does not change its code sends the same bodies as v0. Two things change for it:
+- A program that does not change its code sends the same bodies as v0, except for the `RequestBasic` getters' error below. Three things change for it:
   - `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)). This is the change most programs must act on.
   - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too. It is a fix, not a breaking change: v0 discarded a `Content-Type` the service set. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0.
+  - `RequestBasic.GetSecurityToken`, `GetUserID` and `GetEventID` (and so `GetRequestBasicInfo` and `GetRequestFullInfo`) return their own error: title `Request info error!` and the message `The session id was not obtained` (`user id`, `event id`). v0 meant to send it but returned the generic `Error getting header value!` / `The <key> key header has not been obtained` instead (#63). This applies to instances too. A client that matched the old title or message must change.
 - Configuration moves from package variables to an instance: `a := api.New(opts...)` and `a.Handler(router)` ([step 3](#step-3-move-to-apinew)). Handler code does not change.
 - One breaking change outside routing, for programs that use `api.BasicToken`: it no longer copies the password into the `Basic-Secret` request header ([details](#breaking-no-basic-secret-header)).
 
@@ -25,6 +26,7 @@ Requests that no `a.Handler` wraps use the default instance. It keeps v0's behav
 - Response codes are lowercased (`e001`, `tsk-001`).
 - The package variables are read at call time: `CurrentRequestMode`, `CurrentResponseMode`, `TraceVisibility`, `TraceIDLength`, `BlankSuccess` and the body-logging variables.
 - The components set with `RegisterNewAPIRequestReceiver`, `RegisterNewAPIResponseFormatter` and `RegisterNewAPIResponseWriter` are used.
+- Bodies are v0's, except the `RequestBasic` getters' error: `GetSecurityToken`, `GetUserID` and `GetEventID` now send `Request info error!` and their own message ([summary](#summary), #63).
 - Logging goes through `Print` and `PrintError` and writes the same lines as v0.11.0. A response that cannot be encoded is answered with 500, as in v0.11.0; `Fatal` is never called. That 500 now drops the failed body's `Content-Type`, `Content-Encoding`, `Content-Length` and similar headers, and answers with no body instead of panicking when a registered formatter returns nil.
 - `SensitiveLogKeys` keeps its v0.11.0 list (with `cookie` and `session`) and masking (headers, JSON body fields, query and form values, the user information of the `uri`).
 

@@ -162,7 +162,7 @@ Not deprecated, shared by every instance, and listed as the narrowed `FUNC-04` d
 - Two binaries of one service configure their own instance; tests stop sharing state.
 - One extra context lookup per response.
 - Instances read no package variables for what they own; the `FUNC-04` deviation shrinks to the shared list above instead of disappearing.
-- Programs that stay on the package-level API see no wire change in v1 except the routing change in [ADR 0002](0002-stdadapter-servemux.md) (stdadapter on ServeMux patterns) (and section 8's `Content-Type` note).
+- Programs that stay on the package-level API see no wire change in v1 except the routing change in [ADR 0002](0002-stdadapter-servemux.md) (stdadapter on ServeMux patterns) (and section 8's `Content-Type` note). They also get the error title and message that `RequestBasic.GetSecurityToken`, `GetUserID` and `GetEventID` were meant to send (#63; a fix the owner decided on 2026-11-21).
 - v1 doubles some surface (option + deprecated name) until a v2 removes the deprecated names.
 
 ## Alternatives considered
