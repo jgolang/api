@@ -6,11 +6,14 @@ Nothing on this page has been removed. Names marked deprecated in the Go docs ke
 
 ## Enabling the legacy envelope
 
-The default request mode is plain JSON. Turn the envelope back on at startup:
+The default request mode is plain JSON. Turn the envelope back on with an instance and wrap the router with its `Handler`:
 
 ```go
-api.SetRequestMode(api.RequestModeEnvelope) // or api.RequestModeAuto to accept both
-api.SetResponseMode(api.ResponseModeEnvelope) // the default
+a := api.New(
+	api.WithRequestMode(api.RequestModeEnvelope),   // or api.RequestModeAuto to accept both
+	api.WithResponseMode(api.ResponseModeEnvelope), // the default
+)
+http.ListenAndServe(":8080", a.Handler(router))
 ```
 
 ## Request structure
@@ -111,16 +114,16 @@ handler := api.MiddlewaresChain(api.ProcessRequest)(func(w http.ResponseWriter, 
 http.HandleFunc("/api/example", handler)
 ```
 
-`api.ProcessRequest` calls the registered `core.APIRequestReceiver` (through `api.ProcessBody`), which reads the body, merges the HTTP headers and the envelope `header` as described above, and returns the request context. The middleware then assigns the event ID, logs the request, stores the context in the request and replaces `r.Body` with the content.
+`api.ProcessRequest` calls the instance's `core.APIRequestReceiver` (the registered one on the default instance) (through `api.ProcessBody`), which reads the body, merges the HTTP headers and the envelope `header` as described above, and returns the request context. The middleware then assigns the event ID, logs the request, stores the context in the request and replaces `r.Body` with the content.
 
 ### Request receivers
 
 Two exported implementations of `core.APIRequestReceiver` exist. Both follow the request mode for `ProcessBody`.
 
 - `api.RequestReceiver` is the default, wired in `api.go`. `ProcessBody` fills every field in the table above. `ProcessEncryptedBody` reads a JSON body `{"data": "...", "deviceUUID": "..."}` (`envelope.EncryptedBody`).
-- `api.RequestReceiverV2` must be registered with `api.RegisterNewAPIRequestReceiver(api.RequestReceiverV2{})`. `ProcessBody` does not fill `DeviceSerial`, `DeviceId`, `Latitude` or `Longitude`. `ProcessEncryptedBody` reads the form or query values `data` and `metadata`, both required; a missing one returns a `codes.ValRequired` error (400 through `api.WriteError`).
+- `api.RequestReceiverV2` must be passed with `api.New(api.WithRequestReceiver(api.RequestReceiverV2{}))`, or registered on the default instance with the deprecated `api.RegisterNewAPIRequestReceiver(api.RequestReceiverV2{})`. `ProcessBody` does not fill `DeviceSerial`, `DeviceId`, `Latitude` or `Longitude`. `ProcessEncryptedBody` reads the form or query values `data` and `metadata`, both required; a missing one returns a `codes.ValRequired` error (400 through `api.WriteError`).
 
-`api.ProcessEncryptedBody(r)` runs the registered receiver's `ProcessEncryptedBody` and returns an `*api.EncryptedRequest`; decrypting `Data` is left to the application.
+`api.ProcessEncryptedBody(r)` runs `ProcessEncryptedBody` on the instance's receiver (the registered one on the default instance) and returns an `*api.EncryptedRequest`; decrypting `Data` is left to the application.
 
 ### Method maps and the body middleware
 
@@ -128,7 +131,7 @@ Two exported implementations of `core.APIRequestReceiver` exist. Both follow the
 
 ### `api.Response`-returning helpers
 
-These helpers predate `api.WriteError` and the `Query*` helpers. They return a ready-to-write `api.Response` (an `api.Error`) instead of an `error`, and log the underlying error with `api.PrintError`.
+These helpers predate `api.WriteError` and the `Query*` helpers. They return a ready-to-write `api.Response` (an `api.Error`) instead of an `error`, and log the underlying error: with `api.PrintError` on the default instance, through the `api.WithLogger` logger (or not at all) on an `api.New` instance.
 
 | Helper | Prefer in new code |
 | --- | --- |

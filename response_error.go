@@ -52,7 +52,7 @@ func (err Error) Write(w http.ResponseWriter, r *http.Request) {
 	if err.SecurityToken == "" {
 		err.SecurityToken = getSecurityToken(r)
 	}
-	api.Write(core.ResponseData(err), w)
+	instanceFrom(r).core.Write(core.ResponseData(err), w)
 }
 
 // getErrCode returns the code and public message of the first coded error in

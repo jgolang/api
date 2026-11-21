@@ -42,5 +42,5 @@ func (info Informative) Write(w http.ResponseWriter, r *http.Request) {
 	if info.SecurityToken == "" {
 		info.SecurityToken = getSecurityToken(r)
 	}
-	api.Write(core.ResponseData(info), w)
+	instanceFrom(r).core.Write(core.ResponseData(info), w)
 }

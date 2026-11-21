@@ -41,7 +41,9 @@ var api = core.New(
 )
 
 // Write API response in JSON format in screen. You can to define response
-// JSON format implemented the APIResponseFormatter interface.
+// JSON format implemented the APIResponseFormatter interface. Write takes no
+// request, so it always uses the default instance, never one attached by
+// (*API).Handler.
 func Write(data core.ResponseData, w http.ResponseWriter) {
 	api.Write(data, w)
 }
@@ -49,7 +51,7 @@ func Write(data core.ResponseData, w http.ResponseWriter) {
 // ProcessEncryptedBody API request. You can to define request url encoding format and how to
 // validate it implemented the APIRequestReciver interface.
 func ProcessEncryptedBody(r *http.Request) (*EncryptedRequest, error) {
-	requestData, err := api.ProcessEncryptedBody(r)
+	requestData, err := instanceFrom(r).core.ProcessEncryptedBody(r)
 	return &EncryptedRequest{
 		RequestEncryptedData: requestData,
 	}, err
@@ -58,7 +60,7 @@ func ProcessEncryptedBody(r *http.Request) (*EncryptedRequest, error) {
 // ProcessBody API request. You can to define request JSON format and how to
 // validate it implemented the APIRequestReciver interface.
 func ProcessBody(r *http.Request) (*RequestContext, error) {
-	requestDataContext, err := api.ProcessBody(r)
+	requestDataContext, err := instanceFrom(r).core.ProcessBody(r)
 	return &RequestContext{
 		RequestDataContext: requestDataContext,
 	}, err
@@ -66,6 +68,11 @@ func ProcessBody(r *http.Request) (*RequestContext, error) {
 
 // RegisterNewAPIResponseFormatter inject a new implementation in the
 // APIResponseFormatter interface.
+//
+// Deprecated: use api.New(api.WithResponseFormatter(...)) instead. It affects only the
+// default instance. The package-level Write(data, w) and the middlewares
+// outside (*API).Handler always use the default instance's formatter and
+// writer.
 func RegisterNewAPIResponseFormatter(formatter core.APIResponseFormatter) {
 	responseFormatter = formatter
 	api.RegisterNewAPIResponseFormatter(formatter)
@@ -73,18 +80,26 @@ func RegisterNewAPIResponseFormatter(formatter core.APIResponseFormatter) {
 
 // RegisterNewAPIResponseWriter inject a new implementation in the
 // core.APIResponseWriter interface.
+//
+// Deprecated: use api.New(api.WithResponseWriter(...)) instead. It affects only the
+// default instance. The package-level Write(data, w) and the middlewares
+// outside (*API).Handler always use the default instance's formatter and
+// writer.
 func RegisterNewAPIResponseWriter(writer core.APIResponseWriter) {
 	api.RegisterNewAPIResponseWriter(writer)
 }
 
 // RegisterNewAPIRequestReceiver inject a new implementation in the
 // core.APIRequestReceiver interface.
+//
+// Deprecated: use api.New(api.WithRequestReceiver(...)) instead. It affects only the
+// default instance.
 func RegisterNewAPIRequestReceiver(receiver core.APIRequestReceiver) {
 	api.RegisterNewAPIRequestReceiver(receiver)
 }
 
 // RegisterNewAPISecurityGuarantor inject a new implementation in the
-// core.APISecurityGuarantor interface
+// core.APISecurityGuarantor interface. Every instance from New shares it.
 func RegisterNewAPISecurityGuarantor(guarantor core.APISecurityGuarantor) {
 	api.RegisterNewAPISecurityGuarantor(guarantor)
 }
@@ -99,7 +114,8 @@ func AddNewMapMethod(key string, methods []string) {
 	api.AddMapMethod(key, methods)
 }
 
-// RegisterParamValidator inject a new implementation in the Validator
+// RegisterParamValidator inject a new implementation in the Validator.
+// Every instance from New shares it.
 func RegisterParamValidator(paramValidator func(any) (errMsg string, err error)) {
 	api.RegisterParamValidator(paramValidator)
 }

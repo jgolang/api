@@ -178,3 +178,84 @@ func TestResponseWriterFailureAfterStatusWrittenKeepsEarlierStatus(t *testing.T)
 		t.Fatalf("expected the internal server error body, got %q", res.Body.String())
 	}
 }
+
+// formatterFunc adapts a function to core.APIResponseFormatter.
+type formatterFunc func(core.ResponseData) *core.ResponseFormatted
+
+func (f formatterFunc) Format(data core.ResponseData) *core.ResponseFormatted { return f(data) }
+
+// TestDefaultEncodeFailureHeaders checks the headers of the default writer's
+// encode-failure 500: the failed body's headers are dropped, the error body's
+// Content-Type applies, and the other headers are kept, as on an instance.
+func TestDefaultEncodeFailureHeaders(t *testing.T) {
+	failedHeaders := map[string]string{
+		"content-type":     "text/csv",
+		"Content-Encoding": "gzip",
+		"Content-Length":   "12",
+		"ETag":             `"v1"`,
+		"X-Trace":          "t",
+	}
+	tests := []struct {
+		name            string
+		formatter       core.APIResponseFormatter
+		wantStatus      int
+		wantContentType string
+		wantBody        bool
+	}{
+		{name: "default formatter", formatter: ResponseFormatter{}, wantStatus: 500, wantContentType: "application/json", wantBody: true},
+		{
+			name: "formatter sets the error body's Content-Type",
+			formatter: formatterFunc(func(data core.ResponseData) *core.ResponseFormatted {
+				formatted := ResponseFormatter{}.Format(data)
+				formatted.Headers = map[string]string{"Content-Type": "application/problem+json"}
+				return formatted
+			}),
+			wantStatus: 500, wantContentType: "application/problem+json", wantBody: true,
+		},
+		{
+			name:       "formatter returns no error body",
+			formatter:  formatterFunc(func(core.ResponseData) *core.ResponseFormatted { return nil }),
+			wantStatus: 500,
+		},
+		{
+			name: "error body cannot be encoded either",
+			formatter: formatterFunc(func(data core.ResponseData) *core.ResponseFormatted {
+				return &core.ResponseFormatted{Body: math.NaN(), HTTPStatusCode: data.HTTPStatusCode}
+			}),
+			wantStatus: 500,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			previousPrintError := PrintError
+			PrintError = func(...interface{}) {}
+			RegisterNewAPIResponseFormatter(tt.formatter)
+			t.Cleanup(func() {
+				PrintError = previousPrintError
+				RegisterNewAPIResponseFormatter(ResponseFormatter{})
+			})
+			res := httptest.NewRecorder()
+			res.Header().Set("Content-Type", "text/html")
+
+			ResponseWriter{}.Write(&core.ResponseFormatted{Body: math.NaN(), HTTPStatusCode: http.StatusOK, Headers: failedHeaders}, res)
+
+			if res.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", res.Code, tt.wantStatus)
+			}
+			if got := res.Header().Get("Content-Type"); got != tt.wantContentType {
+				t.Fatalf("Content-Type = %q, want %q", got, tt.wantContentType)
+			}
+			for _, key := range []string{"Content-Encoding", "Content-Length", "ETag"} {
+				if got := res.Header().Get(key); got != "" {
+					t.Fatalf("%s = %q, want it dropped", key, got)
+				}
+			}
+			if got := res.Header().Get("X-Trace"); got != "t" {
+				t.Fatalf("X-Trace = %q, want the other headers kept", got)
+			}
+			if gotBody := res.Body.Len() != 0; gotBody != tt.wantBody {
+				t.Fatalf("body = %q, want a body: %v", res.Body.String(), tt.wantBody)
+			}
+		})
+	}
+}

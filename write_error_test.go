@@ -87,14 +87,14 @@ func TestWriteErrorUsesTheKindOfTheCode(t *testing.T) {
 
 func TestErrorResponseForUsesTheUnauthorizedTitle(t *testing.T) {
 	for _, code := range []codes.Code{codes.AuthFailed, codes.AuthForbidden} {
-		if got := errorResponseFor(errors.NewC(code, "x")).Title; got != UnauthorizedTitle {
+		if got := errorResponseFor(errors.NewC(code, "x"), StatusForKind).Title; got != UnauthorizedTitle {
 			t.Fatalf("%s: title = %q, want %q", code.Str(), got, UnauthorizedTitle)
 		}
 	}
 }
 
 func TestErrorResponseForInfrastructureKeepsCodeMessage(t *testing.T) {
-	response := errorResponseFor(errors.NewC(codes.ConnFailed, "db down"))
+	response := errorResponseFor(errors.NewC(codes.ConnFailed, "db down"), StatusForKind)
 
 	if response.Message != codes.ConnFailed.Msg() || response.Title != InternalServerTitle {
 		t.Fatalf("got title %q message %q", response.Title, response.Message)

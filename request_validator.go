@@ -17,8 +17,12 @@ const RequestDataContextContextKey = RequestContextKey("requestData")
 
 const routeVarsContextKey = RequestContextKey("routeVars")
 
-// RequestReceiver implementation of core.APIRequestReceiver interface
-type RequestReceiver struct{}
+// RequestReceiver implementation of core.APIRequestReceiver interface.
+// The zero value parses with CurrentRequestMode.
+type RequestReceiver struct {
+	// mode is set by New; empty means the default instance's package variable.
+	mode RequestMode
+}
 
 // ProcessEncryptedBody process API request encription information.
 func (receiver RequestReceiver) ProcessEncryptedBody(r *http.Request) (*core.RequestEncryptedData, error) {
@@ -72,7 +76,7 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataC
 		return &requestData, nil
 	}
 
-	mode := CurrentRequestMode
+	mode := receiver.requestMode()
 	if mode == RequestModeAuto && envelopeRequestBody(rawBody) {
 		mode = RequestModeEnvelope
 	}
@@ -143,6 +147,19 @@ func (receiver RequestReceiver) ProcessBody(r *http.Request) (*core.RequestDataC
 	}
 	requestData.Content = core.JSONContent(rawBody)
 	return &requestData, nil
+}
+
+// withMode returns receiver bound to mode.
+func (receiver RequestReceiver) withMode(mode RequestMode) RequestReceiver {
+	receiver.mode = mode
+	return receiver
+}
+
+func (receiver RequestReceiver) requestMode() RequestMode {
+	if receiver.mode == "" {
+		return CurrentRequestMode
+	}
+	return receiver.mode
 }
 
 // GetRouteVar returns the route variables for the current request, if any

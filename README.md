@@ -8,6 +8,8 @@ go get github.com/jgolang/api
 
 The JSON envelope with device metadata in the request `header` (`device_type`, `device_brand`, `lat`, `lon`, `token`, …) is still supported, but it is no longer the default. It is documented in [docs/legacy.md](docs/legacy.md).
 
+Upgrading a v0 program? [docs/migration-v1.md](docs/migration-v1.md) takes it to v1 step by step: routing changes, the `api.New` instance, and every deprecated name with its replacement.
+
 ## Quick start
 
 ```go
@@ -53,6 +55,7 @@ func createTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	a := api.New()
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
 	router := stdadapter.New(http.NewServeMux(), docs)
 
@@ -66,11 +69,11 @@ func main() {
 	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
 	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
 
-	http.ListenAndServe(":8080", router)
+	http.ListenAndServe(":8080", a.Handler(router))
 }
 ```
 
-With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`) and answers with the response envelope:
+`a.Handler(router)` serves every route with the instance `a`; see [Request and response modes](#request-and-response-modes). With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`) and answers with the response envelope (an empty title answers 400 with code `TSK-001`, as declared):
 
 ```json
 {
@@ -87,9 +90,9 @@ With the defaults, `POST /tasks` takes a plain JSON body (`{"title":"Buy milk"}`
 
 1. **Route registration.** `api.Get`, `api.Post`, `api.Put`, `api.Patch` and `api.Delete` register a handler on any `api.Router` and record its `doc.RouteOption`s for the OpenAPI document. `stdadapter` is the `net/http` router; see [Routing and OpenAPI](#routing-and-openapi).
 2. **`api.ProcessRequest`.** Wrap a handler with this middleware to get the full flow. It:
-   - reads the body and parses it according to the [request mode](#request-and-response-modes); an invalid JSON body answers 400 with code `e002`;
+   - reads the body and parses it according to the [request mode](#request-and-response-modes); an invalid JSON body answers 400 with code `E002` on an `api.New` instance (`e002` on the default instance);
    - collects request metadata from HTTP headers (see [Reading the request](#reading-the-request));
-   - assigns an [event ID](#trace-ids) and logs the request and the response;
+   - assigns an [event ID](#trace-ids) and logs the request and the response (on an `api.New` instance only through its `api.WithLogger` logger, and nothing without one; see [Logging](#logging));
    - stores the request context, replaces `r.Body` with the endpoint content, and answers 500 if the handler panics.
 
    Use `api.MiddlewaresChain(...)` to compose it with your own middlewares. `api.AddSkipPath(api.GenSkipPath(method, path), true)` makes it pass a route through untouched.
@@ -100,12 +103,27 @@ A handler that is not wrapped by `api.ProcessRequest` still works: it reads the 
 
 ## Request and response modes
 
-Two package-level settings in `modes.go` control the wire format. Set them once at startup, before serving requests.
+Two modes control the wire format. Set them on an instance with `api.New` and wrap the router with its `Handler`:
 
 ```go
-api.SetRequestMode(api.RequestModeAuto)
-api.SetResponseMode(api.ResponseModePlain)
+a := api.New(
+	api.WithRequestMode(api.RequestModeAuto),
+	api.WithResponseMode(api.ResponseModePlain),
+)
+http.ListenAndServe(":8080", a.Handler(router))
 ```
+
+`a.Handler` stores the instance in the request context, so `api.ProcessRequest`, `api.RequestBody`, the token middlewares, `Write(w, r)` on every response type (`api.Success`, `api.Error`, `api.Warning`, `api.Informative`) and `api.WriteError` use its modes; handler code does not change. Wrap the outermost chain: middlewares outside `a.Handler` (and the package-level `api.Write(data, w)`, which takes no request) use the default instance, so their rejections (for example `api.ProcessRequest`'s invalid-body `e002`) are lowercase while handlers inside answer with the instance's code case; with nested instances the innermost one wins. An instance is immutable after `api.New`, and two instances in one process (two services, or two tests) do not see each other's modes. `api.New()` with no options parses plain requests and writes envelope responses. An instance sends response codes as declared (`PLN-001`); `api.WithLowercaseCodes()` restores lowercasing, and the default instance lowercases as in v0. An instance uses the built-in request receiver, response formatter and response writer unless you pass your own:
+
+```go
+a := api.New(
+	api.WithRequestReceiver(myReceiver),    // core.APIRequestReceiver
+	api.WithResponseFormatter(myFormatter), // core.APIResponseFormatter
+	api.WithResponseWriter(myWriter),       // core.APIResponseWriter
+)
+```
+
+The mode options, and for the formatter `api.WithLowercaseCodes()`, apply to the built-in receivers (`api.RequestReceiver`, `api.RequestReceiverV2`) and formatter (`api.ResponseFormatter`), also when you pass them with these options; a custom receiver or formatter (including one that embeds a built-in) alone decides how it parses, what body it writes and its code text. A type that embeds a built-in receiver or formatter is custom, and its promoted methods read the deprecated package mode variables. A nil value keeps the built-in. The deprecated `api.RegisterNewAPIRequestReceiver`, `api.RegisterNewAPIResponseFormatter` and `api.RegisterNewAPIResponseWriter` affect only the default instance. `api.RegisterNewAPISecurityGuarantor` and `api.RegisterParamValidator` are not deprecated and apply to every instance.
 
 | Request mode | Body parsing |
 | --- | --- |
@@ -119,8 +137,13 @@ api.SetResponseMode(api.ResponseModePlain)
 | `api.ResponseModeEnvelope` (default) | `{"header": {"type", "title", "message", "code", "token", "action", "event_id", "info"}, "content": ...}`; empty header fields are omitted, except `type`. |
 | `api.ResponseModePlain` | The same fields at the top level, with `content` next to them: `{"type": "success", "code": "0000", ..., "content": ...}`. Every field is present. |
 | `api.ResponseModeNone` | Only the content, as is. |
+| `api.ResponseModeProblem` (instances only) | Errors as RFC 9457 problem details, `{"type": "about:blank", "title", "status", "detail", "code", "event_id"}`, sent as `application/problem+json`; empty members are omitted, except `type`. Other responses: only the content, as `api.ResponseModeNone`. |
 
-An unknown value resets the mode to its default. The modes are plain package variables (`api.CurrentRequestMode`, `api.CurrentResponseMode`), so they apply to the whole process. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
+An unknown value falls back to the default (`api.RequestModePlain`, `api.ResponseModeEnvelope`).
+
+`api.ResponseModeProblem` is accepted only by `api.WithResponseMode`, for the built-in formatter; `api.SetResponseMode` treats it as unknown, so the default instance never writes problem details. In a problem body `title` is the HTTP status phrase (`Not Found`) when the response title is empty or a library default (`Error response!`, `Sorry!`, `Unauthorized!`, the helpers' titles), and the title the service set otherwise (the check is by text: a service title equal to a library default also becomes the status phrase, and a default reassigned through `api.DefaultErrorTitle` and its siblings is kept); `detail` is the public message without the trace suffix, and `code` and `event_id` are extension members; `type` is always `about:blank`, and content, token, actions and info are not sent. The built-in response writer sends `Content-Type: application/json` unless the response `Headers` set a non-empty `Content-Type`, which always wins, in every mode (one set on `w.Header()` by the handler does not count) (a fix: v0 discarded a `Content-Type` the service set); the 500 sent for a body that cannot be encoded, by the default instance or an instance, carries the error body's `Content-Type` and drops the failed body's other headers (`Content-Encoding`, `Content-Length`, `ETag`, …).
+
+Requests that are not wrapped by an instance's `Handler` use the default instance, which reads the package variables `api.CurrentRequestMode` and `api.CurrentResponseMode` (set with `api.SetRequestMode` and `api.SetResponseMode`). These four names are deprecated: they affect only the default instance, for the whole process. [docs/migration-v1.md](docs/migration-v1.md) lists every deprecated name with its option. The `envelope` package types are for OpenAPI documentation and match the envelope response mode.
 
 ## Reading the request
 
@@ -180,7 +203,7 @@ Every response kind (`api.Success`, `api.Error`, `api.Warning`, `api.Informative
 | `api.Error500(errs...)`, `api.Error500WithMsg(msg, errs...)` | 500 | the first coded error in `errs`, else `e300` |
 | `api.Error501(errs...)` | 501 (503 before v0.10.0) | the first coded error in `errs`, else `e001` |
 
-Response codes are written in lower case. The default titles, messages and codes are package variables (`api.DefaultSuccessTitle`, `api.InternalServerMessage`, `api.ResponseCodes`, …).
+The default instance writes response codes in lower case, as in the table (`e001`); an `api.New` instance sends them as declared (`E001`) unless created with `api.WithLowercaseCodes()`. The default titles, messages and codes are package variables (`api.DefaultSuccessTitle`, `api.InternalServerMessage`, `api.ResponseCodes`, …).
 
 ```go
 api.SuccessWithContent(task).Write(w, r)
@@ -192,7 +215,7 @@ created.Write(w, r)
 api.Error500(err).Write(w, r)
 ```
 
-Two settings shape the `title` and `message` of every response:
+Two settings shape the `title` and `message` of every response on the default instance; an `api.New` instance uses their defaults (`true`, `1`, ID length 6) and does not read them:
 
 - `api.BlankSuccess` (default `true`): success responses leave `title` and `message` empty. Error, warning, informative and custom response types always carry them.
 - `api.TraceVisibility` (default `1`): a trace suffix appended to a non-empty message. `1` appends ` (<event id>-<code>)`, `2` only ` (<code>)`, `3` only ` (<event id>)`; any other value appends nothing. The event ID is cut to `api.TraceIDLength` characters (default 6). For example, `Error500()` writes `"An error has occurred please try again later. (cdf606-e300)"`.
@@ -215,6 +238,35 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 ```
 
 401 and 403 use the unauthorized title, like `Error401`/`Error403`; a nil error answers 500. `ExampleWriteError` in `example_write_error_test.go` is the compiled version.
+
+An `api.New` instance can change the status of a kind and observe every error `WriteError` writes:
+
+```go
+a := api.New(
+	api.WithKindStatus(codes.KindValidation, http.StatusUnprocessableEntity), // repeat per kind
+	api.WithErrorHook(func(r *http.Request, err error, status int) {
+		slog.ErrorContext(r.Context(), "request failed", "status", status, "error", err)
+	}),
+)
+```
+
+Kinds without an override keep `api.StatusForKind`. Only statuses 400–599 are accepted: other calls are ignored and leave any earlier override for the kind in place, and a later valid call wins. Errors without a kind always answer 500. The title follows the decided status: the internal title for any 5xx, the unauthorized title for 401 and 403. The hook runs on the request goroutine with the original error and the status `WriteError` decided (a handler that already wrote a header, or a custom formatter or writer, can send another), before anything is written; it is shared by all requests the instance serves and may run concurrently, so it must be safe for concurrent use. A panic in it is not recovered: `api.ProcessRequest` answers 500 and logs it through the instance's `api.WithLogger` logger with the panic value (nothing is logged without a logger), and without `api.ProcessRequest` `net/http` aborts the connection. On the default instance the `api.PrintError` line shows the panic value (since v0.11.0). Only `WriteError` calls the hook: not `Error400`/`Error500`/the other helpers, and not the library's own rejections (body-parse failures in `api.RequestBody`/`api.ProcessRequest`, the token middlewares' 401s, `api.ProcessRequest`'s panic 500). The default instance has no overrides and no hook. `ExampleWithKindStatus` and `ExampleWithErrorHook` are the compiled versions.
+
+## Logging
+
+An `api.New` instance writes no logs unless you give it a standard `log/slog` logger, and never writes to stdout/stderr or exits on its own with the built-in response writer (a custom writer passed with `api.WithResponseWriter` owns its behavior):
+
+```go
+a := api.New(
+	api.WithLogger(slog.New(slog.NewJSONHandler(os.Stderr, nil))),
+	api.WithSensitiveLogKeys("pin"), // adds to the defaults
+)
+// {"level":"INFO","msg":"request","event_id":"…","method":"GET","uri":"/login?access_token=[REDACTED]&page=2","headers":{"Pin":["[REDACTED]"]}}
+```
+
+`api.ProcessRequest` writes a `request` record (`event_id`, `method`, `uri`, `headers`) and a `response` record (`event_id`, `method`, `uri`, `status`, `status_text`, `duration_ms`) at info level. A rejected body, a failed `Get*Value*`/`UnmarshalBody` helper, a recovered panic (`panic recovered`, with the panic value) and a response that cannot be encoded are error records with an `error` or `panic` attribute; a panic with `http.ErrAbortHandler` is a `handler aborted` debug record. A failed `Get*Value*` helper adds the name as `key`; for a sensitive name its `error` is only the kind (`invalid syntax`, `value out of range`, `invalid value`), never the value. A response that cannot be encoded (for example a `NaN` in the content) is answered with the `Error500()` body instead; the writer gets no request, so its records carry no request context or `event_id`. Bodies and the parsed form are never logged (query values appear only in `uri`). Header values, query values in `uri` and the user information of the `uri` are masked with the same rules as the default instance (see [Security notes](#security-notes)); secrets in path segments are not masked. The sensitive keys are the default list (`authorization`, `token`, `password`, `secret`, `credential`, `apikey`, `api-key`, `key`, `cookie`, `session`) plus the keys of `api.WithSensitiveLogKeys`, which can only add. `ExampleWithLogger` is the compiled version.
+
+The default instance keeps v0.11.0: lines through `api.Print`/`api.PrintError` (the standard `log` package), `api.SensitiveLogKeys` with its masking rules (see [Security notes](#security-notes)), and the body-logging variables below. Neither calls `api.Fatal`: a response that cannot be encoded is answered with 500. `api.Print`, `api.PrintError`, `api.Fatal`, `api.SensitiveLogKeys`, `api.LogRequest`, `api.LogResponse` and `api.LogResponseWithDuration` are deprecated in favor of the options; `api.LogRequestBody`, `api.LogResponseBody`, `api.PrintFullEvent` and `api.MaxLoggedBodyBytes` are not deprecated and affect only the default instance.
 
 ## Routing and OpenAPI
 
@@ -312,9 +364,10 @@ See [ADR 0002](docs/adr/0002-stdadapter-servemux.md).
 - `doc.Security` and `docs.SetDefaultSecurity` only document authentication; they do not enforce it. Enforce it with a middleware: `api.CustomToken` (validated by `api.CustomTokenValidatorFunc`), `api.BasicToken` (validated by `api.ValidateBasicAuthCredentialsFunc`), or your own.
 - `api.BasicToken` with the default validator answers 401 to every request while `api.Username` or `api.Password` is empty or `"default"` (since v0.11.0; before, it accepted `default:default`). Set both, or replace `api.ValidateBasicAuthCredentialsFunc`, before exposing a route. The default validator compares credentials in constant time; a custom one should too (`crypto/subtle`). After a successful check, `BasicToken` copies the user name and the plain password into the `Basic-Client` and `Basic-Secret` request headers; do not forward or log those headers.
 - The request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) is echoed in the response `token` field unless the handler sets `SecurityToken` on the response. Do not rely on the response body being free of it.
-- Request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
+- An `api.New` instance never logs bodies or the parsed form. It masks, by its sensitive keys (the `api.SensitiveLogKeys` defaults plus `api.WithSensitiveLogKeys`), header values and query parameter values in `uri`, and the user information of the `uri`, with the same rules as the default instance below. See [Logging](#logging).
+- On the default instance, request and response bodies are logged only when `api.LogRequestBody` / `api.LogResponseBody` are true; values under the keys in `api.SensitiveLogKeys` are masked and bodies are cut at `api.MaxLoggedBodyBytes`.
+- The default instance's request log masks, by the keys in `api.SensitiveLogKeys` (a name matches when it contains a key, ignoring case; the defaults include `authorization`, `token`, `password`, `key`, `cookie` and `session`): header values, JSON body fields, query parameter values in `uri` (names are found by splitting on `&` and `;`, and a masked value runs to the next `&`; a name that cannot be unescaped is masked too), and `form` values. It also masks the user information of an absolute-form, `//host` or CONNECT authority-form `uri` (`http://[REDACTED]@host/...`), up to the last `@`, so an `@` in the path or query hides the host and path too. Path segments are not masked. Masking is by name: a secret under a non-sensitive name (such as a URL with credentials in `?next=`) is logged as sent. A request body that is not JSON (form, XML, text) is logged as `[non-JSON body, N bytes]` unless `api.PrintFullEvent` is true.
 - With `stdadapter`, a route variable can contain `/` and `..` (`/files/..%2F..%2Fetc` gives `name` = `../../etc`). Validate it before using it in a file path or another lookup that trusts it.
-- The request log masks, by the keys in `api.SensitiveLogKeys` (a name matches when it contains a key, ignoring case; the defaults include `authorization`, `token`, `password`, `key`, `cookie` and `session`): header values, JSON body fields, query parameter values in `uri` (names are found by splitting on `&` and `;`, and a masked value runs to the next `&`; a name that cannot be unescaped is masked too), and `form` values. It also masks the user information of an absolute-form, `//host` or CONNECT authority-form `uri` (`http://[REDACTED]@host/...`), up to the last `@`, so an `@` in the path or query hides the host and path too. Path segments are not masked. Masking is by name: a secret under a non-sensitive name (such as a URL with credentials in `?next=`) is logged as sent. A request body that is not JSON (form, XML, text) is logged as `[non-JSON body, N bytes]` unless `api.PrintFullEvent` is true.
 - `api.ProcessRequest` stores the value of the `X-Forwarded-For` header up to its first `", "` as the `proxiedIPAddress` info value (and, when the request has no device UUID, as the event ID input). Only the first `X-Forwarded-For` header line is read. That value is set by the client: trust it only behind a proxy that overwrites the header, and do not use it on its own for rate limits, allow lists or audit.
 - The package sets no limit on the request body size: `api.ProcessRequest` and the request receivers read the whole body into memory. Bound it before they run, with `http.MaxBytesHandler` (or `http.MaxBytesReader` in a middleware) or a proxy limit:
 

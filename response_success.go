@@ -42,7 +42,7 @@ func (success Success) Write(w http.ResponseWriter, r *http.Request) {
 	if success.SecurityToken == "" {
 		success.SecurityToken = getSecurityToken(r)
 	}
-	api.Write(core.ResponseData(success), w)
+	instanceFrom(r).core.Write(core.ResponseData(success), w)
 }
 
 // Success200 returns a HTTP success response with status code 200.

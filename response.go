@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/jgolang/api/core"
@@ -43,14 +44,26 @@ func getEventID(r *http.Request) string {
 }
 
 // ResponseWriter implementation of core.APIResponseWriter interface.
-type ResponseWriter struct{}
+// The zero value is the default instance's writer, described on Write; New
+// binds its logger and formatter to it, so an instance's built-in writer
+// logs through the instance logger and builds the 500 body with the
+// instance formatter instead. Both send the Content-Type set in the
+// formatted Headers (any key case; an empty value counts as unset), else
+// application/json; one a handler set on w.Header() is overwritten.
+type ResponseWriter struct {
+	// fromNew is set by New; false is the default instance's v0 behavior.
+	fromNew   bool
+	logger    *slog.Logger
+	formatter core.APIResponseFormatter
+}
 
-// Write the API response in screen. The body is encoded before anything is
-// written. A body that cannot be encoded (e.g. a NaN float) is reported
-// through PrintError and answered with 500 and the internal server error
-// body, built by the registered response formatter, with the response
-// headers kept. The error body carries no event ID or token, since the
-// request is not available here. If the handler already wrote a status, that
+// Write the API response in screen. On the default instance, the body is
+// encoded before anything is written. A body that cannot be encoded (e.g. a
+// NaN float) is reported through PrintError and answered with 500 and the
+// internal server error body, built by the registered response formatter,
+// with the response headers kept except the ones that described the failed
+// body (see writeEncodeFailure). The error body carries no event ID or
+// token, since the request is not available here. If the handler already wrote a status, that
 // status stays and the error body is written under it.
 //
 // http.ErrBodyNotAllowed from writing the body is not reported: Warning and
@@ -58,6 +71,10 @@ type ResponseWriter struct{}
 // before delivering the body with 200, while the recorder that ProcessRequest
 // writes into returns this error.
 func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.ResponseWriter) {
+	if writer.fromNew {
+		writer.writeForInstance(response, w)
+		return
+	}
 	var body bytes.Buffer
 	if err := json.NewEncoder(&body).Encode(response.Body); err != nil {
 		PrintError(err)
@@ -68,9 +85,12 @@ func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.Resp
 }
 
 // writeEncodeFailure answers 500 with the internal server error body built by
-// the registered formatter. If that body cannot be encoded either, it answers
-// 500 with no body.
+// the registered formatter, labeled with that body's Content-Type. The
+// headers that described the failed body (see isBodyHeader) are dropped and
+// the others kept, as on an instance. If the formatter returns no body, or it
+// cannot be encoded either, it answers 500 with no body and no Content-Type.
 func writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
+	headers = withoutBodyHeaders(headers)
 	failure := Error500()
 	formatted := responseFormatter.Format(core.ResponseData{
 		Title:          failure.Title,
@@ -79,11 +99,18 @@ func writeEncodeFailure(headers map[string]string, w http.ResponseWriter) {
 		HTTPStatusCode: failure.HTTPStatusCode,
 		ResponseType:   ErrorType,
 	})
+	if formatted == nil {
+		writeBare500(headers, w)
+		return
+	}
 	var body bytes.Buffer
 	if err := json.NewEncoder(&body).Encode(formatted.Body); err != nil {
 		PrintError(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		writeBare500(headers, w)
 		return
+	}
+	if contentType := formattedContentType(formatted.Headers); contentType != "" {
+		headers["Content-Type"] = contentType
 	}
 	writeEncoded(headers, http.StatusInternalServerError, body.Bytes(), w)
 }
@@ -92,7 +119,11 @@ func writeEncoded(headers map[string]string, status int, body []byte, w http.Res
 	for key := range headers {
 		w.Header().Set(key, headers[key])
 	}
-	w.Header().Set("Content-Type", "application/json")
+	contentType := formattedContentType(headers)
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil && !errors.Is(err, http.ErrBodyNotAllowed) {
 		PrintError(err)
