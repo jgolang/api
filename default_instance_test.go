@@ -315,7 +315,7 @@ func TestDefaultInstanceLogsThroughSlogDefault(t *testing.T) {
 			next: func(http.ResponseWriter, *http.Request) { panic("boom") },
 			want: []string{
 				`{"event_id":"<id>","headers":{"Authorization":["[REDACTED]"],"Cookie":["[REDACTED]"]},"level":"INFO","method":"POST","msg":"request","uri":"/tasks?page=2&access_token=[REDACTED]"}`,
-				`{"event_id":"<id>","level":"ERROR","msg":"panic recovered","panic":"boom"}`,
+				`{"event_id":"<id>","level":"ERROR","msg":"panic recovered","panic":"[REDACTED]","panic_type":"string"}`,
 			},
 		},
 	}

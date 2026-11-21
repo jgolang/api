@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestProcessRequestLogsPanicValueWithoutRequest(t *testing.T) {
+func TestProcessRequestLogsPanicTypeWithoutValueOrRequest(t *testing.T) {
 	buf := captureDefaultLogger(t)
 	failOnPackageLoggers(t)
 
@@ -25,10 +25,10 @@ func TestProcessRequestLogsPanicValueWithoutRequest(t *testing.T) {
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", res.Code)
 	}
-	if !strings.Contains(logged, "handler panic value") {
-		t.Fatalf("expected the panic value to be logged, got %q", logged)
+	if !strings.Contains(logged, `"panic":"[REDACTED]"`) || !strings.Contains(logged, `"panic_type":"string"`) {
+		t.Fatalf("expected the panic value masked and its type logged, got %q", logged)
 	}
-	for _, secret := range []string{"bearer-placeholder", "cookie-placeholder"} {
+	for _, secret := range []string{"handler panic value", "bearer-placeholder", "cookie-placeholder"} {
 		if strings.Contains(logged, secret) {
 			t.Fatalf("expected %q to stay out of the error log, got %q", secret, logged)
 		}
