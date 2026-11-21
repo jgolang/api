@@ -182,28 +182,28 @@ func TestProblemModeBodyOverLimit(t *testing.T) {
 	}
 }
 
-func TestDefaultInstanceHasNoBodyLimit(t *testing.T) {
+func TestDefaultInstanceAcceptsABodyAtTheLimit(t *testing.T) {
 	var reached bool
 
-	rec := serve(ProcessRequest(reachHandler(&reached)), http.MethodPost, jsonBodyOfSize(defaultMaxBodyBytes+1), nil)
+	rec := serve(ProcessRequest(reachHandler(&reached)), http.MethodPost, jsonBodyOfSize(defaultMaxBodyBytes), nil)
 
 	if rec.Code != http.StatusOK || !reached {
 		t.Fatalf("status = %d, reached = %v; want 200 with the handler", rec.Code, reached)
 	}
 }
 
-func TestDefaultInstanceKeeps400ForAServiceLimit(t *testing.T) {
+func TestDefaultInstanceAnswers413ForAServiceLimit(t *testing.T) {
 	var reached bool
 	handler := http.MaxBytesHandler(ProcessRequest(reachHandler(&reached)), 16)
 
 	rec := serve(handler, http.MethodPost, jsonBodyOfSize(17), nil)
 
-	if rec.Code != http.StatusBadRequest || reached {
-		t.Fatalf("status = %d, reached = %v; want 400 without the handler", rec.Code, reached)
+	if rec.Code != http.StatusRequestEntityTooLarge || reached {
+		t.Fatalf("status = %d, reached = %v; want 413 without the handler", rec.Code, reached)
 	}
 	title, code := envelopeHeader(t, rec.Body.Bytes())
-	if title != "Invalid request content" || code != "e002" {
-		t.Fatalf("title, code = %q, %q; want %q, %q", title, code, "Invalid request content", "e002")
+	if title != "Request content too large" || code != "E002" {
+		t.Fatalf("title, code = %q, %q; want %q, %q", title, code, "Request content too large", "E002")
 	}
 }
 
@@ -217,5 +217,40 @@ func TestHandlerDoesNotWrapABodylessRequest(t *testing.T) {
 
 	if body != http.NoBody {
 		t.Fatalf("body = %T, want http.NoBody", body)
+	}
+}
+
+// TestInstanceLimitAboveTheDefaultIsNotCapped checks that the default
+// instance's 10 MiB bound never applies under an instance with a higher limit.
+func TestInstanceLimitAboveTheDefaultIsNotCapped(t *testing.T) {
+	unmarshal := func(reached *bool) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var payload map[string]string
+			if response := UnmarshalBody(&payload, r); response != nil {
+				response.Write(w, r)
+				return
+			}
+			reachHandler(reached)(w, r)
+		})
+	}
+	tests := []struct {
+		name    string
+		handler func(reached *bool) http.Handler
+	}{
+		{name: "ProcessRequest", handler: func(reached *bool) http.Handler { return ProcessRequest(reachHandler(reached)) }},
+		{name: "RequestBody", handler: func(reached *bool) http.Handler { return RequestBody(reachHandler(reached)) }},
+		{name: "UnmarshalBody", handler: unmarshal},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var reached bool
+			a := New(WithMaxBodyBytes(defaultMaxBodyBytes + 16))
+
+			rec := serve(a.Handler(tt.handler(&reached)), http.MethodPost, jsonBodyOfSize(defaultMaxBodyBytes+1), nil)
+
+			if rec.Code != http.StatusOK || !reached {
+				t.Fatalf("status = %d, reached = %v; want 200 with the handler", rec.Code, reached)
+			}
+		})
 	}
 }

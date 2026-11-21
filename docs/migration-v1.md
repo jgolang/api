@@ -5,30 +5,38 @@ This guide takes a v0 program (v0.11.x) to `github.com/jgolang/api` v1. The desi
 ## Summary
 
 - The module path does not change. When v1.0.0 is tagged, upgrade with `go get github.com/jgolang/api@v1.0.0`; no import changes.
-- v1 removes nothing. Every v0 name still compiles. Names replaced by an instance option are deprecated, and each one points at its option.
-- A program that does not change its code sends the same bodies as v0, except for the `RequestBasic` getters' error below. Three things change for it:
-  - `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)). This is the change most programs must act on.
-  - A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. This applies to the default instance too. It is a fix, not a breaking change: v0 discarded a `Content-Type` the service set. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0.
-  - `RequestBasic.GetSecurityToken`, `GetUserID` and `GetEventID` (and so `GetRequestBasicInfo` and `GetRequestFullInfo`) return their own error: title `Request info error!` and the message `The session id was not obtained` (`user id`, `event id`). v0 meant to send it but returned the generic `Error getting header value!` / `The <key> key header has not been obtained` instead (#63). This applies to instances too. A client that matched the old title or message must change.
-- Configuration moves from package variables to an instance: `a := api.New(opts...)` and `a.Handler(router)` ([step 3](#step-3-move-to-apinew)). Handler code does not change.
-- One breaking change outside routing, for programs that use `api.BasicToken`: it no longer copies the password into the `Basic-Secret` request header ([details](#breaking-no-basic-secret-header)).
+- v1 removes nothing. Every v0 name still compiles. Names replaced by an instance option are deprecated, and each one points at its option or says it is ignored.
+- **Breaking: the default instance behaves like `api.New()`** (owner decision, 2026-11-21). A program that does not change its code still gets v1's defaults: codes as declared, no request token echo and request bodies bounded at 10 MiB ([step 1](#step-1-upgrade-what-changes-without-code-changes)). A program that needs v0.11.0 behavior stays on v0.11.x.
+- `stdadapter` routes through Go 1.22 `ServeMux` patterns ([step 2](#step-2-fix-routing-stdadapter)).
+- Configuration moves from package variables to an instance: `a := api.New(opts...)` and `a.Handler(router)` ([step 3](#step-3-move-to-apinew)). Handler code does not change, and it is the only way back to v0's lowercase codes (`api.WithLowercaseCodes()`).
+- Programs that use `api.BasicToken` no longer get the password in the `Basic-Secret` request header ([details](#breaking-no-basic-secret-header)).
 
-Three steps, each one shippable on its own:
+Three steps. Step 1 is the upgrade itself; read it before you ship it.
 
-1. [Upgrade without code changes.](#step-1-upgrade-without-code-changes)
+1. [Upgrade: what changes without code changes.](#step-1-upgrade-what-changes-without-code-changes)
 2. [Fix routing (`stdadapter`).](#step-2-fix-routing-stdadapter)
 3. [Move to `api.New`.](#step-3-move-to-apinew)
 
-## Step 1: upgrade without code changes
+## Step 1: upgrade: what changes without code changes
 
-Requests that no `a.Handler` wraps use the default instance. It keeps v0's behavior:
+Requests that no `a.Handler` wraps use the default instance. Since v1.0.0 it answers like `api.New()` with its defaults. `TestDefaultInstanceAnswersLikeNew` in `default_instance_test.go` checks that status, headers and body are the same as under `api.New().Handler`, apart from event IDs.
 
-- Response codes are lowercased (`e001`, `tsk-001`).
-- The package variables are read at call time: `CurrentRequestMode`, `CurrentResponseMode`, `TraceVisibility`, `TraceIDLength`, `BlankSuccess` and the body-logging variables.
-- The components set with `RegisterNewAPIRequestReceiver`, `RegisterNewAPIResponseFormatter` and `RegisterNewAPIResponseWriter` are used.
-- Bodies are v0's, except the `RequestBasic` getters' error: `GetSecurityToken`, `GetUserID` and `GetEventID` now send `Request info error!` and their own message ([summary](#summary), #63).
+**Wire changes** (clients, alerts and dashboards may need to change):
+
+- **Codes as declared.** The `code` field and the message trace suffix send `core.ResponseCode` as declared: `E001`, `E002`, `E300`, `TSK-001` where v0 sent `e001`, `e002`, `e300`, `tsk-001`. Built-in `jgolang/errors` codes that are declared lowercase (`d001`, `s001`) do not change. There is no package-level switch back; a service that must keep lowercase codes moves to `api.New(api.WithLowercaseCodes())` ([step 3](#step-3-move-to-apinew)).
+- **No request token echo.** `Success`, `Error`, `Warning` and `Informative` (and so `WriteError`, the token middlewares' 401s and every library rejection) no longer copy the request token (`SecurityToken` header, `Authorization: Bearer`, the envelope `header.token`) into the response: plain bodies send `"token":""`, envelope bodies omit `header.token`. A token the handler sets (`api.Success{SecurityToken: renewed}`) is still sent.
+- **`RequestHeaderSession`** no longer copies the `SecurityToken` request header into the response header. It still answers 401 without it. A handler that wants to return a token sets the header itself.
+- **Request body limit.** `ProcessRequest`, `RequestBody`, `ProcessBody`, `ProcessEncryptedBody` and `UnmarshalBody` read at most 10 MiB. `ProcessRequest`, `RequestBody` and `UnmarshalBody` answer a larger body with 413, code `E002` and the title `Request content too large`; `ProcessBody` and `ProcessEncryptedBody` return the `*http.MaxBytesError`. A limit the service installed itself (`http.MaxBytesHandler`) is answered the same way (v0.11.0 answered 400 `Invalid request content`); such an outer limit can only lower the 10 MiB cap. To raise it, use `api.New(api.WithMaxBodyBytes(n)).Handler` ([step 3](#step-3-move-to-apinew)). A handler that reads `r.Body` itself is not bounded; wrap it with `http.MaxBytesHandler`, or move to `api.New` ([step 3](#step-3-move-to-apinew)), whose `Handler` bounds every reader.
+- **Problem details.** `SetResponseMode(ResponseModeProblem)` is now accepted and the default instance writes RFC 9457 errors; v0 fell back to envelope.
+- A non-empty `Content-Type` set in a response's `Headers` is now sent. v0 overwrote it with `application/json`. It is a fix, not a breaking change: v0 discarded a `Content-Type` the service set. An empty value counts as unset, and a `Content-Type` the handler set on `w.Header()` is still overwritten, as in v0.
+- `RequestBasic.GetSecurityToken`, `GetUserID` and `GetEventID` (and so `GetRequestBasicInfo` and `GetRequestFullInfo`) return their own error: title `Request info error!` and the message `The session id was not obtained` (`user id`, `event id`). v0 meant to send it but returned the generic `Error getting header value!` / `The <key> key header has not been obtained` instead (#63).
+
+**Logging** is unchanged from v0.11.0:
+
 - Logging goes through `Print` and `PrintError` and writes the same lines as v0.11.0. A response that cannot be encoded is answered with 500, as in v0.11.0; `Fatal` is never called. That 500 now drops the failed body's `Content-Type`, `Content-Encoding`, `Content-Length` and similar headers, and answers with no body instead of panicking when a registered formatter returns nil.
 - `SensitiveLogKeys` keeps its v0.11.0 list (with `cookie` and `session`) and masking (headers, JSON body fields, query and form values, the user information of the `uri`).
+
+**What still configures the default instance:** `SetRequestMode`, `SetResponseMode` (`CurrentRequestMode`, `CurrentResponseMode`), `TraceVisibility`, `TraceIDLength`, `BlankSuccess`, `SensitiveLogKeys`, the body-logging variables and the components set with `RegisterNewAPIRequestReceiver`, `RegisterNewAPIResponseFormatter` and `RegisterNewAPIResponseWriter`.
 
 Deprecated names are reported by staticcheck (`SA1019`) and by gopls in your editor. `go vet` does not report them. Fix the routing first (step 2); the deprecations can wait until step 3.
 
@@ -90,7 +98,7 @@ func main() {
 	a := api.New(
 		api.WithRequestMode(api.RequestModePlain),
 		api.WithResponseMode(api.ResponseModePlain),
-		api.WithLowercaseCodes(), // keep v0's codes; drop it to send them as declared
+		// api.WithLowercaseCodes(), // only if clients still need v0's lowercase codes
 	)
 
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
@@ -103,16 +111,16 @@ func main() {
 
 `createTask` does not change. `a.Handler` stores the instance in the request context. `ProcessRequest`, `RequestBody`, the token middlewares, the `Get*Value*` helpers, `WriteError` and `Write(w, r)` on every response type find it there. Route registration (`api.Get`/`Post`/…), `*doc.Docs` and the adapters do not change.
 
-With `WithLowercaseCodes()` the handler answers byte for byte as on the default instance. Without it, codes are sent as declared:
+The handler answers byte for byte as on the default instance. `WithLowercaseCodes()` restores the v0.11.0 code case:
 
 ```json
-{"action":"","code":"tsk-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-tsk-001)","title":"Error response!","token":"","type":"error"}
 {"action":"","code":"TSK-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-TSK-001)","title":"Error response!","token":"","type":"error"}
+{"action":"","code":"tsk-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-tsk-001)","title":"Error response!","token":"","type":"error"}
 ```
 
-`Example_migrationBeforeAndAfter` in `example_migration_test.go` proves it for the handler, served without `ProcessRequest`. Under `ProcessRequest` the bodies also match apart from the generated event IDs; `TestQuickStartAnswersLikeTheDefaultInstanceExceptCodeCase` in `instance_test.go` covers that.
+`Example_migrationBeforeAndAfter` in `example_migration_test.go` proves it for the handler, served without `ProcessRequest`. Under `ProcessRequest` the bodies also match apart from the generated event IDs; `TestQuickStartAnswersLikeTheDefaultInstance` in `instance_test.go` covers that.
 
-**Wrap the outermost chain.** Middlewares outside `a.Handler` use the default instance. So does `api.Write(data, w)`, which takes no request. Put `a.Handler` around everything, or a rejection from an outer `ProcessRequest` (invalid body, `e002`) keeps v0's code case and settings. With nested instances, the innermost one wins.
+**Wrap the outermost chain.** Middlewares outside `a.Handler` use the default instance. So does `api.Write(data, w)`, which takes no request. Put `a.Handler` around everything, or a rejection from an outer `ProcessRequest` uses the package modes, logs through `Print`/`PrintError` instead of the instance logger and is bounded at 10 MiB instead of the instance's limit. With nested instances, the innermost one wins.
 
 ### Deprecated names and their options
 
@@ -155,7 +163,7 @@ a := api.New(
 
 `Example_migrationOptions` is the compiled version. Pass only the options you need: `api.New()` already uses the built-in receiver, formatter and writer.
 
-**Custom components.** The mode options, and `WithLowercaseCodes` for the formatter, apply to the built-in `RequestReceiver`, `RequestReceiverV2` and `ResponseFormatter`, also when you pass them with an option. A custom receiver or formatter decides on its own how it parses, what body it writes and its code text. A type that embeds a built-in one is custom: its promoted methods read the deprecated package mode variables and lowercase codes. A type that embeds `ResponseWriter` keeps v0 behavior and can still call `Fatal`. A nil value keeps the built-in.
+**Custom components.** The mode options, and `WithLowercaseCodes` for the formatter, apply to the built-in `RequestReceiver`, `RequestReceiverV2` and `ResponseFormatter`, also when you pass them with an option. A custom receiver or formatter decides on its own how it parses, what body it writes and its code text. A type that embeds a built-in one is custom: its promoted methods read the deprecated package mode variables and send codes as declared. A type that embeds `ResponseWriter` behaves as the default instance's writer: it logs through `PrintError` and builds its 500 body with the registered formatter. A nil value keeps the built-in.
 
 ### What stays package-level
 
@@ -172,9 +180,9 @@ These are not deprecated and are shared by every instance:
 
 `TraceVisibility`, `TraceIDLength`, `BlankSuccess`, `PrintFullEvent`, `LogRequestBody`, `LogResponseBody` and `MaxLoggedBodyBytes` are not deprecated either, but they affect only the default instance. Instances use their v0 defaults and never log bodies.
 
-## What changes on an instance
+## What an instance adds
 
-**Codes as declared.** An instance sends `core.ResponseCode` as declared, in the `code` field and in the message trace suffix. The library's own codes in `ResponseCodes` are declared upper-case, so `api.New()` sends `E001`, `E002`, `E300`, `B001`, … where v0 sent `e001`. Clients, alerts and dashboards that match `e001` or `tsk-001` case-sensitively must change, or keep `api.WithLowercaseCodes()`.
+**Codes.** An instance sends `core.ResponseCode` as declared, in the `code` field and in the message trace suffix, like the default instance. `api.WithLowercaseCodes()` restores v0's lowercasing (`e001`, `tsk-001`) for clients that cannot change yet.
 
 **Fixed formatter settings.** An instance uses `TraceVisibility = 1`, `TraceIDLength = 6` and `BlankSuccess = true`, and does not read the package variables.
 
@@ -201,11 +209,11 @@ a := api.New(
 
 See the README "Logging" section for every record.
 
-**No token echo.** An instance does not copy the request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) into the response `token` field: plain bodies send `"token":""` and envelope bodies omit `header.token`, for every response kind, 401 included. A token the handler sets on the response (`api.Success{SecurityToken: renewed}`) is still sent, through any formatter. The default instance keeps echoing it. A client that read the token back from responses must keep its own copy, or the handler sets `SecurityToken` from `rctx.SecurityToken`. `RequestHeaderSession` no longer copies the `SecurityToken` request header into the response header either; it still answers 401 without it. A client that read the token back from that header must keep its own copy, or the handler sets the header. There is no option to restore the echo. Only responses written inside `a.Handler` follow this: a token middleware or `ProcessRequest` placed outside it uses the default instance and echoes the token, 401s included.
+**No token echo.** Neither an instance nor the default instance copies the request token (`SecurityToken` header, `Authorization: Bearer`, or the envelope `header.token`) into the response `token` field: plain bodies send `"token":""` and envelope bodies omit `header.token`, for every response kind, 401 included. A token the handler sets on the response (`api.Success{SecurityToken: renewed}`) is still sent, through any formatter. A client that read the token back from responses must keep its own copy, or the handler sets `SecurityToken` from `rctx.SecurityToken`. `RequestHeaderSession` does not copy the `SecurityToken` request header into the response header either; it still answers 401 without it. There is no option to restore the echo.
 
-**Request body limit.** An instance's `Handler` bounds request bodies at 10 MiB (`http.MaxBytesReader`). `ProcessRequest`, `RequestBody` and `UnmarshalBody` answer a larger body with 413, code `E002` and the title `Request content too large` (in problem mode, `Request Entity Too Large`); the default instance has no limit and answers a limit the service set itself with 400 as in v0. Set another limit with `api.WithMaxBodyBytes(n)`; `n <= 0` is ignored, and `math.MaxInt64` means no practical limit. Nested instance limits combine, so the smallest applies. Only readers inside `a.Handler` are bounded: a `ProcessRequest` or `RequestBody` outside it runs with the default instance and reads without a limit. A custom receiver, or a handler that reads `r.Body` itself, gets the `*http.MaxBytesError` and decides the answer.
+**Request body limit.** An instance's `Handler` bounds every reader of the request body at 10 MiB (`http.MaxBytesReader`), a handler reading `r.Body` itself included; the default instance bounds only the library's read points. `ProcessRequest`, `RequestBody` and `UnmarshalBody` answer a larger body with 413, code `E002` and the title `Request content too large` (in problem mode, `Request Entity Too Large`). Set another limit with `api.WithMaxBodyBytes(n)`; `n <= 0` is ignored, and `math.MaxInt64` means no practical limit. Nested instance limits combine, so the smallest applies. A custom receiver, or a handler that reads `r.Body` itself, gets the `*http.MaxBytesError` and decides the answer.
 
-**Problem details.** `api.WithResponseMode(api.ResponseModeProblem)` writes errors as RFC 9457 `application/problem+json`. That includes the library's own rejections under the instance: `ProcessRequest`'s invalid body (400, `E002`) and panic (500, `E300`), the token and header middlewares (401, 415) and `RequestBody`. Other responses are written as their content alone. Only instances accept this mode; `SetResponseMode(ResponseModeProblem)` falls back to envelope. A non-empty `Content-Type` in the response's `Headers` still wins over `application/problem+json`.
+**Problem details.** `api.WithResponseMode(api.ResponseModeProblem)` (or `SetResponseMode` on the default instance) writes errors as RFC 9457 `application/problem+json`. That includes the library's own rejections: `ProcessRequest`'s invalid body (400, `E002`) and panic (500, `E300`), the token and header middlewares (401, 415) and `RequestBody`. Other responses are written as their content alone. A non-empty `Content-Type` in the response's `Headers` still wins over `application/problem+json`.
 
 ```json
 {"type":"about:blank","title":"Bad Request","status":400,"detail":"title is required","code":"TSK-001","event_id":"evt1"}
@@ -226,6 +234,8 @@ a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 ## Checklist
 
 - [ ] Upgrade and build. Nothing is removed, so the program compiles.
+- [ ] Check clients, alerts and dashboards that match lowercase codes (`e001`), read the request token back from responses or from the `SecurityToken` response header, or send bodies over 10 MiB ([step 1](#step-1-upgrade-what-changes-without-code-changes)).
+- [ ] If clients send bodies over 10 MiB, raise the limit with `api.New(api.WithMaxBodyBytes(n)).Handler`; `http.MaxBytesHandler` can only lower it.
 - [ ] Start the service once (or build its router in a test): fix every registration panic (conflicts, methods, wildcard names).
 - [ ] Check trailing-slash clients, HEAD skip paths, 405 handling and `GODEBUG=httpmuxgo121`.
 - [ ] Validate route variables that reach file paths, headers or logs.
@@ -233,7 +243,6 @@ a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 - [ ] Check responses that set a `Content-Type` in `Headers`: it is now sent (one set on `w.Header()` is still overwritten).
 - [ ] Create one instance with `api.New` and wrap the outermost handler with `a.Handler`.
 - [ ] Replace each deprecated name with its option (staticcheck `SA1019` lists them).
-- [ ] Decide on code case: keep `api.WithLowercaseCodes()`, or update clients and alerts to the declared codes.
+- [ ] Decide on code case: update clients and alerts to the declared codes, or use `api.WithLowercaseCodes()`.
 - [ ] Give the instance a `*slog.Logger`, or accept that it logs nothing.
-- [ ] Check clients that read the request token back from response bodies or from the `SecurityToken` response header set by `RequestHeaderSession`: an instance no longer echoes it.
 - [ ] Move tests to `a.Handler(h).ServeHTTP` instead of resetting package variables.

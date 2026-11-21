@@ -44,9 +44,7 @@ const (
 
 	// ResponseModeProblem writes error responses as RFC 9457 problem details
 	// (application/problem+json) and any other response as its content
-	// alone, as ResponseModeNone. Only WithResponseMode accepts it;
-	// SetResponseMode treats it as unknown, so the default instance never
-	// writes problem details.
+	// alone, as ResponseModeNone.
 	ResponseModeProblem ResponseMode = "problem"
 )
 
@@ -81,8 +79,7 @@ func SetRequestMode(mode RequestMode) {
 }
 
 // SetResponseMode updates the response formatting mode of the default
-// instance. An unknown mode, ResponseModeProblem included, resets it to
-// ResponseModeEnvelope.
+// instance. An unknown mode resets it to ResponseModeEnvelope.
 //
 // Deprecated: use api.New(api.WithResponseMode(...)) instead. It affects only
 // the default instance. A service with a custom receiver, formatter or
@@ -103,7 +100,7 @@ func normalizeRequestMode(mode RequestMode) RequestMode {
 
 func normalizeResponseMode(mode ResponseMode) ResponseMode {
 	switch mode {
-	case ResponseModeNone, ResponseModePlain, ResponseModeEnvelope:
+	case ResponseModeNone, ResponseModePlain, ResponseModeEnvelope, ResponseModeProblem:
 		return mode
 	default:
 		return ResponseModeEnvelope

@@ -50,7 +50,12 @@ func Write(data core.ResponseData, w http.ResponseWriter) {
 
 // ProcessEncryptedBody API request. You can to define request url encoding format and how to
 // validate it implemented the APIRequestReciver interface.
+// Without an instance in r, it replaces r.Body with an http.MaxBytesReader
+// at 10 MiB, so a larger body returns an *http.MaxBytesError. It has no
+// ResponseWriter, so the server is not told to close the connection on
+// overflow; ProcessRequest and RequestBody pass theirs.
 func ProcessEncryptedBody(r *http.Request) (*EncryptedRequest, error) {
+	boundDefaultBody(nil, r)
 	requestData, err := instanceFrom(r).core.ProcessEncryptedBody(r)
 	return &EncryptedRequest{
 		RequestEncryptedData: requestData,
@@ -59,7 +64,17 @@ func ProcessEncryptedBody(r *http.Request) (*EncryptedRequest, error) {
 
 // ProcessBody API request. You can to define request JSON format and how to
 // validate it implemented the APIRequestReciver interface.
+// Without an instance in r, it replaces r.Body with an http.MaxBytesReader
+// at 10 MiB, so a larger body returns an *http.MaxBytesError. It has no
+// ResponseWriter, so the server is not told to close the connection on
+// overflow; ProcessRequest and RequestBody pass theirs.
 func ProcessBody(r *http.Request) (*RequestContext, error) {
+	boundDefaultBody(nil, r)
+	return processBody(r)
+}
+
+// processBody is ProcessBody for a caller that already bounded the body.
+func processBody(r *http.Request) (*RequestContext, error) {
 	requestDataContext, err := instanceFrom(r).core.ProcessBody(r)
 	return &RequestContext{
 		RequestDataContext: requestDataContext,

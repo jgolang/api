@@ -10,15 +10,16 @@ import (
 )
 
 // ResponseFormatter implementation of core.APIResponseFormatter interface.
-// The zero value formats with CurrentResponseMode, TraceVisibility,
-// TraceIDLength and BlankSuccess and lowercases response codes, as v0 does;
-// New binds an instance's mode and code case to it, and the v0 defaults of
-// the three formatter settings.
+// The zero value is the default instance's formatter: it formats with
+// CurrentResponseMode, TraceVisibility, TraceIDLength and BlankSuccess and
+// sends response codes as declared. New binds an instance's mode and code
+// case to it, and the v0 defaults of the three formatter settings.
 type ResponseFormatter struct {
 	// mode is set by New; empty means the default instance's package variable.
 	mode ResponseMode
-	// declaredCodes is set by New; false lowercases codes, as v0 does.
-	declaredCodes bool
+	// lowercaseCodes is set by New from WithLowercaseCodes; true lowercases
+	// codes, as v0 does.
+	lowercaseCodes bool
 	// v0Settings is set by New: the formatter uses the v0 defaults of
 	// TraceVisibility, TraceIDLength and BlankSuccess instead of reading them.
 	v0Settings bool
@@ -52,9 +53,8 @@ var BlankSuccess = true
 
 // Format the response body information.
 func (formatter ResponseFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
-	// Only the mode New binds selects problem details; the package variable
-	// never does, so the default instance keeps its v0 modes.
-	if formatter.mode == ResponseModeProblem {
+	mode := formatter.responseMode()
+	if mode == ResponseModeProblem {
 		return formatter.formatProblem(data)
 	}
 	msg := data.Message
@@ -93,7 +93,7 @@ func (formatter ResponseFormatter) Format(data core.ResponseData) *core.Response
 		Content: data.Content,
 		Header:  responseInfo,
 	})
-	switch formatter.responseMode() {
+	switch mode {
 	case ResponseModeNone:
 		body = data.Content
 	case ResponseModePlain:
@@ -221,10 +221,10 @@ func problemHeaders(headers map[string]string) map[string]string {
 
 // responseCode returns code as the body and the trace suffix show it.
 func (formatter ResponseFormatter) responseCode(code core.ResponseCode) string {
-	if formatter.declaredCodes {
-		return string(code)
+	if formatter.lowercaseCodes {
+		return strings.ToLower(string(code))
 	}
-	return strings.ToLower(string(code))
+	return string(code)
 }
 
 // traceSettings returns the trace visibility and ID length: the v0 defaults

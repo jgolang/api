@@ -133,7 +133,8 @@ func TestNewFallsBackToDefaultsForUnknownModes(t *testing.T) {
 }
 
 // TestPackageModesKeepV0Bodies pins the bodies written by v0.10.0 (baseline
-// ad03d5f) for handlers that are not wrapped by an instance.
+// ad03d5f) for handlers that are not wrapped by an instance, except that
+// since v1.0.0 the default instance sends codes as declared, like New().
 func TestPackageModesKeepV0Bodies(t *testing.T) {
 	notFound := errors.NewC(codes.New("PLN-111", "task not found").WithKind(codes.KindNotFound), "x")
 	writers := map[string]http.HandlerFunc{
@@ -151,11 +152,11 @@ func TestPackageModesKeepV0Bodies(t *testing.T) {
 		wantBody   string
 	}{
 		{ResponseModePlain, "success", 200, `{"action":"","code":"0000","content":null,"event_id":"evt-123456789","info":null,"message":"","title":"","token":"","type":"success"}` + "\n"},
-		{ResponseModePlain, "error400", 400, `{"action":"","code":"e001","content":null,"event_id":"evt-123456789","info":null,"message":"The service has not completed the operation! (evt-12-e001)","title":"Error response!","token":"","type":"error"}` + "\n"},
-		{ResponseModePlain, "writeError", 404, `{"action":"","code":"pln-111","content":null,"event_id":"evt-123456789","info":null,"message":"task not found (evt-12-pln-111)","title":"Error response!","token":"","type":"error"}` + "\n"},
+		{ResponseModePlain, "error400", 400, `{"action":"","code":"E001","content":null,"event_id":"evt-123456789","info":null,"message":"The service has not completed the operation! (evt-12-E001)","title":"Error response!","token":"","type":"error"}` + "\n"},
+		{ResponseModePlain, "writeError", 404, `{"action":"","code":"PLN-111","content":null,"event_id":"evt-123456789","info":null,"message":"task not found (evt-12-PLN-111)","title":"Error response!","token":"","type":"error"}` + "\n"},
 		{ResponseModeEnvelope, "success", 200, `{"header":{"type":"success","code":"0000","event_id":"evt-123456789"}}` + "\n"},
-		{ResponseModeEnvelope, "error400", 400, `{"header":{"type":"error","title":"Error response!","message":"The service has not completed the operation! (evt-12-e001)","code":"e001","event_id":"evt-123456789"}}` + "\n"},
-		{ResponseModeEnvelope, "writeError", 404, `{"header":{"type":"error","title":"Error response!","message":"task not found (evt-12-pln-111)","code":"pln-111","event_id":"evt-123456789"}}` + "\n"},
+		{ResponseModeEnvelope, "error400", 400, `{"header":{"type":"error","title":"Error response!","message":"The service has not completed the operation! (evt-12-E001)","code":"E001","event_id":"evt-123456789"}}` + "\n"},
+		{ResponseModeEnvelope, "writeError", 404, `{"header":{"type":"error","title":"Error response!","message":"task not found (evt-12-PLN-111)","code":"PLN-111","event_id":"evt-123456789"}}` + "\n"},
 		{ResponseModePlain, "warning", 200, `{"action":"","code":"0000","content":null,"event_id":"evt-123456789","info":null,"message":"The application has been successful but with potential problems! (evt-12-0000)","title":"Alert!","token":"","type":"warning"}` + "\n"},
 		{ResponseModePlain, "informative", 200, `{"action":"","code":"0000","content":null,"event_id":"evt-123456789","info":null,"message":"The request has been successful! (evt-12-0000)","title":"Information!","token":"","type":"info"}` + "\n"},
 		{ResponseModeEnvelope, "warning", 200, `{"header":{"type":"warning","title":"Alert!","message":"The application has been successful but with potential problems! (evt-12-0000)","code":"0000","event_id":"evt-123456789"}}` + "\n"},
@@ -289,7 +290,7 @@ func requestWithInstance(a *API) *http.Request {
 	return served
 }
 
-func TestQuickStartAnswersLikeTheDefaultInstanceExceptCodeCase(t *testing.T) {
+func TestQuickStartAnswersLikeTheDefaultInstance(t *testing.T) {
 	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
 	titleRequired := codes.New("TSK-001", "title is required").WithKind(codes.KindValidation)
 	createTask := ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
@@ -314,7 +315,7 @@ func TestQuickStartAnswersLikeTheDefaultInstanceExceptCodeCase(t *testing.T) {
 	for _, body := range []string{`{"title":"Buy milk"}`, `{"title":""}`, `{"title":`, `[1]`} {
 		t.Run(body, func(t *testing.T) {
 			withoutInstance := serve(createTask, http.MethodPost, body, nil)
-			// WithLowercaseCodes is the one option that keeps an instance's codes as v0 sends them.
+			// WithLowercaseCodes keeps an instance's codes as v0 sent them.
 			lowercase := serve(New(WithLowercaseCodes()).Handler(createTask), http.MethodPost, body, nil)
 			declared := serve(New().Handler(createTask), http.MethodPost, body, nil)
 
@@ -327,12 +328,12 @@ func TestQuickStartAnswersLikeTheDefaultInstanceExceptCodeCase(t *testing.T) {
 				}
 			}
 			a := eventIDs.ReplaceAllString(withoutInstance.Body.String(), "ID")
-			if b := eventIDs.ReplaceAllString(lowercase.Body.String(), "ID"); a != b {
-				t.Errorf("body without instance: %s\nbody with lowercase instance: %s", a, b)
-			}
-			// New() differs only in code case, so lowercasing both bodies must make them equal.
-			if b := eventIDs.ReplaceAllString(declared.Body.String(), "ID"); strings.ToLower(a) != strings.ToLower(b) {
+			if b := eventIDs.ReplaceAllString(declared.Body.String(), "ID"); a != b {
 				t.Errorf("body without instance: %s\nbody with New():        %s", a, b)
+			}
+			// The lowercase instance differs only in code case.
+			if b := eventIDs.ReplaceAllString(lowercase.Body.String(), "ID"); strings.ToLower(a) != strings.ToLower(b) {
+				t.Errorf("body without instance: %s\nbody with lowercase instance: %s", a, b)
 			}
 		})
 	}

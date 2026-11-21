@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/jgolang/errors"
@@ -50,15 +49,15 @@ func TestWriteErrorUsesTheKindOfTheCode(t *testing.T) {
 		wantStatus int
 		wantCode   string
 	}{
-		{name: "not found behind fmt.Errorf", err: fmt.Errorf("loading: %w", errors.NewC(notFound, "task 42")), wantStatus: http.StatusNotFound, wantCode: "pln-111"},
+		{name: "not found behind fmt.Errorf", err: fmt.Errorf("loading: %w", errors.NewC(notFound, "task 42")), wantStatus: http.StatusNotFound, wantCode: "PLN-111"},
 		{name: "validation built-in", err: errors.NewC(codes.ValRequired, "title"), wantStatus: http.StatusBadRequest, wantCode: "b001"},
 		{name: "unauthorized", err: errors.NewC(codes.AuthFailed, "bad token"), wantStatus: http.StatusUnauthorized, wantCode: "a003"},
 		{name: "forbidden", err: errors.NewC(codes.AuthForbidden, "no access"), wantStatus: http.StatusForbidden, wantCode: "f001"},
-		{name: "conflict", err: errors.NewC(codes.New("PLN-200", "task is locked").WithKind(codes.KindConflict), "locked"), wantStatus: http.StatusConflict, wantCode: "pln-200"},
+		{name: "conflict", err: errors.NewC(codes.New("PLN-200", "task is locked").WithKind(codes.KindConflict), "locked"), wantStatus: http.StatusConflict, wantCode: "PLN-200"},
 		{name: "infrastructure keeps its code", err: errors.NewC(codes.ConnFailed, "db down"), wantStatus: http.StatusInternalServerError, wantCode: "d001"},
-		{name: "nil error", err: nil, wantStatus: http.StatusInternalServerError, wantCode: strings.ToLower(string(ResponseCodes.InternalServerEerror))},
-		{name: "code without kind", err: errors.NewC(codes.New("X-1", "x"), "x"), wantStatus: http.StatusInternalServerError, wantCode: "x-1"},
-		{name: "plain error", err: fmt.Errorf("boom"), wantStatus: http.StatusInternalServerError, wantCode: strings.ToLower(string(ResponseCodes.InternalServerEerror))},
+		{name: "nil error", err: nil, wantStatus: http.StatusInternalServerError, wantCode: string(ResponseCodes.InternalServerEerror)},
+		{name: "code without kind", err: errors.NewC(codes.New("X-1", "x"), "x"), wantStatus: http.StatusInternalServerError, wantCode: "X-1"},
+		{name: "plain error", err: fmt.Errorf("boom"), wantStatus: http.StatusInternalServerError, wantCode: string(ResponseCodes.InternalServerEerror)},
 	}
 
 	for _, tt := range tests {

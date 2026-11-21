@@ -255,13 +255,18 @@ func GetQueryParamValueBool(queryParamName string, r *http.Request) (bool, Respo
 	return value, nil
 }
 
-// UnmarshalBody parses and validates request body to a struct
+// UnmarshalBody parses and validates request body to a struct. A body over
+// the instance's limit (10 MiB without an instance) is answered with 413.
+// Without an instance in r, it replaces r.Body with an http.MaxBytesReader;
+// it has no ResponseWriter, so the server is not told to close the
+// connection on overflow (ProcessRequest and RequestBody pass theirs).
 func UnmarshalBody(v interface{}, r *http.Request) Response {
+	boundDefaultBody(nil, r)
 	err := api.UnmarshalBody(v, r)
 	if err != nil {
 		a := instanceFrom(r)
 		a.logError(r, "request body not unmarshaled", err)
-		if bodyTooLarge(a, err) {
+		if bodyTooLarge(err) {
 			return bodyTooLargeError()
 		}
 		return Error{

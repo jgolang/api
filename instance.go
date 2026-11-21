@@ -17,20 +17,15 @@ import (
 // CurrentResponseMode; their modes come only from its options. A custom
 // component that embeds RequestReceiver, RequestReceiverV2 or
 // ResponseFormatter is used as given, so its promoted methods read the
-// package mode variables. An API from New sends response codes as declared
-// unless built with WithLowercaseCodes; the default instance lowercases them.
-// Only an API from New can write RFC 9457 problem details (ResponseModeProblem).
-// WriteError answers with the instance's WithKindStatus overrides and calls
-// its WithErrorHook; the default instance has neither.
-// An API from New logs only through its WithLogger logger and masks the keys
-// of WithSensitiveLogKeys; the default instance logs through Print and
-// PrintError and masks SensitiveLogKeys.
-// An API from New bounds request bodies at 10 MiB unless WithMaxBodyBytes
-// sets another limit; the default instance does not bound them.
-// An API from New does not echo the request token in response bodies: a
-// response carries a token only when the handler sets SecurityToken; the
-// default instance fills an empty one from the request, as v0 does.
-// A zero or nil API is the default instance.
+// package mode variables. WriteError answers with the instance's
+// WithKindStatus overrides and calls its WithErrorHook.
+//
+// Requests that carry no instance are served by the default instance, which
+// behaves like New() with its defaults: codes as declared, no request token
+// echo and request bodies bounded at 10 MiB where the library reads them.
+// It takes its modes, formatter settings and components from the deprecated
+// package-level setters, and logs through Print and PrintError, masking
+// SensitiveLogKeys. A zero or nil API is the default instance.
 type API struct {
 	core       *core.API
 	kindStatus map[codes.Kind]int
@@ -64,17 +59,16 @@ type Option func(*options)
 
 // New returns an API configured by opts. Without options it parses plain
 // requests, writes envelope responses and uses the built-in request
-// receiver, response formatter and response writer, the v0 defaults. Unlike
-// the default instance, its built-in formatter sends response codes as
-// declared (PLN-001 stays PLN-001); WithLowercaseCodes restores the v0
-// lowercasing. The security guarantor and param validator are shared with
-// the default instance: RegisterNewAPISecurityGuarantor and
-// RegisterParamValidator apply to every instance. WriteError has no kind
-// overrides and no error hook unless WithKindStatus or WithErrorHook set them.
-// It writes no logs unless WithLogger sets a logger, and its built-in
-// response writer never exits; a custom writer owns its behavior. Its
-// Handler bounds request bodies at 10 MiB unless WithMaxBodyBytes sets
-// another limit.
+// receiver, response formatter and response writer, the v0 defaults. Its
+// built-in formatter sends response codes as declared (PLN-001 stays
+// PLN-001); WithLowercaseCodes restores the v0 lowercasing. The security
+// guarantor and param validator are shared with the default instance:
+// RegisterNewAPISecurityGuarantor and RegisterParamValidator apply to every
+// instance. WriteError has no kind overrides and no error hook unless
+// WithKindStatus or WithErrorHook set them. It writes no logs unless
+// WithLogger sets a logger, and its built-in response writer never exits; a
+// custom writer owns its behavior. Its Handler bounds request bodies at
+// 10 MiB unless WithMaxBodyBytes sets another limit.
 func New(opts ...Option) *API {
 	o := options{
 		requestMode:  RequestModePlain,
@@ -106,7 +100,7 @@ func New(opts ...Option) *API {
 }
 
 // defaultMaxBodyBytes is the request body limit of an API from New without
-// WithMaxBodyBytes.
+// WithMaxBodyBytes, and of the default instance.
 const defaultMaxBodyBytes = 10 << 20
 
 // requestReceiver returns the receiver New uses. A built-in receiver without
@@ -158,7 +152,7 @@ func (o options) responseFormatter() core.APIResponseFormatter {
 // cannot set these fields, so they are always the instance's.
 func (o options) bindFormatter(formatter ResponseFormatter) ResponseFormatter {
 	formatter = formatter.withMode(o.responseMode)
-	formatter.declaredCodes = !o.lowercaseCodes
+	formatter.lowercaseCodes = o.lowercaseCodes
 	formatter.v0Settings = true
 	return formatter
 }
@@ -193,10 +187,6 @@ func WithRequestMode(mode RequestMode) Option {
 // WithResponseFormatter alone decides the body.
 func WithResponseMode(mode ResponseMode) Option {
 	return func(o *options) {
-		if mode == ResponseModeProblem {
-			o.responseMode = mode
-			return
-		}
 		o.responseMode = normalizeResponseMode(mode)
 	}
 }
@@ -206,7 +196,7 @@ func WithResponseMode(mode ResponseMode) Option {
 // as v0 does. Without it, an instance from New sends codes as declared
 // (PLN-001 stays PLN-001). A custom formatter set with WithResponseFormatter
 // alone decides the code, and this option does not apply to it. The default
-// instance always lowercases.
+// instance sends codes as declared too.
 func WithLowercaseCodes() Option {
 	return func(o *options) {
 		o.lowercaseCodes = true
@@ -285,9 +275,9 @@ func WithLogger(logger *slog.Logger) Option {
 // logged without the value. A key matches any name that contains it,
 // ignoring case. Secrets in path segments (/reset/{token}) are not masked.
 // The defaults (the shipped SensitiveLogKeys list, which includes cookie and
-// session since v0.11.0; changes to the variable do not apply) are always
-// kept: this option only adds. Keys are trimmed and lowercased, blank keys
-// are ignored; repeat it to add more.
+// session since v0.11.0; changes to the variable apply only to the default
+// instance) are always kept: this option only adds. Keys are trimmed and
+// lowercased, blank keys are ignored; repeat it to add more.
 func WithSensitiveLogKeys(keys ...string) Option {
 	return func(o *options) {
 		for _, key := range keys {
@@ -311,7 +301,9 @@ func WithSensitiveLogKeys(keys ...string) Option {
 // never removes the bound; pass math.MaxInt64 for no practical limit. A
 // later valid call replaces an earlier one. With nested instances each
 // Handler adds its bound, so the smallest limit applies. The default instance
-// has no limit; bound its bodies with http.MaxBytesHandler.
+// bounds bodies at 10 MiB where the library reads them (ProcessRequest,
+// RequestBody, ProcessBody, ProcessEncryptedBody, UnmarshalBody); a handler
+// that reads r.Body itself outside an instance is not bounded.
 func WithMaxBodyBytes(n int64) Option {
 	return func(o *options) {
 		if n <= 0 {
@@ -339,8 +331,9 @@ func WithRequestReceiver(receiver core.APIRequestReceiver) Option {
 // mode and code case; a custom formatter alone decides the body and its code
 // text, and WithResponseMode and WithLowercaseCodes do not apply to it. A
 // type that embeds ResponseFormatter is custom: its promoted methods read
-// CurrentResponseMode and lowercase codes. A nil interface value keeps the
-// built-in; a typed nil pointer to a custom formatter is used as given.
+// CurrentResponseMode and send codes as declared. A nil interface value
+// keeps the built-in; a typed nil pointer to a custom formatter is used as
+// given.
 func WithResponseFormatter(formatter core.APIResponseFormatter) Option {
 	return func(o *options) {
 		o.formatter = formatter
@@ -412,9 +405,9 @@ func (a *API) Handler(next http.Handler) http.Handler {
 type instanceKey struct{}
 
 // defaultInstance serves requests that carry no instance. It wraps the
-// package-level core, so RegisterNew* and the package mode variables keep
-// their v0 behavior.
-var defaultInstance = &API{core: api}
+// package-level core, so RegisterNew* and the package mode variables
+// configure it.
+var defaultInstance = &API{core: api, maxBodyBytes: defaultMaxBodyBytes}
 
 // instanceFrom returns the instance stored in r's context by Handler, or the
 // default instance when there is none.
@@ -426,4 +419,15 @@ func instanceFrom(r *http.Request) *API {
 		return a
 	}
 	return defaultInstance
+}
+
+// boundDefaultBody bounds r's body at the default limit when r is served by
+// the default instance, which has no Handler to do it. An instance's Handler
+// already bounded the body, so its requests are left alone. w may be nil for
+// callers that have no response writer.
+func boundDefaultBody(w http.ResponseWriter, r *http.Request) {
+	if r == nil || r.Body == nil || r.Body == http.NoBody || instanceFrom(r) != defaultInstance {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, defaultMaxBodyBytes)
 }

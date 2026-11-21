@@ -46,8 +46,9 @@ func serveMigration(handler http.Handler, body string) *httptest.ResponseRecorde
 }
 
 // Example_migrationBeforeAndAfter moves a v0 program that configures the
-// package-level modes to an instance. With WithLowercaseCodes the body is
-// byte-identical; with New() alone the code is sent as declared.
+// package-level modes to an instance. Since v1.0.0 the default instance
+// behaves like New(), so the body is byte-identical; WithLowercaseCodes
+// restores the v0.11.0 code case for clients that compare codes exactly.
 func Example_migrationBeforeAndAfter() {
 	previousRequestMode, previousResponseMode := api.CurrentRequestMode, api.CurrentResponseMode
 	defer func() {
@@ -61,28 +62,28 @@ func Example_migrationBeforeAndAfter() {
 	before := http.HandlerFunc(migrationCreateTask)
 
 	// After (v1): one instance, the router wrapped by its Handler.
+	declared := api.New(
+		api.WithRequestMode(api.RequestModePlain),
+		api.WithResponseMode(api.ResponseModePlain),
+	).Handler(http.HandlerFunc(migrationCreateTask))
 	lowercase := api.New(
 		api.WithRequestMode(api.RequestModePlain),
 		api.WithResponseMode(api.ResponseModePlain),
 		api.WithLowercaseCodes(),
 	).Handler(http.HandlerFunc(migrationCreateTask))
-	declared := api.New(
-		api.WithRequestMode(api.RequestModePlain),
-		api.WithResponseMode(api.ResponseModePlain),
-	).Handler(http.HandlerFunc(migrationCreateTask))
 
 	beforeBody := serveMigration(before, `{"title":""}`).Body.String()
-	lowercaseBody := serveMigration(lowercase, `{"title":""}`).Body.String()
 	declaredRec := serveMigration(declared, `{"title":""}`)
+	lowercaseBody := serveMigration(lowercase, `{"title":""}`).Body.String()
 
-	fmt.Println("identical with WithLowercaseCodes:", beforeBody == lowercaseBody)
-	fmt.Print("before:   ", beforeBody)
-	fmt.Print("New():    ", declaredRec.Body.String())
+	fmt.Println("identical with New():", beforeBody == declaredRec.Body.String())
+	fmt.Print("New():                ", declaredRec.Body.String())
+	fmt.Print("WithLowercaseCodes(): ", lowercaseBody)
 	fmt.Println("status:", declaredRec.Code)
 	// Output:
-	// identical with WithLowercaseCodes: true
-	// before:   {"action":"","code":"tsk-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-tsk-001)","title":"Error response!","token":"","type":"error"}
-	// New():    {"action":"","code":"TSK-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-TSK-001)","title":"Error response!","token":"","type":"error"}
+	// identical with New(): true
+	// New():                {"action":"","code":"TSK-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-TSK-001)","title":"Error response!","token":"","type":"error"}
+	// WithLowercaseCodes(): {"action":"","code":"tsk-001","content":null,"event_id":"evt1","info":null,"message":"title is required (evt1-tsk-001)","title":"Error response!","token":"","type":"error"}
 	// status: 400
 }
 

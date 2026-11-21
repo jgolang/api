@@ -39,9 +39,6 @@ func (success Success) Write(w http.ResponseWriter, r *http.Request) {
 	if success.ResponseCode == "" {
 		success.ResponseCode = ResponseCodes.Success
 	}
-	if success.SecurityToken == "" {
-		success.SecurityToken = getSecurityToken(r)
-	}
 	instanceFrom(r).core.Write(core.ResponseData(success), w)
 }
 
