@@ -1,0 +1,37 @@
+[
+  {
+    "name": "valid task",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{\"title\":\"Write docs\",\"priority\":\"high\"}",
+    "status": 201,
+    "contentType": "application/json",
+    "body": {
+      "id": 42,
+      "projectId": "7",
+      "title": "Write docs",
+      "priority": "high"
+    }
+  },
+  {
+    "name": "empty title",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{\"title\":\" \"}",
+    "status": 400,
+    "contentType": "application/json",
+    "body": null
+  },
+  {
+    "name": "malformed body",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{",
+    "status": 400,
+    "contentType": "application/json",
+    "body": null
+  }
+]

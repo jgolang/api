@@ -1,0 +1,314 @@
+// Package contracttest checks that the responses api really sends match the
+// OpenAPI spec it generates for them.
+//
+// It is a nested, test-only module so that its OpenAPI validator
+// (kin-openapi) never reaches api's go.mod. It never imports api: the root
+// module's tests write, per response mode, the generated spec to
+// ../testdata/openapi/complete-route.<mode>.json and the real request and
+// response exchanges to ../testdata/contract/complete-route.<mode>.json, and
+// this package only reads those files. Refresh them from the root module
+// with: go test -run 'CompleteRoute' -update .
+package contracttest
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers"
+	"github.com/getkin/kin-openapi/routers/gorillamux"
+)
+
+// modes are the response modes the root module records.
+var modes = []string{"envelope", "none"}
+
+// errBodyWithoutContent reports a response that sends a body for a status
+// the spec documents without content. ValidateResponse accepts any body in
+// that case, so the harness checks it itself.
+var errBodyWithoutContent = errors.New("body sent for a response documented without content")
+
+// knownGaps are spec-vs-wire mismatches the generator cannot describe yet,
+// keyed by "<mode>/<exchange name>", with a substring of the error each one
+// must fail with. A gap that stops failing fails the test, so it is removed
+// here once fixed.
+var knownGaps = map[string]string{
+	// None mode writes JSON null for an error (an error has no content), and
+	// the doc layer cannot describe a null body, so the 400 is documented
+	// without content. Fixed by epic 2.
+	"none/empty title":    errBodyWithoutContent.Error(),
+	"none/malformed body": errBodyWithoutContent.Error(),
+}
+
+// recordedExchange mirrors the root module's recording format. Body holds
+// the response JSON as is, or a JSON string when the response was not JSON.
+type recordedExchange struct {
+	Name               string          `json:"name"`
+	Method             string          `json:"method"`
+	Path               string          `json:"path"`
+	RequestContentType string          `json:"requestContentType"`
+	RequestBody        string          `json:"requestBody"`
+	Status             int             `json:"status"`
+	ContentType        string          `json:"contentType"`
+	Body               json.RawMessage `json:"body"`
+}
+
+// contract is one mode's spec, ready to validate against, and its recorded
+// exchanges.
+type contract struct {
+	router    routers.Router
+	exchanges []recordedExchange
+}
+
+func loadContract(t *testing.T, mode string) contract {
+	t.Helper()
+	spec, err := openapi3.NewLoader().LoadFromFile(fmt.Sprintf("../testdata/openapi/complete-route.%s.json", mode))
+	if err != nil {
+		t.Fatalf("load %s spec: %v", mode, err)
+	}
+	if err := spec.Validate(context.Background()); err != nil {
+		t.Fatalf("%s spec is not valid OpenAPI: %v", mode, err)
+	}
+	makeSchemasStrict(spec)
+	router, err := gorillamux.NewRouter(spec)
+	if err != nil {
+		t.Fatalf("build %s router: %v", mode, err)
+	}
+
+	recording, err := os.ReadFile(fmt.Sprintf("../testdata/contract/complete-route.%s.json", mode))
+	if err != nil {
+		t.Fatalf("read %s exchanges: %v", mode, err)
+	}
+	var exchanges []recordedExchange
+	if err := json.Unmarshal(recording, &exchanges); err != nil {
+		t.Fatalf("decode %s exchanges: %v", mode, err)
+	}
+	if len(exchanges) == 0 {
+		t.Fatalf("no %s exchanges recorded", mode)
+	}
+	return contract{router: router, exchanges: exchanges}
+}
+
+// makeSchemasStrict closes every object schema that lists properties and
+// says nothing about additional ones. The generator emits open objects,
+// which is valid OpenAPI, but a contract that lets undeclared fields through
+// would not catch a field the wire sends and the spec omits.
+func makeSchemasStrict(spec *openapi3.T) {
+	seen := make(map[*openapi3.Schema]bool)
+	for _, schema := range spec.Components.Schemas {
+		makeSchemaStrict(schema, seen)
+	}
+	for _, path := range spec.Paths.Map() {
+		for _, operation := range path.Operations() {
+			if operation.RequestBody != nil && operation.RequestBody.Value != nil {
+				for _, media := range operation.RequestBody.Value.Content {
+					makeSchemaStrict(media.Schema, seen)
+				}
+			}
+			for _, response := range operation.Responses.Map() {
+				if response.Value == nil {
+					continue
+				}
+				for _, media := range response.Value.Content {
+					makeSchemaStrict(media.Schema, seen)
+				}
+			}
+		}
+	}
+}
+
+func makeSchemaStrict(ref *openapi3.SchemaRef, seen map[*openapi3.Schema]bool) {
+	if ref == nil || ref.Value == nil || seen[ref.Value] {
+		return
+	}
+	schema := ref.Value
+	seen[schema] = true
+	if len(schema.Properties) > 0 && schema.AdditionalProperties.Has == nil && schema.AdditionalProperties.Schema == nil {
+		closed := false
+		schema.AdditionalProperties.Has = &closed
+	}
+	for _, property := range schema.Properties {
+		makeSchemaStrict(property, seen)
+	}
+	makeSchemaStrict(schema.Items, seen)
+	makeSchemaStrict(schema.AdditionalProperties.Schema, seen)
+	for _, group := range []openapi3.SchemaRefs{schema.AllOf, schema.AnyOf, schema.OneOf} {
+		for _, member := range group {
+			makeSchemaStrict(member, seen)
+		}
+	}
+}
+
+// validateExchange checks the recorded response against the spec: status,
+// media type and body, plus that a status documented without content sends
+// no body.
+func validateExchange(router routers.Router, exchange recordedExchange) error {
+	request := httptest.NewRequest(exchange.Method, exchange.Path, strings.NewReader(exchange.RequestBody))
+	request.Header.Set("Content-Type", exchange.RequestContentType)
+	route, pathParams, err := router.FindRoute(request)
+	if err != nil {
+		return fmt.Errorf("find route: %w", err)
+	}
+
+	body := responseBody(exchange.Body)
+	input := &openapi3filter.ResponseValidationInput{
+		RequestValidationInput: &openapi3filter.RequestValidationInput{
+			Request:    request,
+			PathParams: pathParams,
+			Route:      route,
+			Options:    &openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
+		},
+		Status:  exchange.Status,
+		Header:  http.Header{"Content-Type": {exchange.ContentType}},
+		Options: &openapi3filter.Options{IncludeResponseStatus: true},
+	}
+	input.SetBodyBytes(body)
+	if err := openapi3filter.ValidateResponse(context.Background(), input); err != nil {
+		return err
+	}
+
+	response := route.Operation.Responses.Status(exchange.Status)
+	if response == nil {
+		response = route.Operation.Responses.Default()
+	}
+	if response != nil && response.Value != nil && len(response.Value.Content) == 0 && len(body) > 0 {
+		return fmt.Errorf("status %d: %w: %s", exchange.Status, errBodyWithoutContent, body)
+	}
+	return nil
+}
+
+// responseBody returns the bytes the instance sent. The recorder stores a
+// non-JSON body as a JSON string; any other value, null included, is the
+// JSON body itself.
+func responseBody(recorded json.RawMessage) []byte {
+	var text string
+	if strings.HasPrefix(string(recorded), `"`) && json.Unmarshal(recorded, &text) == nil {
+		return []byte(text)
+	}
+	return recorded
+}
+
+func TestRecordedResponsesMatchSpec(t *testing.T) {
+	for _, mode := range modes {
+		contract := loadContract(t, mode)
+		for _, exchange := range contract.exchanges {
+			name := mode + "/" + exchange.Name
+			t.Run(name, func(t *testing.T) {
+				err := validateExchange(contract.router, exchange)
+
+				wantGap, isKnownGap := knownGaps[name]
+				switch {
+				case isKnownGap && err == nil:
+					t.Fatalf("known gap %q no longer fails: remove it from knownGaps", name)
+				case isKnownGap && !strings.Contains(err.Error(), wantGap):
+					t.Fatalf("known gap %q fails with %v, want an error containing %q", name, err, wantGap)
+				case !isKnownGap && err != nil:
+					t.Fatalf("recorded response does not match the spec: %v", err)
+				}
+			})
+		}
+	}
+}
+
+// TestValidatorRejectsMismatches proves the harness fails on drift: each
+// case breaks the recorded 201 in one way that the spec does not allow.
+func TestValidatorRejectsMismatches(t *testing.T) {
+	tests := []struct {
+		name      string
+		modes     []string
+		mutate    func(t *testing.T, exchange *recordedExchange)
+		wantError string
+	}{
+		{
+			name:  "undeclared top-level field",
+			modes: modes,
+			mutate: func(t *testing.T, exchange *recordedExchange) {
+				exchange.Body = withField(t, exchange.Body, nil, "unexpected", true)
+			},
+			wantError: `property "unexpected" is unsupported`,
+		},
+		{
+			name:  "undeclared content field",
+			modes: []string{"envelope"},
+			mutate: func(t *testing.T, exchange *recordedExchange) {
+				exchange.Body = withField(t, exchange.Body, []string{"content"}, "unexpected", true)
+			},
+			wantError: `property "unexpected" is unsupported`,
+		},
+		{
+			name:  "wrong media type",
+			modes: modes,
+			mutate: func(t *testing.T, exchange *recordedExchange) {
+				exchange.ContentType = "text/plain"
+			},
+			wantError: "Content-Type has unexpected value",
+		},
+		{
+			name:  "undocumented status",
+			modes: modes,
+			mutate: func(t *testing.T, exchange *recordedExchange) {
+				exchange.Status = http.StatusTeapot
+			},
+			wantError: "status is not supported",
+		},
+	}
+	for _, test := range tests {
+		for _, mode := range test.modes {
+			t.Run(mode+"/"+test.name, func(t *testing.T) {
+				contract := loadContract(t, mode)
+				exchange := createdExchange(t, contract.exchanges)
+				test.mutate(t, &exchange)
+
+				err := validateExchange(contract.router, exchange)
+
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("validation error = %v, want one containing %q", err, test.wantError)
+				}
+			})
+		}
+	}
+}
+
+// createdExchange returns the recorded 201, which is the only exchange
+// every mode documents with a body.
+func createdExchange(t *testing.T, exchanges []recordedExchange) recordedExchange {
+	t.Helper()
+	for _, exchange := range exchanges {
+		if exchange.Status == http.StatusCreated {
+			return exchange
+		}
+	}
+	t.Fatal("no 201 exchange recorded")
+	return recordedExchange{}
+}
+
+// withField returns body with key set to value in the object found by
+// following parents from the top level.
+func withField(t *testing.T, body json.RawMessage, parents []string, key string, value any) json.RawMessage {
+	t.Helper()
+	var root map[string]any
+	if err := json.Unmarshal(body, &root); err != nil {
+		t.Fatalf("decode body %s: %v", body, err)
+	}
+	object := root
+	for _, parent := range parents {
+		child, ok := object[parent].(map[string]any)
+		if !ok {
+			t.Fatalf("body %s has no object at %q", body, parent)
+		}
+		object = child
+	}
+	object[key] = value
+	changed, err := json.Marshal(root)
+	if err != nil {
+		t.Fatalf("encode body: %v", err)
+	}
+	return changed
+}

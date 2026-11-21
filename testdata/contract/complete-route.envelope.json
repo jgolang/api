@@ -1,0 +1,57 @@
+[
+  {
+    "name": "valid task",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{\"title\":\"Write docs\",\"priority\":\"high\"}",
+    "status": 201,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "success",
+        "code": "0000"
+      },
+      "content": {
+        "id": 42,
+        "projectId": "7",
+        "title": "Write docs",
+        "priority": "high"
+      }
+    }
+  },
+  {
+    "name": "empty title",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{\"title\":\" \"}",
+    "status": 400,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Error response!",
+        "message": "title is required (-TSK-001)",
+        "code": "TSK-001"
+      }
+    }
+  },
+  {
+    "name": "malformed body",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{",
+    "status": 400,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Error response!",
+        "message": "title is required (-TSK-001)",
+        "code": "TSK-001"
+      }
+    }
+  }
+]
