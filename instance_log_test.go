@@ -198,6 +198,9 @@ func TestRedactURI(t *testing.T) {
 		{uri: "http://user:pass@example.com/tasks?token=T", want: "http://[REDACTED]@example.com/tasks?token=[REDACTED]"},
 		{uri: "https://user@example.com", want: "https://[REDACTED]@example.com"},
 		{uri: "/redirect?to=http://a@b", want: "/redirect?to=http://a@b"},
+		{uri: "http://u:S4c/x@host/p", want: "http://[REDACTED]@host/p"},
+		{uri: "http://u:S4d?x@host/p", want: "http://[REDACTED]@host/p"},
+		{uri: "http://u:p@host/p#frag@x", want: "http://[REDACTED]@host/p#frag@x"},
 	}
 	for _, tt := range tests {
 		if got := redactURI(tt.uri, keys); got != tt.want {
@@ -775,6 +778,7 @@ func TestInstanceProcessRequestCopiesResponseHeaders(t *testing.T) {
 // headers to every response; a nil error body makes it return nil for errors.
 type headerFormatter struct {
 	headers      map[string]string
+	errorHeaders map[string]string
 	nilErrorBody bool
 }
 
@@ -784,6 +788,9 @@ func (f headerFormatter) Format(data core.ResponseData) *core.ResponseFormatted 
 	}
 	formatted := options{responseMode: ResponseModeEnvelope}.responseFormatter().Format(data)
 	formatted.Headers = f.headers
+	if data.ResponseType == ErrorType {
+		formatted.Headers = f.errorHeaders
+	}
 	return formatted
 }
 
@@ -857,5 +864,136 @@ func TestInstanceLogsAbortedHandlerAtDebug(t *testing.T) {
 		if r["level"] == "ERROR" {
 			t.Fatalf("unexpected error record %v", r)
 		}
+	}
+}
+
+// TestInstanceWriterContentTypeComesFromTheFormattedHeaders checks that a
+// Content-Type the handler put on w.Header() never labels the JSON body:
+// only the formatted headers decide it.
+func TestInstanceWriterContentTypeComesFromTheFormattedHeaders(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{name: "no formatted Content-Type", want: "application/json"},
+		{name: "formatted Content-Type", headers: map[string]string{"content-type": "application/problem+json"}, want: "application/problem+json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := options{}.responseWriter(headerFormatter{})
+			rec := httptest.NewRecorder()
+			rec.Header().Set("Content-Type", "text/html")
+
+			writer.Write(&core.ResponseFormatted{Body: map[string]string{"a": "<b>"}, HTTPStatusCode: http.StatusOK, Headers: tt.headers}, rec)
+
+			if got := rec.Header().Get("Content-Type"); got != tt.want {
+				t.Fatalf("Content-Type = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInstanceEncodeFailureUsesTheErrorBodyContentType(t *testing.T) {
+	tests := []struct {
+		name      string
+		formatter headerFormatter
+		want      string
+	}{
+		{name: "error body without Content-Type", formatter: headerFormatter{headers: map[string]string{"Content-Type": "text/html", "X-Trace": "t"}}, want: "application/json"},
+		{name: "error body with Content-Type", formatter: headerFormatter{headers: map[string]string{"Content-Type": "text/html", "X-Trace": "t"}, errorHeaders: map[string]string{"Content-Type": "application/problem+json"}}, want: "application/problem+json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := options{}.responseWriter(tt.formatter)
+			rec := httptest.NewRecorder()
+			rec.Header().Set("Content-Type", "text/html")
+
+			writer.Write(&core.ResponseFormatted{Body: math.NaN(), HTTPStatusCode: http.StatusOK, Headers: tt.formatter.headers}, rec)
+
+			if rec.Code != http.StatusInternalServerError || rec.Header().Get("X-Trace") != "t" {
+				t.Fatalf("response = %d %v, want 500 with the other headers kept", rec.Code, rec.Header())
+			}
+			if got := rec.Header().Get("Content-Type"); got != tt.want {
+				t.Fatalf("Content-Type = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInstanceBare500DropsTheFailedContentType(t *testing.T) {
+	writer := options{}.responseWriter(headerFormatter{nilErrorBody: true})
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Type", "text/html")
+
+	writer.Write(&core.ResponseFormatted{Body: math.NaN(), HTTPStatusCode: http.StatusOK, Headers: map[string]string{"Content-Type": "text/html", "X-Trace": "t"}}, rec)
+
+	if rec.Code != http.StatusInternalServerError || rec.Header().Get("X-Trace") != "t" || rec.Header().Get("Content-Type") != "" {
+		t.Fatalf("response = %d %v, want a bare 500 with X-Trace and no Content-Type", rec.Code, rec.Header())
+	}
+}
+
+// getValueHelpers calls every Get*Value* helper with a name that has no
+// value, so each one fails.
+var getValueHelpers = []struct {
+	name string
+	msg  string
+	call func(r *http.Request) Response
+}{
+	{"GetHeaderValueString", "header value not obtained", func(r *http.Request) Response { _, resp := GetHeaderValueString("X-Missing", r); return resp }},
+	{"GetHeaderValueInt", "header value not obtained", func(r *http.Request) Response { _, resp := GetHeaderValueInt("X-Missing", r); return resp }},
+	{"GetHeaderValueInt64", "header value not obtained", func(r *http.Request) Response { _, resp := GetHeaderValueInt64("X-Missing", r); return resp }},
+	{"GetHeaderValueFloat64", "header value not obtained", func(r *http.Request) Response { _, resp := GetHeaderValueFloat64("X-Missing", r); return resp }},
+	{"GetHeaderValueBool", "header value not obtained", func(r *http.Request) Response { _, resp := GetHeaderValueBool("X-Missing", r); return resp }},
+	{"GetRouteVarValueString", "route var not obtained", func(r *http.Request) Response { _, resp := GetRouteVarValueString("X-Missing", r); return resp }},
+	{"GetRouteVarValueInt", "route var not obtained", func(r *http.Request) Response { _, resp := GetRouteVarValueInt("X-Missing", r); return resp }},
+	{"GetRouteVarValueInt64", "route var not obtained", func(r *http.Request) Response { _, resp := GetRouteVarValueInt64("X-Missing", r); return resp }},
+	{"GetRouteVarValueFloat64", "route var not obtained", func(r *http.Request) Response { _, resp := GetRouteVarValueFloat64("X-Missing", r); return resp }},
+	{"GetRouteVarValueBool", "route var not obtained", func(r *http.Request) Response { _, resp := GetRouteVarValueBool("X-Missing", r); return resp }},
+	{"GetQueryParamValueString", "query param not obtained", func(r *http.Request) Response { _, resp := GetQueryParamValueString("X-Missing", r); return resp }},
+	{"GetQueryParamValueInt", "query param not obtained", func(r *http.Request) Response { _, resp := GetQueryParamValueInt("X-Missing", r); return resp }},
+	{"GetQueryParamValueInt64", "query param not obtained", func(r *http.Request) Response { _, resp := GetQueryParamValueInt64("X-Missing", r); return resp }},
+	{"GetQueryParamValueFloat64", "query param not obtained", func(r *http.Request) Response { _, resp := GetQueryParamValueFloat64("X-Missing", r); return resp }},
+	{"GetQueryParamValueBool", "query param not obtained", func(r *http.Request) Response { _, resp := GetQueryParamValueBool("X-Missing", r); return resp }},
+}
+
+func TestEveryGetValueHelperFailureIsSilentWithoutALogger(t *testing.T) {
+	for _, tt := range getValueHelpers {
+		t.Run(tt.name, func(t *testing.T) {
+			failOnPackageLoggers(t)
+			output := captureProcessOutput(t)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if response := tt.call(r); response != nil {
+					response.Write(w, r)
+				}
+			})
+
+			serve(New().Handler(handler), http.MethodGet, "", nil)
+
+			if got := output(); got != "" {
+				t.Fatalf("instance wrote %q", got)
+			}
+		})
+	}
+}
+
+func TestEveryGetValueHelperFailureIsRecorded(t *testing.T) {
+	for _, tt := range getValueHelpers {
+		t.Run(tt.name, func(t *testing.T) {
+			failOnPackageLoggers(t)
+			logger, buf := newRecordingLogger()
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if response := tt.call(r); response == nil {
+					t.Fatal("helper did not fail")
+				}
+			})
+
+			serve(New(WithLogger(logger)).Handler(handler), http.MethodGet, "", nil)
+
+			records := decodeRecords(t, buf)
+			if len(records) != 1 || records[0]["msg"] != tt.msg || records[0]["key"] != "X-Missing" || records[0]["level"] != "ERROR" {
+				t.Fatalf("records = %v, want one %q error record with key X-Missing", records, tt.msg)
+			}
+		})
 	}
 }

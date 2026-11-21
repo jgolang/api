@@ -267,9 +267,10 @@ func WithLogger(logger *slog.Logger) Option {
 // WithSensitiveLogKeys adds keys to the ones whose header and query values
 // the instance masks in its records, and whose Get*Value* helper errors are
 // logged without the value. A key matches any name that contains it,
-// ignoring case. Secrets in path segments (/reset/{token}) are not masked. The defaults (the v0 SensitiveLogKeys list,
-// cookie and session) are always kept: this option only adds. Keys are
-// trimmed and lowercased, blank keys are ignored; repeat it to add more.
+// ignoring case. Secrets in path segments (/reset/{token}) are not masked.
+// The defaults (the v0 SensitiveLogKeys list, cookie and session) are always
+// kept: this option only adds. Keys are trimmed and lowercased, blank keys
+// are ignored; repeat it to add more.
 func WithSensitiveLogKeys(keys ...string) Option {
 	return func(o *options) {
 		for _, key := range keys {
