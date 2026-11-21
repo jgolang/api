@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"time"
 
@@ -328,17 +327,10 @@ func Context(ctx context.Context) *RequestContext {
 		rctx := ctx.(RequestContext)
 		return &rctx
 	case context.Context:
-		ctxType := reflect.TypeOf(ctx)
-		ctxValue := reflect.ValueOf(ctx)
-		if ctxType.Kind() == reflect.Ptr {
-			elem := ctxValue.Elem()
-			for i := 0; i < elem.NumField(); i++ {
-				field := elem.Field(i)
-				rctx, ok := field.Interface().(*RequestContext)
-				if ok {
-					return rctx
-				}
-			}
+		// ProcessRequest stores the request data under this key, and the value
+		// survives every context derived from the request context.
+		if rctx, ok := v.Value(RequestDataContextContextKey).(*RequestContext); ok {
+			return rctx
 		}
 		return &RequestContext{
 			RequestDataContext: &core.RequestDataContext{
