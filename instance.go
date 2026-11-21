@@ -9,9 +9,12 @@ import (
 )
 
 // API holds one service's api configuration. Create it with New. It is
-// immutable after New and safe for concurrent use. An API from New never
-// reads CurrentRequestMode or CurrentResponseMode; its modes come only from
-// its options. A zero or nil API is the default instance.
+// immutable after New and safe for concurrent use. The built-in receivers
+// and formatter of an API from New never read CurrentRequestMode or
+// CurrentResponseMode; their modes come only from its options. A custom
+// component that embeds RequestReceiver, RequestReceiverV2 or
+// ResponseFormatter is used as given, so its promoted methods read the
+// package mode variables. A zero or nil API is the default instance.
 type API struct {
 	core *core.API
 }
@@ -149,8 +152,10 @@ func WithLowercaseCodes() Option {
 // WithRequestReceiver sets the receiver that parses the instance's request
 // bodies. RequestReceiver and RequestReceiverV2 parse with the instance's
 // request mode; a custom receiver alone decides how it parses, and
-// WithRequestMode does not apply to it. A nil receiver keeps the built-in
-// one.
+// WithRequestMode does not apply to it. A type that embeds RequestReceiver
+// or RequestReceiverV2 is custom: its promoted methods read
+// CurrentRequestMode. A nil interface value keeps the built-in; a typed nil
+// pointer to a custom receiver is used as given.
 func WithRequestReceiver(receiver core.APIRequestReceiver) Option {
 	return func(o *options) {
 		o.receiver = receiver
@@ -160,7 +165,9 @@ func WithRequestReceiver(receiver core.APIRequestReceiver) Option {
 // WithResponseFormatter sets the formatter that builds the instance's
 // response bodies. ResponseFormatter formats with the instance's response
 // mode; a custom formatter alone decides the body, and WithResponseMode does
-// not apply to it. A nil formatter keeps the built-in one.
+// not apply to it. A type that embeds ResponseFormatter is custom: its
+// promoted methods read CurrentResponseMode. A nil interface value keeps the
+// built-in; a typed nil pointer to a custom formatter is used as given.
 func WithResponseFormatter(formatter core.APIResponseFormatter) Option {
 	return func(o *options) {
 		o.formatter = formatter
@@ -168,7 +175,8 @@ func WithResponseFormatter(formatter core.APIResponseFormatter) Option {
 }
 
 // WithResponseWriter sets the writer that sends the instance's formatted
-// responses. A nil writer keeps the built-in ResponseWriter.
+// responses. A nil interface value keeps the built-in ResponseWriter; a
+// typed nil pointer to a custom writer is used as given.
 func WithResponseWriter(writer core.APIResponseWriter) Option {
 	return func(o *options) {
 		o.writer = writer

@@ -12,7 +12,8 @@ import (
 
 // fakeReceiver records the request it parsed and returns fixed content.
 type fakeReceiver struct {
-	path string
+	path          string
+	encryptedPath string
 }
 
 func (receiver *fakeReceiver) ProcessBody(r *http.Request) (*core.RequestDataContext, error) {
@@ -20,7 +21,8 @@ func (receiver *fakeReceiver) ProcessBody(r *http.Request) (*core.RequestDataCon
 	return &core.RequestDataContext{Context: r.Context(), Content: core.JSONContent(`{"title":"fake"}`)}, nil
 }
 
-func (receiver *fakeReceiver) ProcessEncryptedBody(*http.Request) (*core.RequestEncryptedData, error) {
+func (receiver *fakeReceiver) ProcessEncryptedBody(r *http.Request) (*core.RequestEncryptedData, error) {
+	receiver.encryptedPath = r.URL.Path
 	return &core.RequestEncryptedData{}, nil
 }
 
@@ -71,7 +73,9 @@ func (guarantor *fakeGuarantor) ValidateCustomToken(string, core.CustomTokenVali
 }
 
 // useSecurityGuarantor registers guarantor on the default instance for one
-// test and restores the built-in one afterwards.
+// test and restores the built-in SecurityGuaranter afterwards. There is no
+// getter for the registered guarantor, so the built-in one is restored, not
+// the previous one.
 func useSecurityGuarantor(t *testing.T, guarantor core.APISecurityGuarantor) {
 	t.Helper()
 	RegisterNewAPISecurityGuarantor(guarantor)
@@ -79,7 +83,9 @@ func useSecurityGuarantor(t *testing.T, guarantor core.APISecurityGuarantor) {
 }
 
 // useParamValidator registers validator on the default instance for one test
-// and restores the built-in one afterwards.
+// and restores the built-in ParamValidatorV0 afterwards. There is no getter
+// for the registered validator, so the built-in one is restored, not the
+// previous one.
 func useParamValidator(t *testing.T, validator func(any) (string, error)) {
 	t.Helper()
 	RegisterParamValidator(validator)
@@ -106,6 +112,15 @@ func TestInstanceUsesItsCustomReceiverFormatterAndWriter(t *testing.T) {
 	}
 	if got := rec.Body.String(); got != "written-by-fake" {
 		t.Errorf("body = %q, want only what the writer wrote", got)
+	}
+
+	serve(a.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := ProcessEncryptedBody(r); err != nil {
+			t.Errorf("ProcessEncryptedBody: %v", err)
+		}
+	})), http.MethodPost, `{"data":"x","deviceUUID":"y"}`, nil)
+	if receiver.encryptedPath != "/tasks" {
+		t.Errorf("receiver parsed encrypted path %q, want /tasks", receiver.encryptedPath)
 	}
 }
 
@@ -155,15 +170,19 @@ func TestBuiltInFormatterPassedAsOptionUsesTheInstanceMode(t *testing.T) {
 
 func TestBuiltInReceiverPassedAsOptionUsesTheInstanceMode(t *testing.T) {
 	usePackageModes(t, RequestModePlain, ResponseModeEnvelope)
-	tests := map[string]core.APIRequestReceiver{
-		"v0 value":   RequestReceiver{},
-		"v0 pointer": &RequestReceiver{},
-		"v2 value":   RequestReceiverV2{},
-		"v2 pointer": &RequestReceiverV2{},
+	tests := map[string]struct {
+		receiver core.APIRequestReceiver
+		mode     RequestMode
+	}{
+		"v0 value":   {RequestReceiver{}, RequestModeEnvelope},
+		"v0 pointer": {&RequestReceiver{}, RequestModeEnvelope},
+		"v2 value":   {RequestReceiverV2{}, RequestModeEnvelope},
+		"v2 pointer": {&RequestReceiverV2{}, RequestModeEnvelope},
+		"v2 auto":    {RequestReceiverV2{}, RequestModeAuto},
 	}
-	for name, receiver := range tests {
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			a := New(WithRequestReceiver(receiver), WithRequestMode(RequestModeEnvelope))
+			a := New(WithRequestReceiver(test.receiver), WithRequestMode(test.mode))
 
 			rec := serve(a.Handler(ProcessRequest(echoTitle(t))), http.MethodPost, `{"header":{},"content":{"title":"task"}}`, nil)
 
@@ -242,6 +261,35 @@ func TestInstanceCoreForwardsToTheRegisteredParamValidator(t *testing.T) {
 
 	if calls != 1 {
 		t.Fatalf("validator calls = %d, want 1", calls)
+	}
+}
+
+func TestPackageHelpersUnderAnInstanceUseTheRegisteredGuarantorAndValidator(t *testing.T) {
+	guarantor := &fakeGuarantor{}
+	useSecurityGuarantor(t, guarantor)
+	var validatorCalls int
+	useParamValidator(t, func(any) (string, error) {
+		validatorCalls++
+		return "", nil
+	})
+	a := New()
+	unmarshal := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct{ Title string }
+		if response := UnmarshalBody(&payload, r); response != nil {
+			response.Write(w, r)
+			return
+		}
+		Success200().Write(w, r)
+	})
+
+	serve(a.Handler(BasicToken(writeSuccess)), http.MethodGet, "", map[string]string{"Authorization": "Basic token"})
+	serve(a.Handler(unmarshal), http.MethodPost, `{"title":"task"}`, nil)
+
+	if guarantor.basicCalls != 1 {
+		t.Errorf("guarantor basic calls = %d, want 1", guarantor.basicCalls)
+	}
+	if validatorCalls != 1 {
+		t.Errorf("validator calls = %d, want 1", validatorCalls)
 	}
 }
 
