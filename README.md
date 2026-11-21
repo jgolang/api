@@ -222,7 +222,7 @@ Two settings shape the `title` and `message` of every response on the default in
 
 ## Writing errors
 
-`api.WriteError(w, r, err)` answers with the status of the error's code kind (`jgolang/errors` v0.4.0+): validation 400, unauthorized 401, forbidden 403, not_found 404, conflict 409, and 500 for infrastructure or a code without a kind. The response code and message come from the same code, also behind `fmt.Errorf`. `api.StatusForKind` exposes the mapping.
+`api.WriteError(w, r, err)` answers with the status of the error's code kind (`jgolang/errors` v0.4.0+): validation 400, unauthorized 401, forbidden 403, not_found 404, conflict 409, too_large 413 (`codes.KindTooLarge`, since v1.2.0 with `jgolang/errors` v0.9.0), and 500 for infrastructure or a code without a kind. A service's own size limit (an upload over its quota, say) answers with the same 413 status as the library's request body limit, but with the service's code and message and the default error title (the library's own 413 uses `E002` and `Request content too large`). The response code and message come from the same code, also behind `fmt.Errorf`. `api.StatusForKind` exposes the mapping.
 
 ```go
 var ErrTaskNotFound = errors.Define(codes.New("PLN-111", "task not found").WithKind(codes.KindNotFound), "task not found")

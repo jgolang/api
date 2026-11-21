@@ -50,6 +50,20 @@ func TestProblemInstanceWritesAnErrorAsProblemDetails(t *testing.T) {
 	}
 }
 
+func TestProblemInstanceWritesTooLargeAs413(t *testing.T) {
+	fileTooLarge := codes.New("UPL-413", "file is too large").WithKind(codes.KindTooLarge)
+	handler := problemInstance().Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		WriteError(w, r, errors.NewC(fileTooLarge, "30 MiB"))
+	}))
+
+	rec := serve(handler, http.MethodPost, "", map[string]string{EventIDHeaderKey: "evt-413"})
+
+	want := `{"type":"about:blank","title":"Request Entity Too Large","status":413,"detail":"file is too large","code":"UPL-413","event_id":"evt-413"}`
+	if rec.Code != http.StatusRequestEntityTooLarge || strings.TrimSpace(rec.Body.String()) != want {
+		t.Fatalf("status = %d, body = %s; want 413 and %s", rec.Code, rec.Body.String(), want)
+	}
+}
+
 func TestProblemDetailsMembers(t *testing.T) {
 	tests := []struct {
 		name    string

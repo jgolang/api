@@ -11,7 +11,7 @@ import (
 
 // StatusForKind returns the HTTP status for a jgolang/errors code kind:
 // validation 400, unauthorized 401, forbidden 403, not_found 404, conflict 409,
-// and 500 for infrastructure, no kind or an unknown kind.
+// too_large 413, and 500 for infrastructure, no kind or an unknown kind.
 func StatusForKind(kind codes.Kind) int {
 	switch kind {
 	case codes.KindValidation:
@@ -24,6 +24,8 @@ func StatusForKind(kind codes.Kind) int {
 		return http.StatusNotFound
 	case codes.KindConflict:
 		return http.StatusConflict
+	case codes.KindTooLarge:
+		return http.StatusRequestEntityTooLarge
 	default:
 		return http.StatusInternalServerError
 	}
