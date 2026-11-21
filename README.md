@@ -95,7 +95,7 @@ func main() {
    - assigns an [event ID](#trace-ids) and logs the request and the response (on an `api.New` instance only through its `api.WithLogger` logger, and nothing without one; on the default instance through `slog.Default`; see [Logging](#logging));
    - stores the request context, replaces `r.Body` with the endpoint content, and answers 500 if the handler panics (a panic with `http.ErrAbortHandler` is re-panicked, so `net/http` aborts the response).
 
-   Use `api.MiddlewaresChain(...)` to compose it with your own middlewares. `api.AddSkipPath(api.GenSkipPath(method, path), true)` makes it pass a route through untouched.
+   Use `api.MiddlewaresChain(...)` to compose it with your own middlewares. `api.AddSkipPath(api.GenSkipPath(method, path), true)` makes it pass a route through untouched. A skip path matches the decoded path only when the request path is sent exactly as Go's canonical encoding of it (an empty `URL.RawPath`): `/health%2Flive` (or `%2f`, or an escaped letter such as `/health/%6Cive`) is processed even with the skip path `GET:/health/live`, since ServeMux may route it to another handler such as `GET /{tenant}`. Since v1.1.2 a raw `!`, `'`, `(`, `)` or `*`, which Go escapes in a path, makes a request processed too: the key `GET:/a(b)` matches `/a%28b%29`, not `/a(b)`.
 3. **The handler** reads the content, then writes one [response](#responses) or [error](#writing-errors).
 4. **The formatter** shapes the response according to the [response mode](#request-and-response-modes) and adds the event ID, code and token (a token only when the handler sets `SecurityToken`; the request token is never echoed).
 
