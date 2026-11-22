@@ -128,6 +128,31 @@ responses may use only `header` when there is no payload. `header` is required
 in `envelope.Success` and `envelope.Error`, as on the wire, and its `code`
 example is `0000`, the default success code; an error sends its own code.
 
+The envelope wrappers document the envelope response mode. Other response modes
+write other bodies, and have their own wrappers:
+
+```go
+// ResponseModePlain: the header keys and content at the top level.
+doc.Status(http.StatusOK, envelope.PlainSuccess[TaskResponse]())
+doc.Status(http.StatusBadRequest, envelope.PlainError())
+
+// ResponseModeProblem: an error as RFC 9457 problem details.
+doc.Status(http.StatusNotFound, envelope.Problem())
+```
+
+`doc.Status` documents the problem body under `application/json`, while problem
+mode sends `application/problem+json`; the media type follows the mode once the
+instance options cover problem mode, later in this release.
+
+Plain mode writes all nine keys (`title`, `message`, `type`, `code`, `token`,
+`action`, `event_id`, `info`, `content`), so the plain wrappers list them all as
+required; `info` and `content` are nullable, because the wire writes `null` when
+they are unset. `envelope.PlainError` documents `content` as any nullable value.
+`envelope.Problem` lists `type` as required and `title`, `status`, `detail`,
+`code` and `event_id` as optional, as the problem body omits them when empty. Any
+response other than an error writes its content alone in problem mode, so
+document it with the content type itself (`doc.Status(200, TaskResponse{})`).
+
 Use `doc.BodyWithExample` and `doc.StatusWithExample` to add complete request or
 response examples to the generated OpenAPI media type.
 

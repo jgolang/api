@@ -350,7 +350,7 @@ router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json",
 ), doc.Hidden())
 ```
 
-Document the body in the shape the request mode expects: the content type itself in plain mode (`doc.Body(CreateTaskRequest{})`), or `doc.Body(envelope.Request[CreateTaskRequest]())` in envelope mode. `envelope.Success[T]()` and `envelope.Error()` document the envelope response mode.
+Document the body in the shape the request mode expects: the content type itself in plain mode (`doc.Body(CreateTaskRequest{})`), or `doc.Body(envelope.Request[CreateTaskRequest]())` in envelope mode. `envelope.Success[T]()` and `envelope.Error()` document the envelope response mode, `envelope.PlainSuccess[T]()` and `envelope.PlainError()` the plain response mode, and `envelope.Problem()` an error in the problem response mode.
 
 `a.DocSuccess(status, sample)` and `a.DocError(status, description)` document a response as the instance `a` sends it, so changing its response mode does not leave the spec wrong: the envelope in envelope mode, the content alone (and JSON `null` for an error) in none mode. They write the schema only, never an example; a 1xx, 204 or 304 is documented without content. Plain mode is documented as envelope for now, and problem mode as none for successes and as envelope for errors. A nil API (the default instance) reads `CurrentResponseMode` when the option is built. See [Instance response options](docs/openapi.md#instance-response-options).
 
