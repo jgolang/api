@@ -251,15 +251,14 @@ func skipsRequest(r *http.Request) bool {
 // to its first ", ", which the client sets; trust it only behind a proxy that
 // overwrites the header.
 //
-// A JSON request body (no Content-Type, an unparsable one, application/json
-// or a +json suffix) is read whole into memory before next runs, and next
-// reads its content from r.Body. Any other body (multipart/form-data,
-// application/octet-stream, ...) is not read: next gets r.Body as it came,
-// and the request context carries only the header metadata. Either way the
-// body is bounded by WithMaxBodyBytes under an instance's Handler (10 MiB by
-// default) and at 10 MiB without one; ProcessRequest answers 413 for a JSON
-// body over the limit, while reading a larger passed-through body returns an
-// *http.MaxBytesError to next.
+// A multipart/* or application/octet-stream body is not read: next gets
+// r.Body as it came, and the request context carries only the header
+// metadata. Any other body is read whole into memory and parsed as JSON per
+// the request mode before next runs, and next reads its content from r.Body.
+// Either way the body is bounded by WithMaxBodyBytes under an instance's
+// Handler (10 MiB by default) and at 10 MiB without one; ProcessRequest
+// answers 413 for a read body over the limit, while reading a larger
+// passed-through body returns an *http.MaxBytesError to next.
 //
 // next writes straight to w, so its response streams, and Flush and
 // http.ResponseController reach the connection. A panic in next before it
@@ -367,9 +366,11 @@ func removeMultipartFiles(a *API, r *http.Request) {
 }
 
 // passesBodyThrough reports whether ProcessRequest leaves r's body unread:
-// it has a body whose Content-Type parses and is neither application/json
-// nor a +json type. A missing or unparsable Content-Type keeps the JSON
-// path, as before v1.2.0.
+// it has a body whose Content-Type is multipart/* or
+// application/octet-stream, the uploads ProcessRequest could not serve
+// before v1.2.0. Every other type, a missing or unparsable one included,
+// keeps the JSON path, so a client that labels JSON as a form or as text is
+// served as before.
 func passesBodyThrough(r *http.Request) bool {
 	if !requestHasBody(r) {
 		return false
@@ -378,7 +379,7 @@ func passesBodyThrough(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	return mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json")
+	return strings.HasPrefix(mediaType, "multipart/") || mediaType == "application/octet-stream"
 }
 
 // processRequestContent runs the instance's receiver on r. For a body passed
