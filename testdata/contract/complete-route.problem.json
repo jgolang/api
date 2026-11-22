@@ -1,0 +1,83 @@
+[
+  {
+    "name": "valid task",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{\"title\":\"Write docs\",\"priority\":\"high\"}",
+    "status": 201,
+    "contentType": "application/json",
+    "headers": {
+      "Location": "/projects/7/tasks/42"
+    },
+    "body": {
+      "id": 42,
+      "projectId": "7",
+      "title": "Write docs",
+      "priority": "high"
+    }
+  },
+  {
+    "name": "empty title",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{\"title\":\" \"}",
+    "status": 400,
+    "contentType": "application/problem+json",
+    "body": {
+      "type": "about:blank",
+      "title": "Bad Request",
+      "status": 400,
+      "detail": "title is required",
+      "code": "TSK-001"
+    }
+  },
+  {
+    "name": "malformed body",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{",
+    "status": 400,
+    "contentType": "application/problem+json",
+    "body": {
+      "type": "about:blank",
+      "title": "Bad Request",
+      "status": 400,
+      "detail": "title is required",
+      "code": "TSK-001"
+    }
+  },
+  {
+    "name": "found task",
+    "method": "GET",
+    "path": "/projects/7/tasks/42",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "id": 42,
+      "projectId": "7",
+      "title": "Write docs",
+      "priority": "high"
+    }
+  },
+  {
+    "name": "missing task",
+    "method": "GET",
+    "path": "/projects/7/tasks/1",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 404,
+    "contentType": "application/problem+json",
+    "body": {
+      "type": "about:blank",
+      "title": "Not Found",
+      "status": 404,
+      "detail": "task not found",
+      "code": "TSK-404"
+    }
+  }
+]
