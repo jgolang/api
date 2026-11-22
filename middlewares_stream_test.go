@@ -182,6 +182,16 @@ func TestProcessRequestPanic(t *testing.T) {
 			io.WriteString(w, "partial")
 			panic("boom")
 		}},
+		{name: "after a flush", aborted: true, handler: func(w http.ResponseWriter, r *http.Request) {
+			w.(http.Flusher).Flush()
+			panic("boom")
+		}},
+		{name: "after a controller flush", aborted: true, handler: func(w http.ResponseWriter, r *http.Request) {
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				t.Errorf("flush: %v", err)
+			}
+			panic("boom")
+		}},
 	}
 	for _, setup := range streamSetups {
 		for _, tt := range tests {
@@ -270,6 +280,53 @@ func TestProcessRequestPassesMultipartBodyThrough(t *testing.T) {
 				t.Fatal("event ID is empty, want one")
 			}
 			recordNamed(t, logs.records(t), "request")
+		})
+	}
+}
+
+func TestProcessRequestPassesBodyThroughInEveryRequestMode(t *testing.T) {
+	for _, mode := range []RequestMode{RequestModePlain, RequestModeEnvelope, RequestModeAuto} {
+		t.Run(string(mode), func(t *testing.T) {
+			type received struct {
+				token, body string
+				content     int
+				err         error
+			}
+			got := make(chan received, 1)
+			handler := New(WithRequestMode(mode)).Handler(ProcessRequest(func(w http.ResponseWriter, r *http.Request) {
+				var result received
+				defer func() { got <- result }()
+				rctx, err := GetRequestContext(r)
+				if err != nil {
+					result.err = err
+					return
+				}
+				result.token, result.content = rctx.SecurityToken, len(rctx.Content)
+				body, err := io.ReadAll(r.Body)
+				result.body, result.err = string(body), err
+			}))
+			server := serveStream(t, handler)
+			payload := `{"header":{"token":"in-body"},"content":{}}`
+			req, _ := http.NewRequest(http.MethodPost, server.URL+"/upload", strings.NewReader(payload))
+			req.Header.Set("Content-Type", "application/octet-stream")
+			req.Header.Set(SecurityTokenHeaderKey, "token-placeholder")
+
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("post: %v", err)
+			}
+			res.Body.Close()
+			result := receiveFromHandler(t, got)
+
+			if res.StatusCode != http.StatusOK || result.err != nil {
+				t.Fatalf("status %d, handler err %v; want 200 and the body", res.StatusCode, result.err)
+			}
+			if result.body != payload || result.content != 0 {
+				t.Fatalf("handler got body %q and %d content bytes, want the body unread and no content", result.body, result.content)
+			}
+			if result.token != "token-placeholder" {
+				t.Fatalf("token = %q, want the header token", result.token)
+			}
 		})
 	}
 }
@@ -368,43 +425,65 @@ func TestProcessRequestEarlyPanicDropsHandlerHeaders(t *testing.T) {
 }
 
 func TestProcessRequestRemovesMultipartTempFiles(t *testing.T) {
+	endings := []struct {
+		name   string
+		finish func(w http.ResponseWriter)
+	}{
+		{name: "handler returns", finish: func(http.ResponseWriter) {}},
+		{name: "handler panics", finish: func(http.ResponseWriter) { panic("boom") }},
+		{name: "handler panics after writing", finish: func(w http.ResponseWriter) {
+			io.WriteString(w, "partial")
+			panic("boom")
+		}},
+	}
 	for _, setup := range streamSetups {
-		t.Run(setup.name, func(t *testing.T) {
-			tempFile := make(chan string, 1)
-			handler, _ := setup.build(t, func(w http.ResponseWriter, r *http.Request) {
-				// maxMemory 1 puts the file part on disk.
-				if err := r.ParseMultipartForm(1); err != nil {
-					t.Errorf("parse: %v", err)
-					return
-				}
-				file, _, err := r.FormFile("upload")
-				if err != nil {
-					t.Errorf("form file: %v", err)
-					return
-				}
-				defer file.Close()
-				if osFile, ok := file.(*os.File); ok {
-					tempFile <- osFile.Name()
-				}
+		for _, ending := range endings {
+			t.Run(setup.name+"/"+ending.name, func(t *testing.T) {
+				removesMultipartTempFile(t, setup, ending.finish)
 			})
-			server := serveStream(t, handler)
-			var body bytes.Buffer
-			form := multipart.NewWriter(&body)
-			part, _ := form.CreateFormFile("upload", "report.txt")
-			io.WriteString(part, strings.Repeat("x", 1<<12))
-			form.Close()
+		}
+	}
+}
 
-			res, err := http.Post(server.URL+"/upload", form.FormDataContentType(), &body)
-			if err != nil {
-				t.Fatalf("post: %v", err)
-			}
-			res.Body.Close()
+// removesMultipartTempFile posts a multipart upload whose handler parses it
+// to disk and then calls finish, and checks the temp file is gone after the
+// response.
+func removesMultipartTempFile(t *testing.T, setup streamSetup, finish func(w http.ResponseWriter)) {
+	t.Helper()
+	tempFile := make(chan string, 1)
+	handler, _ := setup.build(t, func(w http.ResponseWriter, r *http.Request) {
+		// maxMemory 1 puts the file part on disk.
+		if err := r.ParseMultipartForm(1); err != nil {
+			t.Errorf("parse: %v", err)
+			return
+		}
+		file, _, err := r.FormFile("upload")
+		if err != nil {
+			t.Errorf("form file: %v", err)
+			return
+		}
+		if osFile, ok := file.(*os.File); ok {
+			tempFile <- osFile.Name()
+		}
+		file.Close()
+		finish(w)
+	})
+	server := serveStream(t, handler)
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	part, _ := form.CreateFormFile("upload", "report.txt")
+	io.WriteString(part, strings.Repeat("x", 1<<12))
+	form.Close()
 
-			name := receiveFromHandler(t, tempFile)
-			if _, err := os.Stat(name); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("stat %s = %v, want the temp file removed", name, err)
-			}
-		})
+	// An aborted response fails the read; only the cleanup matters.
+	if res, err := http.Post(server.URL+"/upload", form.FormDataContentType(), &body); err == nil {
+		io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+	}
+
+	name := receiveFromHandler(t, tempFile)
+	if _, err := os.Stat(name); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat %s = %v, want the temp file removed", name, err)
 	}
 }
 
@@ -439,13 +518,25 @@ func TestProcessRequestLogsWrittenStatus(t *testing.T) {
 	tests := []struct {
 		name    string
 		handler http.HandlerFunc
-		status  float64
+		status  int
+		// logged is the status of the response record when it differs
+		// from the one the client gets.
+		logged float64
 	}{
 		{name: "no write", handler: func(http.ResponseWriter, *http.Request) {}, status: http.StatusOK},
 		{name: "created", handler: func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusCreated)
 			w.WriteHeader(http.StatusAccepted)
 		}, status: http.StatusCreated},
+		{name: "body before status", handler: func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "body")
+			w.WriteHeader(http.StatusInternalServerError)
+		}, status: http.StatusOK},
+		// The recorder ProcessRequest used before v1.2.0 kept the first
+		// code, so Warning's default 100 stays the logged status.
+		{name: "informational first", handler: func(w http.ResponseWriter, r *http.Request) {
+			Warning{}.Write(w, r)
+		}, status: http.StatusOK, logged: http.StatusContinue},
 	}
 	for _, setup := range streamSetups {
 		for _, tt := range tests {
@@ -459,11 +550,15 @@ func TestProcessRequestLogsWrittenStatus(t *testing.T) {
 				}
 				res.Body.Close()
 
-				if res.StatusCode != int(tt.status) {
-					t.Fatalf("status = %d, want %v", res.StatusCode, tt.status)
+				if res.StatusCode != tt.status {
+					t.Fatalf("status = %d, want %d", res.StatusCode, tt.status)
 				}
-				if record := recordNamed(t, logs.records(t), "response"); record["status"] != tt.status {
-					t.Fatalf("logged status = %v, want %v", record["status"], tt.status)
+				logged := tt.logged
+				if logged == 0 {
+					logged = float64(tt.status)
+				}
+				if record := recordNamed(t, logs.records(t), "response"); record["status"] != logged {
+					t.Fatalf("logged status = %v, want %v", record["status"], logged)
 				}
 			})
 		}
