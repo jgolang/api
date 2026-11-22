@@ -27,7 +27,7 @@ var updateGolden = flag.Bool("update", false, "rewrite the golden files in testd
 // completeRouteModes are the response modes whose spec and real exchanges
 // are pinned in testdata; the contracttest module validates one against the
 // other.
-var completeRouteModes = []api.ResponseMode{api.ResponseModeEnvelope, api.ResponseModeNone}
+var completeRouteModes = []api.ResponseMode{api.ResponseModeEnvelope, api.ResponseModeNone, api.ResponseModePlain, api.ResponseModeProblem}
 
 // refreshHint tells a reader how to rewrite the golden files after an
 // intended change.
@@ -90,13 +90,17 @@ func newCompleteRoute(mode api.ResponseMode) (http.Handler, *doc.Docs) {
 }
 
 // createdBody returns the 201 body model of mode, which carries a real
-// example, so it stays a doc option instead of DocSuccess: none mode writes
-// the task alone.
+// example, so it stays a doc option instead of DocSuccess: none and problem
+// modes write the task alone.
 func createdBody(mode api.ResponseMode) any {
-	if mode == api.ResponseModeNone {
+	switch mode {
+	case api.ResponseModeNone, api.ResponseModeProblem:
 		return projectTaskResponse{}
+	case api.ResponseModePlain:
+		return envelope.PlainSuccess[projectTaskResponse]()
+	default:
+		return envelope.Success[projectTaskResponse]()
 	}
-	return envelope.Success[projectTaskResponse]()
 }
 
 // createdTaskExample is the body createTask sends in mode for the request
@@ -108,15 +112,30 @@ func createdTaskExample(mode api.ResponseMode) map[string]any {
 		"title":     "Write docs",
 		"priority":  "high",
 	}
-	if mode == api.ResponseModeNone {
+	switch mode {
+	case api.ResponseModeNone, api.ResponseModeProblem:
 		return content
-	}
-	return map[string]any{
-		"header": map[string]any{
-			"type": "success",
-			"code": "0000",
-		},
-		"content": content,
+	case api.ResponseModePlain:
+		// Plain mode writes every key, even an empty one.
+		return map[string]any{
+			"title":    "",
+			"message":  "",
+			"type":     "success",
+			"code":     "0000",
+			"token":    "",
+			"action":   "",
+			"event_id": "",
+			"info":     nil,
+			"content":  content,
+		}
+	default:
+		return map[string]any{
+			"header": map[string]any{
+				"type": "success",
+				"code": "0000",
+			},
+			"content": content,
+		}
 	}
 }
 

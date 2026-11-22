@@ -8,6 +8,7 @@ import (
 
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/doc"
+	"github.com/jgolang/api/envelope"
 )
 
 type docOptionsTask struct {
@@ -20,12 +21,40 @@ const (
 	envelopeTaskSchema = `{"type":"object","properties":{"content":{"nullable":true,"allOf":[{"$ref":"#/components/schemas/DocOptionsTask"}]},"header":{"$ref":"#/components/schemas/ResponseInfo"}},"required":["header"]}`
 	envelopeOnlyHeader = `{"type":"object","properties":{"header":{"$ref":"#/components/schemas/ResponseInfo"}},"required":["header"]}`
 	errorResponseRef   = `{"$ref":"#/components/schemas/ErrorResponse"}`
+	plainErrorRef      = `{"$ref":"#/components/schemas/PlainErrorResponse"}`
+	problemDetailsRef  = `{"$ref":"#/components/schemas/ProblemDetails"}`
 	nullBodySchema     = `{"type":"object","enum":[null],"nullable":true}`
 )
 
 // documentedResponse returns the description and the JSON of the schema
 // that opts document for status, and whether the response has an example.
 func documentedResponse(t *testing.T, status string, opts ...doc.RouteOption) (description, schema string, hasExample bool) {
+	t.Helper()
+	response := generatedResponse(t, status, opts...)
+	if len(response.Content) > 1 {
+		t.Fatalf("response %s has %d media types, want one", status, len(response.Content))
+	}
+	for _, media := range response.Content {
+		encoded, err := json.Marshal(media.Schema)
+		if err != nil {
+			t.Fatalf("marshal schema: %v", err)
+		}
+		return response.Description, string(encoded), media.Example != nil || len(media.Examples) > 0
+	}
+	return response.Description, "", false
+}
+
+// documentedMediaType returns the media type opts document for status, or
+// "" for a response without content.
+func documentedMediaType(t *testing.T, status string, opts ...doc.RouteOption) string {
+	t.Helper()
+	for mediaType := range generatedResponse(t, status, opts...).Content {
+		return mediaType
+	}
+	return ""
+}
+
+func generatedResponse(t *testing.T, status string, opts ...doc.RouteOption) doc.ResponseObject {
 	t.Helper()
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
 	docs.Register(http.MethodGet, "/tasks", opts...)
@@ -34,18 +63,24 @@ func documentedResponse(t *testing.T, status string, opts ...doc.RouteOption) (d
 	if !ok {
 		t.Fatalf("response %s is not documented", status)
 	}
-	media, ok := response.Content["application/json"]
-	if !ok {
-		return response.Description, "", false
-	}
-	encoded, err := json.Marshal(media.Schema)
+	return response
+}
+
+// docTypeSchema returns the JSON of the component schema that the envelope
+// doc type body generates, which a wrapper DocSuccess builds at run time
+// must equal.
+func docTypeSchema(t *testing.T, body any) string {
+	t.Helper()
+	encoded, err := json.Marshal(documentedBody(t, body))
 	if err != nil {
 		t.Fatalf("marshal schema: %v", err)
 	}
-	return response.Description, string(encoded), media.Example != nil || len(media.Examples) > 0
+	return string(encoded)
 }
 
 func TestDocSuccessDocumentsTheInstanceModeBody(t *testing.T) {
+	plain := api.New(api.WithResponseMode(api.ResponseModePlain))
+	problem := api.New(api.WithResponseMode(api.ResponseModeProblem))
 	tests := []struct {
 		name       string
 		api        *api.API
@@ -59,11 +94,15 @@ func TestDocSuccessDocumentsTheInstanceModeBody(t *testing.T) {
 		{name: "envelope 204 without content", api: api.New(), status: http.StatusNoContent, sample: docOptionsTask{}, wantSchema: ""},
 		{name: "none 304 without content", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusNotModified, sample: nil, wantSchema: ""},
 		{name: "envelope 1xx without content", api: api.New(), status: http.StatusContinue, sample: docOptionsTask{}, wantSchema: ""},
-		{name: "plain documented as envelope", api: api.New(api.WithResponseMode(api.ResponseModePlain)), status: http.StatusOK, sample: docOptionsTask{}, wantSchema: envelopeTaskSchema},
+		{name: "plain", api: plain, status: http.StatusOK, sample: docOptionsTask{}, wantSchema: docTypeSchema(t, envelope.PlainSuccess[docOptionsTask]())},
+		{name: "plain pointer sample", api: plain, status: http.StatusOK, sample: &docOptionsTask{}, wantSchema: docTypeSchema(t, envelope.PlainSuccess[docOptionsTask]())},
+		{name: "plain nil sample", api: plain, status: http.StatusOK, sample: nil, wantSchema: docTypeSchema(t, envelope.PlainSuccess[any]())},
+		{name: "plain 204 without content", api: plain, status: http.StatusNoContent, sample: docOptionsTask{}, wantSchema: ""},
+		{name: "problem 204 without content", api: problem, status: http.StatusNoContent, sample: docOptionsTask{}, wantSchema: ""},
 		{name: "none", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusOK, sample: docOptionsTask{}, wantSchema: docOptionsTaskRef},
 		{name: "none pointer sample", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusOK, sample: &docOptionsTask{}, wantSchema: docOptionsTaskRef},
 		{name: "none nil sample", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusOK, sample: nil, wantSchema: nullBodySchema},
-		{name: "problem success as none", api: api.New(api.WithResponseMode(api.ResponseModeProblem)), status: http.StatusOK, sample: docOptionsTask{}, wantSchema: docOptionsTaskRef},
+		{name: "problem success as none", api: problem, status: http.StatusOK, sample: docOptionsTask{}, wantSchema: docOptionsTaskRef},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -73,6 +112,9 @@ func TestDocSuccessDocumentsTheInstanceModeBody(t *testing.T) {
 
 			if schema != test.wantSchema {
 				t.Errorf("schema = %s, want %s", schema, test.wantSchema)
+			}
+			if mediaType := documentedMediaType(t, strconv.Itoa(test.status), option); schema != "" && mediaType != "application/json" {
+				t.Errorf("media type = %q, want application/json", mediaType)
 			}
 			if hasExample {
 				t.Error("response has an example, want schema only")
@@ -89,11 +131,12 @@ func TestDocErrorDocumentsTheInstanceModeBody(t *testing.T) {
 		description     string
 		wantDescription string
 		wantSchema      string
+		wantMediaType   string
 	}{
-		{name: "envelope", api: api.New(), status: http.StatusNotFound, description: "Task not found", wantDescription: "Task not found", wantSchema: errorResponseRef},
-		{name: "none", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusBadRequest, wantDescription: "Bad Request", wantSchema: nullBodySchema},
-		{name: "plain documented as envelope", api: api.New(api.WithResponseMode(api.ResponseModePlain)), status: http.StatusBadRequest, wantDescription: "Bad Request", wantSchema: errorResponseRef},
-		{name: "problem documented as envelope", api: api.New(api.WithResponseMode(api.ResponseModeProblem)), status: http.StatusBadRequest, wantDescription: "Bad Request", wantSchema: errorResponseRef},
+		{name: "envelope", api: api.New(), status: http.StatusNotFound, description: "Task not found", wantDescription: "Task not found", wantSchema: errorResponseRef, wantMediaType: "application/json"},
+		{name: "none", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusBadRequest, wantDescription: "Bad Request", wantSchema: nullBodySchema, wantMediaType: "application/json"},
+		{name: "plain", api: api.New(api.WithResponseMode(api.ResponseModePlain)), status: http.StatusBadRequest, wantDescription: "Bad Request", wantSchema: plainErrorRef, wantMediaType: "application/json"},
+		{name: "problem", api: api.New(api.WithResponseMode(api.ResponseModeProblem)), status: http.StatusNotFound, description: "Task not found", wantDescription: "Task not found", wantSchema: problemDetailsRef, wantMediaType: "application/problem+json"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -106,6 +149,9 @@ func TestDocErrorDocumentsTheInstanceModeBody(t *testing.T) {
 			}
 			if schema != test.wantSchema {
 				t.Errorf("schema = %s, want %s", schema, test.wantSchema)
+			}
+			if mediaType := documentedMediaType(t, strconv.Itoa(test.status), option); mediaType != test.wantMediaType {
+				t.Errorf("media type = %q, want only %q", mediaType, test.wantMediaType)
 			}
 			if hasExample {
 				t.Error("response has an example, want schema only")

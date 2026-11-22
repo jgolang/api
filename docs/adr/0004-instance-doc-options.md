@@ -13,19 +13,19 @@ The `doc` package must not import the `api` root (ADR 0001 §3), so it cannot re
 ## Decision
 
 1. **Methods on `*api.API`.** `(*API).DocSuccess(status int, sample any) doc.RouteOption` and `(*API).DocError(status int, description string) doc.RouteOption` build ordinary response options from the instance's response mode. `doc` gets no new field, option or dependency, and there is no new package-level state.
-2. **Envelope wrapper built at run time.** A method cannot be generic, so `DocSuccess` builds the shape of `envelope.Success[T]()` with `reflect.StructOf` (`Header envelope.ResponseInfo json:"header"`, `Content *T json:"content,omitempty"`). The struct is anonymous, so the spec inlines it while `header` and `content` stay `$ref`s. A nil sample gives an envelope with only its header; a pointer sample documents the type it points to.
+2. **Wrappers built at run time from the doc types.** A method cannot be generic, so `DocSuccess` builds the shape of `envelope.ResponseOf[T]` (envelope mode) or `envelope.PlainResponseOf[T]` (plain mode) with `reflect.StructOf`: it copies the fields of the `struct{}` instantiation, tags included, and replaces the type of `Content` with `*T`. The tags have one source, the doc types. The struct is anonymous, so the spec inlines it while named field types such as `header` and `content` stay `$ref`s. A nil sample drops `content` from the envelope, which omits it when empty, and documents it as any nullable value in plain mode, which writes `null`; a pointer sample documents the type it points to.
 3. **Schema only.** Neither method writes an example. A sample is usually a zero value, and a zero-value example would document a body the route never sends (the contract stories pin examples to real wire bodies). A real example stays with `doc.StatusWithExample`.
 4. **Mode snapshot.** The mode is read when the method is called, not when the spec is generated. An API from `New` stores its normalized `WithResponseMode` value in an unexported field; the default instance, a zero API and a nil API have none and read `CurrentResponseMode`, normalized. A custom formatter set with `WithResponseFormatter` is not inspected: the methods document what the built-in formatter sends, and a service with its own formatter documents its bodies with the `doc` options.
 5. **Null body for none-mode errors.** None mode writes JSON `null` for an error, and for a success without content. It is documented as `{"type": "object", "nullable": true, "enum": [null]}`: OpenAPI 3.0.3 requires a type beside `nullable`, and the enum leaves `null` as the only valid value (kin-openapi accepts `null` and rejects objects and strings against it).
-6. **Modes without a wrapper yet.** Until plain and problem bodies get their own wrappers, plain successes and plain and problem errors are documented as envelope (wrong for those modes), and problem successes as none (correct: problem mode sends a success's content alone).
+6. **Plain and problem modes.** Plain successes use the run-time `envelope.PlainResponseOf[T]` shape (decision 2), and plain errors `envelope.PlainErrorResponse`. Problem successes are documented as none mode, since problem mode sends a success's content alone; problem errors are `envelope.ProblemDetails` under `application/problem+json` only, through `doc.RouteResponse.ContentType`, as the wire sends them.
 
 The wire format does not change. Whether none mode should keep sending `null` for an error is an open owner question recorded in the initiative.
 
 ## Consequences
 
-- A route declared with `a.DocSuccess`/`a.DocError` follows its instance's mode; the complete-route contract test passes in envelope and none modes with no known gaps.
+- A route declared with `a.DocSuccess`/`a.DocError` follows its instance's mode; the complete-route contract test passes in the envelope, none, plain and problem modes with no known gaps.
 - Existing `doc` options and their output are unchanged.
-- The inline success schema is not a named component, unlike `envelope.Success[T]()`; generated clients see an anonymous object for it.
+- The inline envelope and plain success schemas are not named components, unlike `envelope.Success[T]()` and `envelope.PlainSuccess[T]()`; generated clients see an anonymous object for them.
 - Routes registered before a default-instance mode change keep the mode they were built with.
 
 ## Alternatives

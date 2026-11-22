@@ -141,8 +141,8 @@ doc.Status(http.StatusNotFound, envelope.Problem())
 ```
 
 `doc.Status` documents the problem body under `application/json`, while problem
-mode sends `application/problem+json`; the media type follows the mode once the
-instance options cover problem mode, later in this release.
+mode sends `application/problem+json`; `(*api.API).DocError` documents it under
+`application/problem+json` (see [Instance response options](#instance-response-options)).
 
 Plain mode writes all nine keys (`title`, `message`, `type`, `code`, `token`,
 `action`, `event_id`, `info`, `content`), so the plain wrappers list them all as
@@ -187,8 +187,13 @@ api.Get(router, "/tasks/{taskID}", getTask,
 |------|---------------------------|---------------------------|---------------------------------|
 | envelope | inline object: required `header` (`ResponseInfo`), optional `content` (`T`) | object with required `header` only | `ErrorResponse` |
 | none | `T` | JSON `null` | JSON `null` |
-| problem | `T` | JSON `null` | `ErrorResponse` (for now) |
-| plain | as envelope (for now) | as envelope | `ErrorResponse` (for now) |
+| problem | `T` | JSON `null` | `ProblemDetails` under `application/problem+json` |
+| plain | inline object with the nine plain keys required; `content` (`T`) and `info` nullable | as `T{}`, with `content` any nullable value | `PlainErrorResponse` |
+
+The envelope and plain inline objects copy the fields and tags of
+`envelope.ResponseOf` and `envelope.PlainResponseOf`, with `T` as the content
+type, so they document what those wrappers document. Every response other than
+a problem-mode error is documented under `application/json`.
 
 `sample` is a Go value of the content type, and its type is what is
 documented; a schema written by hand goes to `doc.ResponseSchema`. A status that never carries

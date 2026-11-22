@@ -5,8 +5,9 @@
 // (kin-openapi) never reaches api's go.mod. It never imports api: the root
 // module's tests write, per response mode, the generated spec to
 // ../testdata/openapi/complete-route.<mode>.json and the real request and
-// response exchanges to ../testdata/contract/complete-route.<mode>.json, and
-// this package only reads those files. Refresh them from the root module
+// response exchanges to ../testdata/contract/complete-route.<mode>.json, for
+// the envelope, none, plain and problem modes, and this package only reads
+// those files. Refresh them from the root module
 // with: go test -run 'CompleteRoute' -update .
 package contracttest
 
@@ -28,7 +29,7 @@ import (
 )
 
 // modes are the response modes the root module records.
-var modes = []string{"envelope", "none"}
+var modes = []string{"envelope", "none", "plain", "problem"}
 
 // errBodyWithoutContent reports a response that sends a body for a status
 // the spec documents without content. ValidateResponse accepts any body in
@@ -38,8 +39,10 @@ var errBodyWithoutContent = errors.New("body sent for a response documented with
 // knownGaps are spec-vs-wire mismatches the generator cannot describe yet,
 // keyed by "<mode>/<exchange name>", with a substring of the error each one
 // must fail with. A gap that stops failing fails the test, so it is removed
-// here once fixed. It is empty: (*api.API).DocError documents the JSON null
-// that none mode writes for an error.
+// here once fixed. It is empty: (*api.API).DocSuccess and DocError document
+// the bodies of every mode, including the JSON null that none mode writes
+// for an error and the problem details problem mode writes under
+// application/problem+json.
 var knownGaps = map[string]string{}
 
 // recordedExchange mirrors the root module's recording format. Headers are
@@ -246,7 +249,7 @@ func TestValidatorRejectsMismatches(t *testing.T) {
 		},
 		{
 			name:  "undeclared content field",
-			modes: []string{"envelope"},
+			modes: []string{"envelope", "plain"},
 			mutate: func(t *testing.T, exchange *recordedExchange) {
 				exchange.Body = withField(t, exchange.Body, []string{"content"}, "unexpected", true)
 			},
