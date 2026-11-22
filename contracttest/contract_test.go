@@ -231,7 +231,7 @@ func TestRecordedResponsesMatchSpec(t *testing.T) {
 }
 
 // TestValidatorRejectsMismatches proves the harness fails on drift: each
-// case breaks the recorded 201 in one way that the spec does not allow.
+// case breaks each success exchange in one way that the spec does not allow.
 func TestValidatorRejectsMismatches(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -274,31 +274,37 @@ func TestValidatorRejectsMismatches(t *testing.T) {
 	}
 	for _, test := range tests {
 		for _, mode := range test.modes {
-			t.Run(mode+"/"+test.name, func(t *testing.T) {
-				contract := loadContract(t, mode)
-				exchange := createdExchange(t, contract.exchanges)
-				test.mutate(t, &exchange)
+			for _, exchangeName := range mutatedExchanges {
+				t.Run(mode+"/"+exchangeName+"/"+test.name, func(t *testing.T) {
+					contract := loadContract(t, mode)
+					exchange := exchangeNamed(t, contract.exchanges, exchangeName)
+					test.mutate(t, &exchange)
 
-				err := validateExchange(contract.router, exchange)
+					err := validateExchange(contract.router, exchange)
 
-				if err == nil || !strings.Contains(err.Error(), test.wantError) {
-					t.Fatalf("validation error = %v, want one containing %q", err, test.wantError)
-				}
-			})
+					if err == nil || !strings.Contains(err.Error(), test.wantError) {
+						t.Fatalf("validation error = %v, want one containing %q", err, test.wantError)
+					}
+				})
+			}
 		}
 	}
 }
 
-// createdExchange returns the recorded 201, which is the only exchange
-// every mode documents with a body.
-func createdExchange(t *testing.T, exchanges []recordedExchange) recordedExchange {
+// mutatedExchanges are the success exchanges the mismatch cases break: the
+// 201 documented with doc.StatusWithExample and the 200 documented with
+// (*api.API).DocSuccess, so both kinds of documented body must reject drift.
+var mutatedExchanges = []string{"valid task", "found task"}
+
+// exchangeNamed returns the recorded exchange called name.
+func exchangeNamed(t *testing.T, exchanges []recordedExchange, name string) recordedExchange {
 	t.Helper()
 	for _, exchange := range exchanges {
-		if exchange.Status == http.StatusCreated {
+		if exchange.Name == name {
 			return exchange
 		}
 	}
-	t.Fatal("no 201 exchange recorded")
+	t.Fatalf("no %q exchange recorded", name)
 	return recordedExchange{}
 }
 
