@@ -25,9 +25,12 @@ We'd also love PRs. If you're thinking of a large PR, we advise opening up an is
    go vet ./...
    gofmt -l .          # must print nothing
    govulncheck ./...
+   (cd contracttest && go vet ./... && go test ./... && govulncheck -test ./...)
    ```
+   `contracttest` is a nested test-only module: it validates the responses recorded in `testdata/contract` against the specs in `testdata/openapi`.
 1. Create a new branch: `git checkout -b my-branch-name`.
 1. Make your change, add tests, and make sure the tests still pass.
+   Golden files live in `testdata`; after an intended change to a generated spec or a recorded response, run `go test -run 'CompleteRoute' -update .` in the root and review the diff.
 1. Push to your fork and [submit a pull request][pr].
 1. Pat your self on the back and wait for your pull request to be reviewed and merged.
 
@@ -39,6 +42,15 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 
 Work in Progress pull requests are also welcome to get feedback early on, or if there is something blocked you.
+
+## Release checklist
+
+Before the owner tags a release, on the commit to tag:
+
+1. Run the checks listed above, root and `contracttest`.
+1. Validate the generated specs: `(cd contracttest && go test ./...)`. Its `TestSpecsAreValid` validates every spec in `testdata/openapi` with kin-openapi, examples checked against their schemas. A test that writes a new spec there is covered without other changes.
+1. Review the exported API with `go doc ./...`; deprecate before removing a public name.
+1. Call out every change to a golden file in `testdata/openapi` in the release notes: it is a change to the spec services publish.
 
 ## Resources
 

@@ -1,0 +1,403 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Fixtures",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/examples": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchemaExample"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaExample"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchemaNode"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaNode"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ref-tasks": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefTaskRequest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResponseOfArrayOfTaskResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestRequestOfCreateTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResponseOfTaskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateTaskRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "RefAssignee": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "RefBase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "RefTaskRequest": {
+        "type": "object",
+        "properties": {
+          "creator": {
+            "$ref": "#/components/schemas/RefAssignee"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "owner": {
+            "description": "Optional owner",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RefAssignee"
+              }
+            ]
+          },
+          "reviewer": {
+            "description": "Reviewer",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RefAssignee"
+              }
+            ]
+          },
+          "sample": {
+            "example": {
+              "id": 7
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RefAssignee"
+              }
+            ]
+          },
+          "watchers": {
+            "type": "array",
+            "items": {
+              "nullable": true,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/RefAssignee"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "reviewer",
+          "sample",
+          "creator"
+        ]
+      },
+      "SchemaAddress": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      },
+      "SchemaExample": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SchemaAddress"
+              }
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "example": 3
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "created_at"
+        ]
+      },
+      "SchemaNode": {
+        "type": "object",
+        "properties": {
+          "next": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SchemaNode"
+              }
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "TaskResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      },
+      "TestErrorResponse": {
+        "type": "object",
+        "properties": {
+          "header": {
+            "$ref": "#/components/schemas/TestResponseInfo"
+          }
+        }
+      },
+      "TestRequestInfo": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "example": "ADAD3-ADD33-AFSFK"
+          }
+        }
+      },
+      "TestRequestOfCreateTaskRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CreateTaskRequest"
+              }
+            ]
+          },
+          "header": {
+            "$ref": "#/components/schemas/TestRequestInfo"
+          }
+        }
+      },
+      "TestResponseInfo": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "example": "success"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "TestResponseOfArrayOfTaskResponse": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskResponse"
+            },
+            "nullable": true
+          },
+          "header": {
+            "$ref": "#/components/schemas/TestResponseInfo"
+          }
+        }
+      },
+      "TestResponseOfTaskResponse": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskResponse"
+              }
+            ]
+          },
+          "header": {
+            "$ref": "#/components/schemas/TestResponseInfo"
+          }
+        }
+      }
+    }
+  }
+}
