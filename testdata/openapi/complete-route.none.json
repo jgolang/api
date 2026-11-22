@@ -79,13 +79,46 @@
             }
           },
           "400": {
-            "description": "The title is missing or the body is not valid JSON"
+            "description": "The title is missing or the body is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "enum": [
+                    null
+                  ],
+                  "nullable": true
+                }
+              }
+            }
           },
           "401": {
-            "description": "The bearer token is missing or invalid"
+            "description": "The bearer token is missing or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "enum": [
+                    null
+                  ],
+                  "nullable": true
+                }
+              }
+            }
           },
           "500": {
-            "description": "Unexpected server error"
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "enum": [
+                    null
+                  ],
+                  "nullable": true
+                }
+              }
+            }
           }
         },
         "security": [
@@ -93,6 +126,62 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/projects/{projectID}/tasks/{taskID}": {
+      "get": {
+        "operationId": "getTask",
+        "summary": "Get a task",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "projectID",
+            "in": "path",
+            "required": true,
+            "description": "Project that owns the task",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskID",
+            "in": "path",
+            "required": true,
+            "description": "Task to return",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "enum": [
+                    null
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

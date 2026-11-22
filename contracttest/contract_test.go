@@ -38,14 +38,9 @@ var errBodyWithoutContent = errors.New("body sent for a response documented with
 // knownGaps are spec-vs-wire mismatches the generator cannot describe yet,
 // keyed by "<mode>/<exchange name>", with a substring of the error each one
 // must fail with. A gap that stops failing fails the test, so it is removed
-// here once fixed.
-var knownGaps = map[string]string{
-	// None mode writes JSON null for an error (an error has no content), and
-	// the doc layer cannot describe a null body, so the 400 is documented
-	// without content. Fixed by epic 2.
-	"none/empty title":    errBodyWithoutContent.Error(),
-	"none/malformed body": errBodyWithoutContent.Error(),
-}
+// here once fixed. It is empty: (*api.API).DocError documents the JSON null
+// that none mode writes for an error.
+var knownGaps = map[string]string{}
 
 // recordedExchange mirrors the root module's recording format. Headers are
 // the documented response headers the instance sent, besides Content-Type.

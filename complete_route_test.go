@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -37,6 +38,8 @@ const createdTaskID = 42
 
 var errTaskTitleRequired = codes.New("TSK-001", "title is required").WithKind(codes.KindValidation)
 
+var errTaskNotFound = codes.New("TSK-404", "task not found").WithKind(codes.KindNotFound)
+
 type createProjectTaskRequest struct {
 	Title    string `json:"title"`
 	Priority string `json:"priority,omitempty"`
@@ -49,11 +52,12 @@ type projectTaskResponse struct {
 	Priority  string `json:"priority,omitempty"`
 }
 
-// newCompleteRoute returns a realistic route that uses every kind of doc
-// option, documented for the bodies mode really sends. Stories that pin
-// other modes or validate the spec reuse it.
+// newCompleteRoute returns the handler of an instance in mode serving
+// realistic routes that use every kind of doc option, documented for the
+// bodies mode really sends. Stories that pin other modes or validate the
+// spec reuse it.
 func newCompleteRoute(mode api.ResponseMode) (http.Handler, *doc.Docs) {
-	createdBody, errorBody := documentedBodies(mode)
+	instance := api.New(api.WithResponseMode(mode))
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
 	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
 	router := stdadapter.New(http.NewServeMux(), docs)
@@ -67,25 +71,32 @@ func newCompleteRoute(mode api.ResponseMode) (http.Handler, *doc.Docs) {
 		doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Client request ID for tracing"),
 		doc.BodyWithExample(createProjectTaskRequest{}, createProjectTaskRequest{Title: "Write docs", Priority: "high"}),
 		doc.Security("bearerAuth"),
-		doc.StatusWithExample(http.StatusCreated, createdBody, createdTaskExample(mode),
+		doc.StatusWithExample(http.StatusCreated, createdBody(mode), createdTaskExample(mode),
 			doc.ResponseHeader("Location", doc.String, "URL of the created task")),
-		doc.ResponseWithDescription(http.StatusBadRequest, "The title is missing or the body is not valid JSON", errorBody),
-		doc.ResponseWithDescription(http.StatusUnauthorized, "The bearer token is missing or invalid", errorBody),
-		doc.ResponseWithDescription(http.StatusInternalServerError, "Unexpected server error", errorBody),
+		instance.DocError(http.StatusBadRequest, "The title is missing or the body is not valid JSON"),
+		instance.DocError(http.StatusUnauthorized, "The bearer token is missing or invalid"),
+		instance.DocError(http.StatusInternalServerError, "Unexpected server error"),
 	)
-	return router, docs
+	api.Get(router, "/projects/{projectID}/tasks/{taskID}", getTask,
+		doc.OperationID("getTask"),
+		doc.Summary("Get a task"),
+		doc.Tags("tasks"),
+		doc.PathWithDescription("projectID", doc.String, true, "Project that owns the task"),
+		doc.PathWithDescription("taskID", doc.Int, true, "Task to return"),
+		instance.DocSuccess(http.StatusOK, projectTaskResponse{}),
+		instance.DocError(http.StatusNotFound, "Task not found"),
+	)
+	return instance.Handler(router), docs
 }
 
-// documentedBodies returns the 201 and error body models of mode. None mode
-// writes the content alone: the task on success, and JSON null on an error
-// because an error has no content. The doc layer cannot describe a null
-// body, so none-mode errors are documented without one; the contract test
-// records that as a known gap until epic 2 fixes the wire.
-func documentedBodies(mode api.ResponseMode) (createdBody, errorBody any) {
+// createdBody returns the 201 body model of mode, which carries a real
+// example, so it stays a doc option instead of DocSuccess: none mode writes
+// the task alone.
+func createdBody(mode api.ResponseMode) any {
 	if mode == api.ResponseModeNone {
-		return projectTaskResponse{}, nil
+		return projectTaskResponse{}
 	}
-	return envelope.Success[projectTaskResponse](), envelope.Error()
+	return envelope.Success[projectTaskResponse]()
 }
 
 // createdTaskExample is the body createTask sends in mode for the request
@@ -131,6 +142,20 @@ func createTask(w http.ResponseWriter, r *http.Request) {
 	response.Write(w, r)
 }
 
+// getTask finds only the task createTask creates.
+func getTask(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("taskID") != strconv.Itoa(createdTaskID) {
+		api.WriteError(w, r, errors.NewC(errTaskNotFound, "no task %s", r.PathValue("taskID")))
+		return
+	}
+	api.SuccessWithContent(projectTaskResponse{
+		ID:        createdTaskID,
+		ProjectID: r.PathValue("projectID"),
+		Title:     "Write docs",
+		Priority:  "high",
+	}).Write(w, r)
+}
+
 func TestCompleteRouteSpecMatchesGolden(t *testing.T) {
 	for _, mode := range completeRouteModes {
 		t.Run(string(mode), func(t *testing.T) {
@@ -165,24 +190,28 @@ type recordedExchange struct {
 // besides Content-Type; only these are recorded so the files stay stable.
 var recordedHeaders = []string{"Location"}
 
-// completeRouteRequests cover the 201 and both 400 paths of createTask.
+// completeRouteRequests cover the 201 and both 400 paths of createTask, and
+// the 200 and 404 of getTask.
 var completeRouteRequests = []struct {
-	name string
-	body string
+	name   string
+	method string
+	path   string
+	body   string
 }{
-	{name: "valid task", body: `{"title":"Write docs","priority":"high"}`},
-	{name: "empty title", body: `{"title":" "}`},
-	{name: "malformed body", body: `{`},
+	{name: "valid task", method: http.MethodPost, path: "/projects/7/tasks", body: `{"title":"Write docs","priority":"high"}`},
+	{name: "empty title", method: http.MethodPost, path: "/projects/7/tasks", body: `{"title":" "}`},
+	{name: "malformed body", method: http.MethodPost, path: "/projects/7/tasks", body: `{`},
+	{name: "found task", method: http.MethodGet, path: "/projects/7/tasks/42"},
+	{name: "missing task", method: http.MethodGet, path: "/projects/7/tasks/1"},
 }
 
 func TestCompleteRouteExchangesMatchGolden(t *testing.T) {
 	for _, mode := range completeRouteModes {
 		t.Run(string(mode), func(t *testing.T) {
-			router, _ := newCompleteRoute(mode)
-			handler := api.New(api.WithResponseMode(mode)).Handler(router)
+			handler, _ := newCompleteRoute(mode)
 			exchanges := make([]recordedExchange, 0, len(completeRouteRequests))
 			for _, request := range completeRouteRequests {
-				exchanges = append(exchanges, recordExchange(t, handler, request.name, request.body))
+				exchanges = append(exchanges, recordExchange(t, handler, request.name, request.method, request.path, request.body))
 			}
 
 			got, err := json.MarshalIndent(exchanges, "", "  ")
@@ -195,19 +224,21 @@ func TestCompleteRouteExchangesMatchGolden(t *testing.T) {
 	}
 }
 
-func recordExchange(t *testing.T, handler http.Handler, name, body string) recordedExchange {
+func recordExchange(t *testing.T, handler http.Handler, name, method, path, body string) recordedExchange {
 	t.Helper()
-	const path = "/projects/7/tasks"
-	const requestContentType = "application/json"
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	request.Header.Set("Content-Type", requestContentType)
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	requestContentType := ""
+	if body != "" {
+		requestContentType = "application/json"
+		request.Header.Set("Content-Type", requestContentType)
+	}
 
 	handler.ServeHTTP(recorder, request)
 
 	return recordedExchange{
 		Name:               name,
-		Method:             http.MethodPost,
+		Method:             method,
 		Path:               path,
 		RequestContentType: requestContentType,
 		RequestBody:        body,
@@ -376,8 +407,7 @@ func TestCompleteRouteServesDocumentedResponses(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			router, _ := newCompleteRoute(api.ResponseModeEnvelope)
-			handler := api.New().Handler(router)
+			handler, _ := newCompleteRoute(api.ResponseModeEnvelope)
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/projects/7/tasks", strings.NewReader(test.body))
 
@@ -399,8 +429,7 @@ func TestCompleteRouteServesDocumentedResponses(t *testing.T) {
 func TestCompleteRouteCreatedExampleMatchesWire(t *testing.T) {
 	for _, mode := range completeRouteModes {
 		t.Run(string(mode), func(t *testing.T) {
-			router, _ := newCompleteRoute(mode)
-			handler := api.New(api.WithResponseMode(mode)).Handler(router)
+			handler, _ := newCompleteRoute(mode)
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/projects/7/tasks", strings.NewReader(`{"title":"Write docs","priority":"high"}`))
 

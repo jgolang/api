@@ -141,6 +141,47 @@ written as `allOf: [{$ref}]` with those keys beside `allOf`, because OpenAPI
 3.0.3 ignores every key next to `$ref`. A body passed as a pointer
 (`doc.Body(&CreateTaskRequest{})`) is a sample value and stays a plain `$ref`.
 
+## Instance response options
+
+`envelope.Success[T]()` and `envelope.Error()` describe the envelope mode only,
+so a route documented with them is wrong once its instance sends another
+mode. `(*api.API).DocSuccess` and `(*api.API).DocError` return a
+`doc.RouteOption` that wraps the payload the way the instance's built-in
+formatter sends it:
+
+```go
+a := api.New(api.WithResponseMode(api.ResponseModeNone))
+
+api.Get(router, "/tasks/{taskID}", getTask,
+	a.DocSuccess(http.StatusOK, TaskResponse{}),
+	a.DocError(http.StatusNotFound, "Task not found"),
+)
+```
+
+| Mode | `DocSuccess(status, T{})` | `DocSuccess(status, nil)` | `DocError(status, description)` |
+|------|---------------------------|---------------------------|---------------------------------|
+| envelope | inline object: required `header` (`ResponseInfo`), optional `content` (`T`) | object with required `header` only | `ErrorResponse` |
+| none | `T` | JSON `null` | JSON `null` |
+| problem | `T` | JSON `null` | `ErrorResponse` (for now) |
+| plain | as envelope (for now) | as envelope | `ErrorResponse` (for now) |
+
+`sample` is a Go value of the content type, and its type is what is
+documented; a schema written by hand goes to `doc.ResponseSchema`. A status that never carries
+a body (1xx, 204, 304) is documented without content in every mode.
+A pointer sample documents the type it points to. A JSON `null` body is
+written as `{"type": "object", "nullable": true, "enum": [null]}`, since
+OpenAPI 3.0.3 needs a type beside `nullable`. An empty description documents
+the HTTP status text. Only the schema is written, never an example: a
+zero-value sample is not a body the route sends, so add a real example with
+`doc.StatusWithExample` instead.
+
+The mode is read when the option is built: an API from `api.New` uses its
+own, and the default instance (a nil `*api.API`) reads `CurrentResponseMode`.
+A custom formatter set with `api.WithResponseFormatter` is not inspected;
+document its bodies with the `doc` options. As with every response option, a
+later option for the same status replaces an earlier one. See
+[ADR 0004](adr/0004-instance-doc-options.md).
+
 ## API metadata
 
 `doc.API` fills the document's `info` object, and `docs.SetServers` its top-level `servers`:

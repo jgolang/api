@@ -21,7 +21,6 @@ import (
 
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/doc"
-	"github.com/jgolang/api/envelope"
 	"github.com/jgolang/api/stdadapter"
 	"github.com/jgolang/errors"
 	"github.com/jgolang/errors/codes"
@@ -63,7 +62,8 @@ func main() {
 		doc.Summary("Create task"),
 		doc.Tags("tasks"),
 		doc.Body(CreateTaskRequest{}),
-		doc.Status(201, envelope.Success[TaskResponse]()),
+		a.DocSuccess(201, TaskResponse{}),
+		a.DocError(400, "The title is missing or the body is not valid JSON"),
 	)
 
 	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs), doc.Hidden())
@@ -351,6 +351,8 @@ router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json",
 ```
 
 Document the body in the shape the request mode expects: the content type itself in plain mode (`doc.Body(CreateTaskRequest{})`), or `doc.Body(envelope.Request[CreateTaskRequest]())` in envelope mode. `envelope.Success[T]()` and `envelope.Error()` document the envelope response mode.
+
+`a.DocSuccess(status, sample)` and `a.DocError(status, description)` document a response as the instance `a` sends it, so changing its response mode does not leave the spec wrong: the envelope in envelope mode, the content alone (and JSON `null` for an error) in none mode. They write the schema only, never an example; a 1xx, 204 or 304 is documented without content. Plain mode is documented as envelope for now, and problem mode as none for successes and as envelope for errors. A nil API (the default instance) reads `CurrentResponseMode` when the option is built. See [Instance response options](docs/openapi.md#instance-response-options).
 
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
 
