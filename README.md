@@ -168,7 +168,7 @@ eventID := rctx.EventID
 token := rctx.SecurityToken
 ```
 
-A body whose `Content-Type` is not JSON (an upload) is passed through unread since v1.2.0: the handler reads it with `r.ParseMultipartForm`, `r.MultipartReader` or `io.Copy`, the request context carries only the header metadata (`Content` is empty), and the event ID and request log are produced as usual. When the handler parses a multipart form on the request it got, `api.ProcessRequest` removes the form's temp files after the handler returns.
+A body whose `Content-Type` is not JSON (an upload) is passed through unread since v1.2.0: the handler reads it with `r.ParseMultipartForm`, `r.MultipartReader` or `io.Copy`, the request context carries only the header metadata (`Content` is empty), and the event ID and request log are produced as usual. When the handler parses a multipart form on the request it got (not a copy made with `r.WithContext`), `api.ProcessRequest` removes the form's temp files after the handler returns or panics. A JSON body sent under a non-JSON `Content-Type` is passed through as well, so its envelope header is not read.
 
 Request metadata comes from HTTP headers: `X-Request-ID` (else `UUID`) for the request UUID, `SecurityToken` (else `Authorization: Bearer <token>`) for the token, `AppLanguage` (else `Accept-Language`) for the language, and `DeviceType`, `DeviceBrand`, `DeviceModel`, `DeviceOS`, `OSVersion`, `OSTimezone`, `AppVersion`, `AppBuildVersion`, `AppName`, `DeviceSerial`, `DeviceID`, `Latitude`, `Longitude` for the client. In envelope request mode the JSON `header` fills the same fields when the HTTP header is absent.
 
