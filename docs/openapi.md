@@ -249,7 +249,9 @@ On an envelope instance the 201 example is
 (`ExampleAPI_DocSuccessExample`). The formatter receives the success that
 `Success.Write` would send for `sample`: the default title and message,
 `ResponseCodes.Success`, and no event ID or token, since there is no request.
-So the example shows what the wire shows in each mode: the blank title and
+The example therefore has no event ID or token, and no trace suffix in a
+message, while a route under `api.ProcessRequest` sends an event ID; everything
+else matches the wire. So the example shows what the wire shows in each mode: the blank title and
 message omitted from the envelope, the nine plain keys with empty strings and
 `info: null`, the content alone in none and problem modes, and the code as
 the formatter writes it (lowercased with `api.WithLowercaseCodes`).
@@ -267,6 +269,10 @@ the formatter writes it (lowercased with `api.WithLowercaseCodes`).
   `null` body (a nil sample in none and problem modes).
 - Numbers are kept exact: the body is encoded as the writer encodes it and
   decoded with `UseNumber`.
+- Moving a route from `doc.StatusWithExample(status, envelope.Success[T](), ...)`
+  (or `envelope.PlainSuccess[T]()`) to `DocSuccessExample` replaces the named
+  `ResponseOf…`/`PlainResponseOf…` component with an inline schema, so
+  generated clients lose that type name.
 
 ### Limits
 

@@ -37,8 +37,6 @@
     "body": {
       "header": {
         "type": "error",
-        "title": "Error response!",
-        "message": "title is required (-TSK-001)",
         "code": "TSK-001",
         "info": {
           "formatter": "custom"
@@ -57,8 +55,6 @@
     "body": {
       "header": {
         "type": "error",
-        "title": "Error response!",
-        "message": "title is required (-TSK-001)",
         "code": "TSK-001",
         "info": {
           "formatter": "custom"
@@ -101,8 +97,6 @@
     "body": {
       "header": {
         "type": "error",
-        "title": "Error response!",
-        "message": "task not found (-TSK-404)",
         "code": "TSK-404",
         "info": {
           "formatter": "custom"

@@ -17,6 +17,7 @@ import (
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/core"
 	"github.com/jgolang/api/doc"
+	"github.com/jgolang/api/envelope"
 	"github.com/jgolang/api/stdadapter"
 	"github.com/jgolang/errors"
 	"github.com/jgolang/errors/codes"
@@ -41,17 +42,25 @@ var completeRouteVariants = []completeRouteVariant{
 	{name: "custom-formatter", options: []api.Option{api.WithResponseFormatter(infoFormatter{})}},
 }
 
-// infoFormatter is a custom formatter that wraps the built-in one and sets a
-// fixed header.info, so the recordings show that DocSuccessExample documents
-// what a custom formatter sends. The wrapped formatter is not bound to an
-// instance, so it formats envelopes, the default CurrentResponseMode.
-type infoFormatter struct {
-	builtIn api.ResponseFormatter
-}
+// infoFormatter is a custom formatter that builds an envelope with only the
+// type, code and a fixed info in its header, so the recordings show that
+// DocSuccessExample documents what a custom formatter sends. It reads no
+// package variable, so the recording does not depend on global state.
+type infoFormatter struct{}
 
-func (formatter infoFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
-	data.Info = map[string]string{"formatter": "custom"}
-	return formatter.builtIn.Format(data)
+func (infoFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
+	return &core.ResponseFormatted{
+		HTTPStatusCode: data.HTTPStatusCode,
+		Headers:        data.Headers,
+		Body: envelope.Response{
+			Header: envelope.ResponseInfo{
+				Type: data.ResponseType,
+				Code: string(data.ResponseCode),
+				Info: map[string]string{"formatter": "custom"},
+			},
+			Content: data.Content,
+		},
+	}
 }
 
 // refreshHint tells a reader how to rewrite the golden files after an

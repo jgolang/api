@@ -233,20 +233,24 @@ func TestRecordedResponsesMatchSpec(t *testing.T) {
 }
 
 // TestDocumentedExamplesMatchRecordedBodies checks that every documented
-// response example equals the body the instance sent for that status and
-// media type, so an example cannot drift from the wire while still matching
-// its schema.
+// response example equals the body the instance sent for that status, under
+// the media type it sent, so an example cannot drift from the wire while
+// still matching its schema. Each recording must compare at least one.
 func TestDocumentedExamplesMatchRecordedBodies(t *testing.T) {
-	compared := 0
 	for _, mode := range modes {
 		contract := loadContract(t, mode)
+		compared := 0
 		for _, exchange := range contract.exchanges {
-			example, ok := documentedExample(t, contract.router, exchange)
-			if !ok {
+			examples := documentedExamples(t, contract.router, exchange)
+			if len(examples) == 0 {
 				continue
 			}
 			compared++
 			t.Run(mode+"/"+exchange.Name, func(t *testing.T) {
+				example, ok := examples[exchange.ContentType]
+				if !ok {
+					t.Fatalf("status %d documents examples only under other media types than the sent %q", exchange.Status, exchange.ContentType)
+				}
 				var body any
 				if err := json.Unmarshal(responseBody(exchange.Body), &body); err != nil {
 					t.Fatalf("decode body %s: %v", exchange.Body, err)
@@ -257,15 +261,15 @@ func TestDocumentedExamplesMatchRecordedBodies(t *testing.T) {
 				}
 			})
 		}
-	}
-	if compared == 0 {
-		t.Fatal("no recorded exchange has a documented example")
+		if compared == 0 {
+			t.Errorf("no %s exchange has a documented example", mode)
+		}
 	}
 }
 
-// documentedExample returns the example the spec documents for the status
-// and media type of exchange, and whether there is one.
-func documentedExample(t *testing.T, router routers.Router, exchange recordedExchange) (any, bool) {
+// documentedExamples returns, by media type, the examples the spec documents
+// for the status of exchange.
+func documentedExamples(t *testing.T, router routers.Router, exchange recordedExchange) map[string]any {
 	t.Helper()
 	request := httptest.NewRequest(exchange.Method, exchange.Path, nil)
 	route, _, err := router.FindRoute(request)
@@ -274,13 +278,15 @@ func documentedExample(t *testing.T, router routers.Router, exchange recordedExc
 	}
 	response := route.Operation.Responses.Status(exchange.Status)
 	if response == nil || response.Value == nil {
-		return nil, false
+		return nil
 	}
-	media := response.Value.Content.Get(exchange.ContentType)
-	if media == nil || media.Example == nil {
-		return nil, false
+	examples := make(map[string]any)
+	for mediaType, media := range response.Value.Content {
+		if media != nil && media.Example != nil {
+			examples[mediaType] = media.Example
+		}
 	}
-	return media.Example, true
+	return examples
 }
 
 // TestValidatorRejectsMismatches proves the harness fails on drift: each
