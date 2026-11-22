@@ -20,8 +20,13 @@ type statusWriter struct {
 	started bool
 }
 
-// WriteHeader records the first code and forwards every call.
+// WriteHeader records the first code and forwards it. A call after the
+// response started is dropped, as the recorder did: net/http would only log
+// it as superfluous, naming this wrapper instead of the handler.
 func (w *statusWriter) WriteHeader(code int) {
+	if w.started {
+		return
+	}
 	if w.status == 0 {
 		w.status = code
 	}

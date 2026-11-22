@@ -564,3 +564,47 @@ func TestProcessRequestLogsWrittenStatus(t *testing.T) {
 		}
 	}
 }
+
+// The recorder ProcessRequest used before v1.2.0 ignored a repeated
+// WriteHeader. Forwarding it makes net/http log a superfluous call that
+// names the wrapper instead of the handler.
+func TestProcessRequestIgnoresRepeatedWriteHeader(t *testing.T) {
+	handlers := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{name: "after a status", handler: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			w.WriteHeader(http.StatusAccepted)
+		}},
+		{name: "after a body", handler: func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "body")
+			w.WriteHeader(http.StatusAccepted)
+		}},
+	}
+	for _, setup := range streamSetups {
+		for _, tt := range handlers {
+			t.Run(setup.name+"/"+tt.name, func(t *testing.T) {
+				handler, _ := setup.build(t, tt.handler)
+				serverLogs := &syncBuffer{}
+				server := httptest.NewUnstartedServer(handler)
+				server.Config.ErrorLog = log.New(serverLogs, "", 0)
+				server.Start()
+				t.Cleanup(server.Close)
+
+				res, err := http.Get(server.URL + "/twice")
+				if err != nil {
+					t.Fatalf("get: %v", err)
+				}
+				res.Body.Close()
+
+				serverLogs.mu.Lock()
+				logged := serverLogs.buf.String()
+				serverLogs.mu.Unlock()
+				if logged != "" {
+					t.Fatalf("server log = %q, want nothing", logged)
+				}
+			})
+		}
+	}
+}
