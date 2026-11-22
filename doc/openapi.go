@@ -236,7 +236,7 @@ func buildOperation(route Route, schemas *schemaWalker) Operation {
 		operation.RequestBody = &RequestBodyObject{
 			Required: true,
 			Content: map[string]MediaType{
-				"application/json": {Schema: schema, Example: route.BodyExample},
+				mediaType(route.BodyContentType): {Schema: schema, Example: route.BodyExample},
 			},
 		}
 	}
@@ -275,7 +275,7 @@ func buildOperation(route Route, schemas *schemaWalker) Operation {
 					media.Examples[name] = ExampleObject{Value: value}
 				}
 			}
-			object.Content = map[string]MediaType{"application/json": media}
+			object.Content = map[string]MediaType{mediaType(response.ContentType): media}
 		}
 		operation.Responses[strconv.Itoa(response.Status)] = object
 	}
@@ -290,6 +290,15 @@ func buildOperation(route Route, schemas *schemaWalker) Operation {
 		operation.Security = append(operation.Security, map[string][]string{security: {}})
 	}
 	return operation
+}
+
+// mediaType returns the content key for contentType, application/json when
+// the route left it empty.
+func mediaType(contentType string) string {
+	if contentType == "" {
+		return "application/json"
+	}
+	return contentType
 }
 
 func schemaFromDataType(typ DataType) *Schema {

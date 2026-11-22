@@ -228,6 +228,39 @@ docs.SetServers(
 - `doc.Hidden()` (keeps the route out of the spec, e.g. `/openapi.json` and `/docs`; `docs.Routes()` still returns it with `Hidden` set)
 - `doc.Security("bearerAuth")`
 
+### Media types
+
+Request bodies and responses are written under `application/json` unless the route says otherwise. `doc.Route.BodyContentType` sets the request body's media type and `doc.RouteResponse.ContentType` sets a response's; an empty value keeps `application/json`, and the string is written as given. There is no option function for them: set them with a `doc.RouteOption` closure, `func(*doc.Route)`.
+
+```go
+binary := &doc.Schema{Type: "string", Format: "binary"}
+
+// Multipart upload: a form with a required binary "file" field.
+api.Post(router, "/files", upload,
+	doc.BodySchema(&doc.Schema{
+		Type:       "object",
+		Properties: map[string]*doc.Schema{"file": binary},
+		Required:   []string{"file"},
+	}),
+	func(route *doc.Route) { route.BodyContentType = "multipart/form-data" },
+	doc.Status(201, nil),
+)
+
+// Binary download.
+api.Get(router, "/files/{id}", download,
+	doc.Path("id", doc.String, true),
+	func(route *doc.Route) {
+		route.Responses = append(route.Responses, doc.RouteResponse{
+			Status:      200,
+			ContentType: "application/octet-stream", // or "*/*"
+			Schema:      binary,
+		})
+	},
+)
+```
+
+The same closure documents an `application/problem+json` error: append a `doc.RouteResponse` with that `ContentType` and the problem body or schema. A response with a content type but no body or schema has no `content`, as before. `Example` and `Examples` are written under the chosen media type.
+
 ## Security schemes
 
 Security requirements are declared per route with `doc.Security("name")`. Reusable schemes are registered in docs:

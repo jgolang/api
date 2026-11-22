@@ -69,9 +69,13 @@ type Route struct {
 	Body        interface{}
 	BodySchema  *Schema
 	BodyExample interface{}
-	Responses   []RouteResponse
-	Parameters  []Parameter
-	Security    []string
+	// BodyContentType is the request body's media type, such as
+	// multipart/form-data; empty means application/json. It is not written
+	// when neither Body nor BodySchema is set.
+	BodyContentType string
+	Responses       []RouteResponse
+	Parameters      []Parameter
+	Security        []string
 	// Public marks the operation as not requiring security (security: []),
 	// overriding Security and any default security.
 	Public bool
@@ -86,6 +90,10 @@ type RouteResponse struct {
 	Description string
 	Body        interface{}
 	Schema      *Schema
+	// ContentType is the response body's media type, such as
+	// application/octet-stream; empty means application/json. It is not
+	// written for a response without a body or schema.
+	ContentType string
 	Example     interface{}
 	// Examples are named examples, written as the OpenAPI examples map; when
 	// set, Example is not written (OpenAPI allows one or the other).
