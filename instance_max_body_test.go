@@ -271,6 +271,11 @@ func TestNestedInstancesApplyTheInnermostLimit(t *testing.T) {
 		{name: "smaller inner lowers the outer limit", outer: large, inner: small, bodySize: 64, wantStatus: http.StatusRequestEntityTooLarge},
 		{name: "over the inner limit", outer: small, inner: large, bodySize: 2048, wantStatus: http.StatusRequestEntityTooLarge},
 		{name: "under both", outer: small, inner: large, bodySize: 12, wantStatus: http.StatusOK, wantReached: true},
+		// An instance added for its logger or modes must not lift a limit
+		// set around it to its 10 MiB default.
+		{name: "inner without a limit keeps the outer one", outer: small, inner: New(), bodySize: 64, wantStatus: http.StatusRequestEntityTooLarge},
+		{name: "inner without a limit keeps its own default", outer: New(WithMaxBodyBytes(1 << 30)), inner: New(), bodySize: 11 << 20, wantStatus: http.StatusRequestEntityTooLarge},
+		{name: "inner limit raises an outer default", outer: New(), inner: large, bodySize: 64, wantStatus: http.StatusOK, wantReached: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -40,6 +40,9 @@ type API struct {
 	// default keys plus SensitiveLogKeys.
 	sensitiveLogKeys []string
 	maxBodyBytes     int64
+	// replacesOuterLimit is set by WithMaxBodyBytes: only a limit the
+	// service chose replaces the one of an instance around this one.
+	replacesOuterLimit bool
 }
 
 // options collects what the Option values passed to New set. New owns it, so
@@ -56,6 +59,7 @@ type options struct {
 	logger           *slog.Logger
 	sensitiveLogKeys []string
 	maxBodyBytes     int64
+	maxBodyBytesSet  bool
 }
 
 // Option configures an API in New. New skips a nil Option.
@@ -97,11 +101,12 @@ func New(opts ...Option) *API {
 			&mapMethods,
 			sharedParamValidator,
 		),
-		kindStatus:       o.kindStatus, // built by WithKindStatus inside New; nothing else holds it
-		errorHook:        o.errorHook,
-		logger:           o.logger,
-		sensitiveLogKeys: instanceSensitiveLogKeys(o.sensitiveLogKeys),
-		maxBodyBytes:     o.maxBodyBytes,
+		kindStatus:         o.kindStatus, // built by WithKindStatus inside New; nothing else holds it
+		errorHook:          o.errorHook,
+		logger:             o.logger,
+		sensitiveLogKeys:   instanceSensitiveLogKeys(o.sensitiveLogKeys),
+		maxBodyBytes:       o.maxBodyBytes,
+		replacesOuterLimit: o.maxBodyBytesSet,
 	}
 }
 
@@ -311,11 +316,14 @@ func WithSensitiveLogKeys(keys ...string) Option {
 // and the earlier value or the default stays, so a zero configuration value
 // never removes the bound; pass math.MaxInt64 for no practical limit. A
 // later valid call replaces an earlier one. With nested instances the
-// innermost Handler's limit applies, larger or smaller than the outer one
-// (since v1.2.0; before, the smallest applied), so a nested instance sets a
-// per-route limit. A limit the service installed itself
-// (http.MaxBytesHandler), or a middleware between the instances that
-// replaces r.Body, keeps its bound. The default instance bounds bodies at
+// innermost limit set with WithMaxBodyBytes applies, larger or smaller than
+// the outer one (since v1.2.0; before, the smallest applied), so a nested
+// instance sets a per-route limit. An inner instance without
+// WithMaxBodyBytes adds its 10 MiB default under the outer limit, so the
+// smaller applies, as before. A limit the service installed itself
+// (http.MaxBytesHandler), a middleware between the instances that replaces
+// r.Body, or a middleware outside every Handler that bounds at the default
+// instance's 10 MiB, keeps its bound. The default instance bounds bodies at
 // 10 MiB where the library reads them (ProcessRequest,
 // RequestBody, ProcessBody, ProcessEncryptedBody, UnmarshalBody); a handler
 // that reads r.Body itself outside an instance is not bounded.
@@ -325,6 +333,7 @@ func WithMaxBodyBytes(n int64) Option {
 			return
 		}
 		o.maxBodyBytes = n
+		o.maxBodyBytesSet = true
 	}
 }
 
@@ -402,8 +411,9 @@ func sharedParamValidator(v any) (errMsg string, err error) {
 // outside a.Handler run with the default instance, so they parse with the
 // package-level request mode. Handler bounds the request body with
 // http.MaxBytesReader at the instance's limit (see WithMaxBodyBytes); with
-// nested instances the innermost limit applies, so an instance around one
-// route can raise or lower the limit of an instance around the router. On a
+// nested instances the innermost limit set with WithMaxBodyBytes applies, so
+// an instance around one route can raise or lower the limit of an instance
+// around the router. On a
 // zero or nil API, Handler returns next unchanged.
 func (a *API) Handler(next http.Handler) http.Handler {
 	if a == nil || a.core == nil {
@@ -436,13 +446,15 @@ type bodyBound struct {
 
 type bodyBoundKey struct{}
 
-// boundBody bounds r's body at a's limit. When r.Body is still the reader
-// an outer instance set, a bounds the body under it instead, so a can raise
-// or lower the outer limit. Any other body, a limit the service installed or
-// a middleware's own reader, keeps its bound under a's.
+// boundBody bounds r's body at a's limit. When a's limit was set with
+// WithMaxBodyBytes and r.Body is still the reader an outer instance set, a
+// bounds the body under it instead, so a can raise or lower the outer limit.
+// Any other body, a limit the service installed or a middleware's own
+// reader, keeps its bound under a's, and so does an outer instance's limit
+// when a uses the default one.
 func (a *API) boundBody(w http.ResponseWriter, r *http.Request) bodyBound {
 	body := r.Body
-	if outer, ok := r.Context().Value(bodyBoundKey{}).(bodyBound); ok && outer.bounded == r.Body {
+	if outer, ok := r.Context().Value(bodyBoundKey{}).(bodyBound); ok && a.replacesOuterLimit && outer.bounded == r.Body {
 		body = outer.unbounded
 	}
 	return bodyBound{unbounded: body, bounded: http.MaxBytesReader(w, body, a.maxBodyBytes)}
