@@ -488,7 +488,13 @@ func removesMultipartTempFile(t *testing.T, setup streamSetup, finish func(w htt
 }
 
 func TestProcessRequestReadsJSONBody(t *testing.T) {
-	contentTypes := []string{"", "application/json", "application/json; charset=utf-8", "application/problem+json", ";;;"}
+	// Only multipart and octet-stream bodies pass through; every other type
+	// keeps the read, so a client labeling JSON as a form or text is served
+	// as before v1.2.0.
+	contentTypes := []string{
+		"", "application/json", "application/json; charset=utf-8", "application/problem+json", ";;;",
+		"text/plain", "text/plain; charset=utf-8", "application/x-www-form-urlencoded", "application/xml",
+	}
 	for _, contentType := range contentTypes {
 		t.Run(contentType, func(t *testing.T) {
 			got := make(chan string, 1)
