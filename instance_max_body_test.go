@@ -301,6 +301,18 @@ func TestInnerInstanceCannotRaiseAServiceLimit(t *testing.T) {
 	}
 }
 
+func TestInnerInstanceCannotRaiseAServiceLimitBetweenInstances(t *testing.T) {
+	var reached bool
+	inner := New(WithMaxBodyBytes(1024)).Handler(ProcessRequest(reachHandler(&reached)))
+	handler := New(WithMaxBodyBytes(16)).Handler(http.MaxBytesHandler(inner, 32))
+
+	rec := serve(handler, http.MethodPost, jsonBodyOfSize(64), nil)
+
+	if rec.Code != http.StatusRequestEntityTooLarge || reached {
+		t.Fatalf("status = %d, reached = %v; want 413 without the handler", rec.Code, reached)
+	}
+}
+
 // TestRaisedLimitParsesALargeURLEncodedForm checks that r.Body stays the
 // reader http.MaxBytesReader returns: net/http's form parser caps any other
 // body at 10 MB, whatever the instance limit.
