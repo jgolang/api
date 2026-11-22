@@ -62,9 +62,11 @@ func TestResponseWriterKeepsStatusAndHeadersOnSuccess(t *testing.T) {
 }
 
 // Warning and Informative default to status 100. A real server sends it as an
-// informational status and delivers the body with 200; the recorder that
-// ProcessRequest writes into rejects the body with http.ErrBodyNotAllowed,
-// which must neither exit the process nor be logged as an error.
+// informational status and delivers the body with 200, also through
+// ProcessRequest, which writes through to it. A writer that keeps the status
+// as written (httptest.ResponseRecorder) rejects the body with
+// http.ErrBodyNotAllowed, which must neither exit the process nor be logged
+// as an error.
 func TestDefaultInformationalStatusReachesClientWithoutFatal(t *testing.T) {
 	tests := []struct {
 		name     string

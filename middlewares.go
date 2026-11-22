@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -250,9 +250,21 @@ func skipsRequest(r *http.Request) bool {
 // The proxiedIPAddress info value is the first X-Forwarded-For header line up
 // to its first ", ", which the client sets; trust it only behind a proxy that
 // overwrites the header.
-// The whole request body is read into memory. Under an instance's Handler it
-// is bounded by WithMaxBodyBytes (10 MiB by default); without an instance it
-// is bounded at 10 MiB. A larger body is answered with 413.
+//
+// A multipart/* or application/octet-stream body is not read: next gets
+// r.Body as it came, and the request context carries only the header
+// metadata. Any other body is read whole into memory and parsed as JSON per
+// the request mode before next runs, and next reads its content from r.Body.
+// Either way the body is bounded by WithMaxBodyBytes under an instance's
+// Handler (10 MiB by default) and at 10 MiB without one; ProcessRequest
+// answers 413 for a read body over the limit, while reading a larger
+// passed-through body returns an *http.MaxBytesError to next.
+//
+// next writes straight to w, so its response streams, and Flush and
+// http.ResponseController reach the connection. A panic in next before it
+// writes a status or body is answered with 500; after that the response can
+// no longer be replaced, so the panic is logged and re-panicked as
+// http.ErrAbortHandler, which makes net/http abort the response.
 func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -264,7 +276,8 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		boundDefaultBody(w, r)
-		rctx, err := processBody(r)
+		passThrough := passesBodyThrough(r)
+		rctx, err := processRequestContent(r, passThrough)
 		if err != nil {
 			a.logBodyError(r, "request body rejected", err, false)
 			bodyRejection(err).Write(w, r)
@@ -307,33 +320,79 @@ func ProcessRequest(next http.HandlerFunc) http.HandlerFunc {
 		r.Header.Set("AppName", rctx.AppName)
 		r.Header.Set(SecurityTokenHeaderKey, rctx.SecurityToken)
 
-		r.Body = io.NopCloser(bytes.NewBuffer(rctx.Content))
-		rec := httptest.NewRecorder()
+		if !passThrough {
+			r.Body = io.NopCloser(bytes.NewBuffer(rctx.Content))
+		}
+		sw := &statusWriter{ResponseWriter: w}
+		// The headers outer middlewares set, so an early panic's 500 drops
+		// the ones next added for its own body (a stale Content-Length).
+		outerHeaders := w.Header().Clone()
 
+		// net/http removes multipart temp files only for the request it
+		// created, not for the copy next parsed.
+		defer removeMultipartFiles(a, r)
 		defer func() {
 			if recvr := recover(); recvr != nil {
 				a.logPanic(r, rctx.EventID, recvr)
-				// Nothing has reached w yet, so re-panicking an abort lets
-				// net/http drop the response as it would without ProcessRequest.
 				// The plain sentinel is re-panicked even for a wrapped abort:
-				// net/http logs any other value, unredacted, with a stack.
-				if isAbortPanic(recvr) {
+				// net/http logs any other value, unredacted, with a stack. A
+				// started response cannot become a 500, so it is aborted too.
+				if isAbortPanic(recvr) || sw.started {
 					panic(http.ErrAbortHandler)
 				}
+				header := w.Header()
+				clear(header)
+				maps.Copy(header, outerHeaders)
 				Error500().Write(w, r)
 				return
 			}
 		}()
 
-		next.ServeHTTP(rec, r)
+		next.ServeHTTP(sw, r)
 
-		for k, v := range rec.Header() {
-			w.Header()[k] = v
-		}
-		w.WriteHeader(rec.Code)
-		w.Write(rec.Body.Bytes())
-		a.logResponse(r, rctx.EventID, rec, time.Since(start))
+		a.logResponse(r, rctx.EventID, sw.loggedStatus(), time.Since(start))
 	}
+}
+
+// removeMultipartFiles removes the temp files of a multipart form that the
+// handler parsed from r, logging a failure on a's logger.
+func removeMultipartFiles(a *API, r *http.Request) {
+	if r.MultipartForm == nil {
+		return
+	}
+	if err := r.MultipartForm.RemoveAll(); err != nil {
+		a.logBodyError(r, "multipart form cleanup failed", err, false)
+	}
+}
+
+// passesBodyThrough reports whether ProcessRequest leaves r's body unread:
+// it has a body whose Content-Type is multipart/* or
+// application/octet-stream, the uploads ProcessRequest could not serve
+// before v1.2.0. Every other type, a missing or unparsable one included,
+// keeps the JSON path, so a client that labels JSON as a form or as text is
+// served as before.
+func passesBodyThrough(r *http.Request) bool {
+	if !requestHasBody(r) {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(mediaType, "multipart/") || mediaType == "application/octet-stream"
+}
+
+// processRequestContent runs the instance's receiver on r. For a body passed
+// through, the receiver gets a copy of r without a body, so it still fills
+// the header metadata while r.Body stays unread for the handler.
+func processRequestContent(r *http.Request, passThrough bool) (*RequestContext, error) {
+	if !passThrough {
+		return processBody(r)
+	}
+	headersOnly := r.WithContext(r.Context())
+	headersOnly.Body = http.NoBody
+	headersOnly.ContentLength = 0
+	return processBody(headersOnly)
 }
 
 func requestHasBody(r *http.Request) bool {

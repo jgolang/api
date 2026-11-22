@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"runtime"
 	"strconv"
 	"strings"
@@ -133,7 +132,7 @@ func (a *API) logRequest(r *http.Request, eventID string) {
 }
 
 // logResponse logs the response ProcessRequest wrote, as logRequest does.
-func (a *API) logResponse(r *http.Request, eventID string, rec *httptest.ResponseRecorder, duration time.Duration) {
+func (a *API) logResponse(r *http.Request, eventID string, status int, duration time.Duration) {
 	if !a.logs(r.Context(), slog.LevelInfo) {
 		return
 	}
@@ -141,8 +140,8 @@ func (a *API) logResponse(r *http.Request, eventID string, rec *httptest.Respons
 		slog.String("event_id", eventID),
 		slog.String("method", r.Method),
 		slog.String("uri", redactURI(r.RequestURI, a.sensitiveKeys())),
-		slog.Int("status", rec.Code),
-		slog.String("status_text", http.StatusText(rec.Code)),
+		slog.Int("status", status),
+		slog.String("status_text", http.StatusText(status)),
 		slog.Int64("duration_ms", duration.Milliseconds()),
 	)
 }
@@ -192,8 +191,8 @@ func isAbortPanic(recovered any) bool {
 //
 // http.ErrBodyNotAllowed from writing the body is not reported: Warning and
 // Informative default to status 100, which a server sends as informational
-// before delivering the body with 200, while the recorder that ProcessRequest
-// writes into returns this error.
+// before delivering the body with 200, while a writer that keeps the status
+// as written (httptest.ResponseRecorder, for one) returns this error.
 func (writer ResponseWriter) Write(response *core.ResponseFormatted, w http.ResponseWriter) {
 	if response == nil {
 		writer.logError("response cannot be written", errors.New("nil formatted response"))
@@ -253,7 +252,7 @@ func writeBare500(headers map[string]string, w http.ResponseWriter) {
 // formatted headers, application/json when they set none: one the handler
 // put on w.Header() earlier (say text/html) must never label a JSON body.
 // http.ErrBodyNotAllowed is not logged: Warning and Informative default to
-// status 100, and the recorder that ProcessRequest writes into returns it for
+// status 100, and a writer that keeps the status as written may return it for
 // their body.
 func (writer ResponseWriter) writeEncoded(headers map[string]string, status int, body []byte, w http.ResponseWriter) {
 	setHeaders(headers, w)

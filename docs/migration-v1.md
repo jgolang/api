@@ -236,6 +236,17 @@ rec := httptest.NewRecorder()
 a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 ```
 
+## v1.2.0: ProcessRequest writes through
+
+v1.2.0 changes how `api.ProcessRequest` runs the handler ([ADR 0003](adr/0003-process-request-writes-through.md)). No exported name changes; requests other than `multipart/*` and `application/octet-stream` uploads get the same responses and log records. What changes:
+
+- **Upload bodies reach the handler.** A body whose `Content-Type` is `multipart/*` (`multipart/form-data`) or `application/octet-stream` is no longer read and answered with 400: the handler gets `r.Body` as it came, still bounded by the body limit, and reading past the limit returns `*http.MaxBytesError`. The request context carries the header metadata and event ID, with an empty `Content`. Every other body, with any other, a missing or an unparsable `Content-Type` (`text/plain`, `application/x-www-form-urlencoded`, XML), is still read and decoded as before. When the handler parses a multipart form on the request `ProcessRequest` passed it, `ProcessRequest` removes its temp files after the handler returns or panics; a form parsed on a copy (`r.WithContext`) is the handler's to remove.
+- **Responses stream.** The handler writes straight to the `http.ResponseWriter`: `Flush` sends what was written, and `http.NewResponseController(w)` reaches the connection (`SetWriteDeadline`, `EnableFullDuplex`). A route that hijacks the connection (websockets) should be a `SkipPaths` route: `ProcessRequest` does not see a hijack, so its `response` record and panic handling do not apply after one.
+- **A panic after the first write aborts.** A panic before the handler writes a status or body is still answered with 500. After that it is logged as `panic recovered` and re-panicked as `http.ErrAbortHandler`: the client sees a truncated response or a closed connection, and there is no `response` record. A test that calls the handler with an `httptest.ResponseRecorder` now gets that panic out of `ServeHTTP` instead of a recorded 500.
+- **Headers follow `net/http`.** Headers set after the first `WriteHeader` or `Write` are no longer sent (the recorder copied the final header map). Headers that outer middlewares set are now visible to the handler on `w.Header()`. An early panic's 500 still carries only the headers set before `ProcessRequest` ran; the handler's are dropped.
+
+Check handlers that set headers after writing, and clients that relied on a 400 for multipart or octet-stream bodies.
+
 ## Checklist
 
 - [ ] Upgrade and build. Nothing is removed, so the program compiles.
@@ -252,3 +263,4 @@ a.Handler(http.HandlerFunc(createTask)).ServeHTTP(rec, req)
 - [ ] Decide on code case: update clients and alerts to the declared codes, or use `api.WithLowercaseCodes()`.
 - [ ] Give the instance a `*slog.Logger`, or accept that it logs nothing.
 - [ ] Move tests to `a.Handler(h).ServeHTTP` instead of resetting package variables.
+- [ ] v1.2.0: check handlers that set headers after writing, and clients that relied on a 400 for multipart or octet-stream bodies ([v1.2.0](#v120-processrequest-writes-through)).
