@@ -233,11 +233,14 @@ func buildOperation(route Route, schemas *schemaWalker) Operation {
 		if schema == nil {
 			schema = schemas.schemaForBody(route.Body)
 		}
+		media := MediaType{Schema: schema, Example: route.BodyExample}
+		if len(route.BodyExamples) > 0 {
+			media.Example = nil
+			media.Examples = exampleObjects(route.BodyExamples)
+		}
 		operation.RequestBody = &RequestBodyObject{
 			Required: true,
-			Content: map[string]MediaType{
-				mediaType(route.BodyContentType): {Schema: schema, Example: route.BodyExample},
-			},
+			Content:  map[string]MediaType{mediaType(route.BodyContentType): media},
 		}
 	}
 	for _, response := range route.Responses {
@@ -270,10 +273,7 @@ func buildOperation(route Route, schemas *schemaWalker) Operation {
 			media := MediaType{Schema: schema, Example: response.Example}
 			if len(response.Examples) > 0 {
 				media.Example = nil
-				media.Examples = make(map[string]ExampleObject, len(response.Examples))
-				for name, value := range response.Examples {
-					media.Examples[name] = ExampleObject{Value: value}
-				}
+				media.Examples = exampleObjects(response.Examples)
 			}
 			object.Content = map[string]MediaType{mediaType(response.ContentType): media}
 		}
@@ -290,6 +290,30 @@ func buildOperation(route Route, schemas *schemaWalker) Operation {
 		operation.Security = append(operation.Security, map[string][]string{security: {}})
 	}
 	return operation
+}
+
+// exampleObjects turns a named-examples map into OpenAPI example objects.
+func exampleObjects(examples map[string]interface{}) map[string]ExampleObject {
+	objects := make(map[string]ExampleObject, len(examples))
+	for name, example := range examples {
+		objects[name] = exampleObject(example)
+	}
+	return objects
+}
+
+// exampleObject writes an ExampleObject (or a non-nil pointer to one) as is so
+// it keeps its summary; any other value, a nil pointer included, becomes the
+// example's value.
+func exampleObject(example interface{}) ExampleObject {
+	switch typed := example.(type) {
+	case ExampleObject:
+		return typed
+	case *ExampleObject:
+		if typed != nil {
+			return *typed
+		}
+	}
+	return ExampleObject{Value: example}
 }
 
 // mediaType returns the content key for contentType, application/json when

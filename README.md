@@ -378,6 +378,17 @@ api.Post(router, "/files", upload,
 
 See [Media types](docs/openapi.md#media-types) for the download and problem cases.
 
+A body or response with several cases takes named examples: `doc.BodyExamples(body, examples)` for the request body and `doc.ResponseExamples(status, description, body, examples)` for a response. Each is written as the OpenAPI `examples` map. On the request body it replaces the single example of `doc.BodyWithExample`; on a response, as with every response option, a later option for the same status replaces it. A `doc.ExampleObject` value is written as is, so it can carry a summary; any other value becomes the example's value:
+
+```go
+api.Post(router, "/tasks", createTask,
+	doc.BodyExamples(CreateTaskRequest{}, map[string]any{
+		"short": doc.ExampleObject{Summary: "A one-word title", Value: CreateTaskRequest{Title: "Docs"}},
+		"long":  CreateTaskRequest{Title: "Write the release notes for v1.3"},
+	}),
+)
+```
+
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
 
 ### stdadapter routing

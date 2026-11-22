@@ -1,0 +1,91 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Named examples API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/tasks": {
+      "post": {
+        "operationId": "createTask",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NamedExamplesTask"
+              },
+              "examples": {
+                "minimal": {
+                  "summary": "Only the required title",
+                  "value": {
+                    "title": "Write docs"
+                  }
+                },
+                "urgent": {
+                  "summary": "A high-priority task",
+                  "value": {
+                    "title": "Fix outage",
+                    "priority": "high"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "409": {
+            "description": "Task already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamedExamplesConflict"
+                },
+                "examples": {
+                  "duplicate": {
+                    "summary": "A task with the same title exists",
+                    "value": {
+                      "code": "TSK-001"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NamedExamplesConflict": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "NamedExamplesTask": {
+        "type": "object",
+        "properties": {
+          "priority": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    }
+  }
+}

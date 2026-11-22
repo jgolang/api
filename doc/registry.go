@@ -69,6 +69,10 @@ type Route struct {
 	Body        interface{}
 	BodySchema  *Schema
 	BodyExample interface{}
+	// BodyExamples are the request body's named examples, written as the
+	// OpenAPI examples map; when set, BodyExample is not written (OpenAPI
+	// allows one or the other).
+	BodyExamples map[string]interface{}
 	// BodyContentType is the request body's media type, such as
 	// multipart/form-data; empty means application/json. It is not written
 	// when neither Body nor BodySchema is set.
@@ -334,6 +338,7 @@ func cloneRoute(route Route) Route {
 	}
 	clone.BodySchema = cloneSchema(route.BodySchema)
 	clone.BodyExample = cloneValue(route.BodyExample)
+	clone.BodyExamples = cloneExamples(route.BodyExamples)
 	return clone
 }
 
@@ -343,9 +348,25 @@ func cloneExamples(examples map[string]interface{}) map[string]interface{} {
 	}
 	clone := make(map[string]interface{}, len(examples))
 	for name, value := range examples {
-		clone[name] = cloneValue(value)
+		clone[name] = cloneExample(value)
 	}
 	return clone
+}
+
+// cloneExample deep-clones a named example, including the value inside an
+// ExampleObject, which cloneValue would copy only shallowly.
+func cloneExample(example interface{}) interface{} {
+	switch typed := example.(type) {
+	case ExampleObject:
+		return ExampleObject{Summary: typed.Summary, Value: cloneValue(typed.Value)}
+	case *ExampleObject:
+		if typed == nil {
+			return typed
+		}
+		return &ExampleObject{Summary: typed.Summary, Value: cloneValue(typed.Value)}
+	default:
+		return cloneValue(example)
+	}
 }
 
 func cloneResponseHeaders(headers []ResponseHeaderInfo) []ResponseHeaderInfo {
