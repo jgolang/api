@@ -175,20 +175,40 @@ mode. `(*api.API).DocSuccess` and `(*api.API).DocError` return a
 formatter sends it:
 
 ```go
-a := api.New(api.WithResponseMode(api.ResponseModeNone))
+instance := api.New(api.WithResponseMode(api.ResponseModeEnvelope))
+// or api.New(api.WithResponseMode(api.ResponseModeNone))
+// or api.New(api.WithResponseMode(api.ResponseModePlain))
+// or api.New(api.WithResponseMode(api.ResponseModeProblem))
 
-api.Get(router, "/tasks/{taskID}", getTask,
-	a.DocSuccess(http.StatusOK, TaskResponse{}),
-	a.DocError(http.StatusNotFound, "Task not found"),
+docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+router := stdadapter.New(http.NewServeMux(), docs)
+api.Get(router, "/tasks/{taskID}", func(w http.ResponseWriter, r *http.Request) {},
+	instance.DocSuccess(http.StatusOK, TaskResponse{}),
+	instance.DocError(http.StatusNotFound, "Task not found"),
 )
 ```
+
+The route declaration is the same in every mode; only the instance changes.
+The spec then documents, per status, the media type and schema below (the
+output of the `ExampleAPI_DocSuccess_envelope`, `_none`, `_plain` and
+`_problem` examples in `example_doc_options_test.go`; the plain success
+schema is abbreviated):
+
+| Mode | 200 | 404 |
+|------|-----|-----|
+| envelope | `application/json`: object with required `header` (`$ref` `ResponseInfo`) and nullable `content` (`$ref` `TaskResponse`) | `application/json`: `$ref` `ErrorResponse` |
+| none | `application/json`: `$ref` `TaskResponse` | `application/json`: `{"type":"object","enum":[null],"nullable":true}` |
+| plain | `application/json`: object with the nine plain keys required, `content` nullable `$ref` `TaskResponse` | `application/json`: `$ref` `PlainErrorResponse` |
+| problem | `application/json`: `$ref` `TaskResponse` | `application/problem+json`: `$ref` `ProblemDetails` |
+
+For any content type `T`, and for a nil sample:
 
 | Mode | `DocSuccess(status, T{})` | `DocSuccess(status, nil)` | `DocError(status, description)` |
 |------|---------------------------|---------------------------|---------------------------------|
 | envelope | inline object: required `header` (`ResponseInfo`), optional `content` (`T`) | object with required `header` only | `ErrorResponse` |
 | none | `T` | JSON `null` | JSON `null` |
-| problem | `T` | JSON `null` | `ProblemDetails` under `application/problem+json` |
 | plain | inline object with the nine plain keys required; `content` (`T`) and `info` nullable | as `T{}`, with `content` any nullable value | `PlainErrorResponse` |
+| problem | `T` | JSON `null` | `ProblemDetails` under `application/problem+json` |
 
 The envelope and plain inline objects copy the fields and tags of
 `envelope.ResponseOf` and `envelope.PlainResponseOf`, with `T` as the content
@@ -207,10 +227,22 @@ zero-value sample is not a body the route sends, so add a real example with
 
 The mode is read when the option is built: an API from `api.New` uses its
 own, and the default instance (a nil `*api.API`) reads `CurrentResponseMode`.
-A custom formatter set with `api.WithResponseFormatter` is not inspected;
-document its bodies with the `doc` options. As with every response option, a
-later option for the same status replaces an earlier one. See
-[ADR 0004](adr/0004-instance-doc-options.md).
+As with every response option, a later option for the same status replaces an
+earlier one. See [ADR 0004](adr/0004-instance-doc-options.md).
+
+### Limits
+
+- **One mode per route, from the instance it calls.** A route documents the mode of the
+  instance whose `DocSuccess`/`DocError` it called, not the mode of the
+  instance that serves it. When several instances with different modes serve
+  routes of one `doc.Docs`, the spec holds several formats, one per route, so
+  each route must use the methods of the instance that serves it.
+- **Built-in formatter only.** The methods describe what the built-in
+  formatter of each mode sends. A custom formatter set with
+  `api.WithResponseFormatter` is not described; document its bodies with the
+  `doc` options (`doc.Status`, `doc.ResponseSchema`,
+  `doc.StatusWithExample`). Building the documentation from the formatter
+  itself is planned separately.
 
 ## API metadata
 
