@@ -1,0 +1,250 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Tasks API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/projects/{projectID}/tasks": {
+      "post": {
+        "operationId": "createTask",
+        "summary": "Create a task",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "Client request ID for tracing",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectID",
+            "in": "path",
+            "required": true,
+            "description": "Project that owns the task",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "notify",
+            "in": "query",
+            "description": "Notify the project members",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectTaskRequest"
+              },
+              "example": {
+                "title": "Write docs",
+                "priority": "high"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "description": "URL of the created task",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseOfProjectTaskResponse"
+                },
+                "example": {
+                  "content": {
+                    "id": 42,
+                    "priority": "high",
+                    "projectId": "7",
+                    "title": "Write docs"
+                  },
+                  "header": {
+                    "code": "0000",
+                    "type": "success"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The title is missing or the body is not valid JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The bearer token is missing or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "CreateProjectTaskRequest": {
+        "type": "object",
+        "properties": {
+          "priority": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "header": {
+            "$ref": "#/components/schemas/ResponseInfo"
+          }
+        },
+        "required": [
+          "header"
+        ]
+      },
+      "ProjectTaskResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "title"
+        ]
+      },
+      "ResponseInfo": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "example": "refresh"
+          },
+          "code": {
+            "type": "string",
+            "description": "0000 by default on success; on an error, the error's code, such as E001 or TSK-404.",
+            "example": "0000"
+          },
+          "event_id": {
+            "type": "string",
+            "example": "f716243f2c92df55fcd8f67018b1dcfb"
+          },
+          "info": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "field": "value"
+            }
+          },
+          "message": {
+            "type": "string",
+            "example": "Operation completed"
+          },
+          "title": {
+            "type": "string",
+            "example": "Success"
+          },
+          "token": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+          },
+          "type": {
+            "type": "string",
+            "example": "success"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ResponseOfProjectTaskResponse": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectTaskResponse"
+              }
+            ]
+          },
+          "header": {
+            "$ref": "#/components/schemas/ResponseInfo"
+          }
+        },
+        "required": [
+          "header"
+        ]
+      }
+    }
+  }
+}

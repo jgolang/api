@@ -305,6 +305,9 @@ func TestGenerateOpenAPIMinimalDocumentShape(t *testing.T) {
 }
 
 func resolveOpenAPISchema(doc doc.OpenAPI, schema *doc.Schema) *doc.Schema {
+	if schema != nil && schema.Ref == "" && len(schema.AllOf) == 1 {
+		schema = schema.AllOf[0]
+	}
 	if schema == nil || schema.Ref == "" {
 		return schema
 	}

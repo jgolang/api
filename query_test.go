@@ -32,6 +32,13 @@ func TestQueryInt(t *testing.T) {
 		{name: "malformed escape", query: "limit=%zz", wantOK: true, wantCode: codes.ValFormat},
 		{name: "semicolon", query: "a=1;limit=5", wantOK: true, wantCode: codes.ValFormat},
 		{name: "malformed elsewhere", query: "a=%zz&limit=7", wantValue: 7, wantOK: true},
+		{name: "malformed pair of another key hides nothing", query: "q=100%", wantOK: false},
+		{name: "malformed key elsewhere", query: "%zz=1&limit=7", wantValue: 7, wantOK: true},
+		{name: "malformed key only", query: "%zz=1", wantOK: false},
+		{name: "percent-encoded key with malformed value", query: "li%6Dit=%zz", wantOK: true, wantCode: codes.ValFormat},
+		{name: "semicolon without the key", query: "a=1;b=2", wantOK: false},
+		{name: "semicolon with the key first", query: "limit=5;a=1", wantOK: true, wantCode: codes.ValFormat},
+		{name: "malformed duplicate then valid", query: "limit=%zz&limit=5", wantValue: 5, wantOK: true},
 	}
 
 	for _, tt := range tests {
@@ -81,6 +88,8 @@ func TestQueryEnum(t *testing.T) {
 		{name: "allowed", query: "in_inbox=true", wantValue: "true", wantOK: true},
 		{name: "outside the enum", query: "in_inbox=false", wantOK: true, wantErr: true},
 		{name: "absent", query: "", wantOK: false},
+		{name: "malformed pair of another key", query: "q=100%", wantOK: false},
+		{name: "malformed own pair", query: "in_inbox=%zz", wantOK: true, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -112,6 +121,7 @@ func TestQueryString(t *testing.T) {
 		{name: "present", query: "q=tasks", wantValue: "tasks", wantOK: true},
 		{name: "empty", query: "q=", wantValue: "", wantOK: true},
 		{name: "absent", query: "", wantValue: "", wantOK: false},
+		{name: "malformed pair of another key", query: "limit=100%", wantValue: "", wantOK: false},
 	}
 
 	for _, tt := range tests {

@@ -21,6 +21,7 @@ func TestStatusForKind(t *testing.T) {
 		{codes.KindForbidden, http.StatusForbidden},
 		{codes.KindNotFound, http.StatusNotFound},
 		{codes.KindConflict, http.StatusConflict},
+		{codes.KindTooLarge, http.StatusRequestEntityTooLarge},
 		{codes.KindInfrastructure, http.StatusInternalServerError},
 		{"", http.StatusInternalServerError},
 		{codes.Kind("unknown"), http.StatusInternalServerError},
@@ -39,6 +40,26 @@ func TestStatusForKind(t *testing.T) {
 	}
 }
 
+func TestWriteErrorTooLargeKeepsTheDefaultTitle(t *testing.T) {
+	useFormatterSettings(t, true)
+	fileTooLarge := codes.New("UPL-413", "file is too large").WithKind(codes.KindTooLarge)
+	recorder := httptest.NewRecorder()
+
+	WriteError(recorder, httptest.NewRequest(http.MethodPost, "/files", nil), errors.NewC(fileTooLarge, "30 MiB"))
+
+	var body struct {
+		Header struct {
+			Title string `json:"title"`
+		} `json:"header"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode %q: %v", recorder.Body.String(), err)
+	}
+	if recorder.Code != http.StatusRequestEntityTooLarge || body.Header.Title != DefaultErrorTitle {
+		t.Fatalf("status = %d, title = %q; want 413 and %q", recorder.Code, body.Header.Title, DefaultErrorTitle)
+	}
+}
+
 func TestWriteErrorUsesTheKindOfTheCode(t *testing.T) {
 	useFormatterSettings(t, true)
 	notFound := codes.New("PLN-111", "task not found").WithKind(codes.KindNotFound)
@@ -54,6 +75,7 @@ func TestWriteErrorUsesTheKindOfTheCode(t *testing.T) {
 		{name: "unauthorized", err: errors.NewC(codes.AuthFailed, "bad token"), wantStatus: http.StatusUnauthorized, wantCode: "a003"},
 		{name: "forbidden", err: errors.NewC(codes.AuthForbidden, "no access"), wantStatus: http.StatusForbidden, wantCode: "f001"},
 		{name: "conflict", err: errors.NewC(codes.New("PLN-200", "task is locked").WithKind(codes.KindConflict), "locked"), wantStatus: http.StatusConflict, wantCode: "PLN-200"},
+		{name: "too large behind fmt.Errorf", err: fmt.Errorf("upload: %w", errors.NewC(codes.New("UPL-413", "file is too large").WithKind(codes.KindTooLarge), "30 MiB")), wantStatus: http.StatusRequestEntityTooLarge, wantCode: "UPL-413"},
 		{name: "infrastructure keeps its code", err: errors.NewC(codes.ConnFailed, "db down"), wantStatus: http.StatusInternalServerError, wantCode: "d001"},
 		{name: "nil error", err: nil, wantStatus: http.StatusInternalServerError, wantCode: string(ResponseCodes.InternalServerEerror)},
 		{name: "code without kind", err: errors.NewC(codes.New("X-1", "x"), "x"), wantStatus: http.StatusInternalServerError, wantCode: "X-1"},

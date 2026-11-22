@@ -20,6 +20,9 @@ type Schema struct {
 	Nullable             bool               `json:"nullable,omitempty"`
 	Ref                  string             `json:"$ref,omitempty"`
 	Example              interface{}        `json:"example,omitempty"`
+	// AllOf holds a $ref that has sibling keys, such as nullable or a
+	// description, because OpenAPI 3.0.3 ignores every key beside $ref.
+	AllOf []*Schema `json:"allOf,omitempty"`
 }
 
 // SchemaFromType infers an OpenAPI schema from a Go value or reflect.Type.
@@ -30,24 +33,60 @@ func SchemaFromType(value interface{}) *Schema {
 	if value == nil {
 		return &Schema{}
 	}
-	if typ, ok := value.(reflect.Type); ok {
-		return schemaFromReflectType(typ, make(map[reflect.Type]bool))
-	}
-	return schemaFromReflectType(reflect.TypeOf(value), make(map[reflect.Type]bool))
+	return newInlineSchemaWalker().schemaFromReflectType(typeOfValue(value))
 }
 
-func schemaFromReflectType(typ reflect.Type, seen map[reflect.Type]bool) *Schema {
+// typeOfValue returns value itself when it is already a reflect.Type.
+func typeOfValue(value interface{}) reflect.Type {
+	if typ, ok := value.(reflect.Type); ok {
+		return typ
+	}
+	return reflect.TypeOf(value)
+}
+
+// schemaWalker turns a Go type into a schema. With components set it writes
+// each named struct once under #/components/schemas and returns a $ref to it;
+// without components it expands every struct in place, so the result stands
+// alone.
+type schemaWalker struct {
+	components map[string]*Schema
+	names      map[reflect.Type]string
+	usedNames  map[string]reflect.Type
+	// seen holds the structs being expanded inline, so a recursive type
+	// stops at its second visit instead of looping. It is nil with
+	// components, where the component placeholder stops recursion and an
+	// anonymous struct must still expand inside a component it reaches.
+	seen map[reflect.Type]bool
+}
+
+func newInlineSchemaWalker() *schemaWalker {
+	return &schemaWalker{seen: make(map[reflect.Type]bool)}
+}
+
+func newComponentSchemaWalker() *schemaWalker {
+	return &schemaWalker{
+		components: make(map[string]*Schema),
+		names:      make(map[reflect.Type]string),
+		usedNames:  make(map[string]reflect.Type),
+	}
+}
+
+func (walker *schemaWalker) schemaFromReflectType(typ reflect.Type) *Schema {
 	if typ == nil {
 		return &Schema{}
 	}
 	if typ == reflect.TypeOf(time.Time{}) {
 		return &Schema{Type: "string", Format: "date-time"}
 	}
-	for typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
-		schema := schemaFromReflectType(typ, seen)
+	if typ.Kind() == reflect.Ptr {
+		// Every walk returns a fresh schema, so marking it nullable cannot
+		// leak into a component or another field.
+		schema := walker.schemaFromReflectType(typ.Elem())
 		schema.Nullable = true
-		return schema
+		return refToAllOf(schema)
+	}
+	if walker.components != nil && typ.Kind() == reflect.Struct && typ.Name() != "" {
+		return walker.componentRef(typ)
 	}
 	switch typ.Kind() {
 	case reflect.Bool:
@@ -67,15 +106,15 @@ func schemaFromReflectType(typ reflect.Type, seen map[reflect.Type]bool) *Schema
 	case reflect.String:
 		return &Schema{Type: "string"}
 	case reflect.Slice, reflect.Array:
-		return &Schema{Type: "array", Items: schemaFromReflectType(typ.Elem(), seen)}
+		return &Schema{Type: "array", Items: walker.schemaFromReflectType(typ.Elem())}
 	case reflect.Map:
 		schema := &Schema{Type: "object"}
 		if typ.Key().Kind() == reflect.String {
-			schema.AdditionalProperties = schemaFromReflectType(typ.Elem(), seen)
+			schema.AdditionalProperties = walker.schemaFromReflectType(typ.Elem())
 		}
 		return schema
 	case reflect.Struct:
-		return structSchema(typ, seen)
+		return walker.structSchema(typ)
 	case reflect.Interface:
 		return &Schema{}
 	default:
@@ -83,12 +122,14 @@ func schemaFromReflectType(typ reflect.Type, seen map[reflect.Type]bool) *Schema
 	}
 }
 
-func structSchema(typ reflect.Type, seen map[reflect.Type]bool) *Schema {
-	if seen[typ] {
-		return &Schema{Type: "object"}
+func (walker *schemaWalker) structSchema(typ reflect.Type) *Schema {
+	if walker.seen != nil {
+		if walker.seen[typ] {
+			return &Schema{Type: "object"}
+		}
+		walker.seen[typ] = true
+		defer delete(walker.seen, typ)
 	}
-	seen[typ] = true
-	defer delete(seen, typ)
 
 	schema := &Schema{
 		Type:       "object",
@@ -104,7 +145,7 @@ func structSchema(typ reflect.Type, seen map[reflect.Type]bool) *Schema {
 			continue
 		}
 		if field.Anonymous && name == "" {
-			embedded := schemaFromReflectType(field.Type, seen)
+			embedded := walker.resolveLocalRef(walker.schemaFromReflectType(field.Type))
 			for propName, propSchema := range embedded.Properties {
 				schema.Properties[propName] = propSchema
 			}
@@ -114,9 +155,9 @@ func structSchema(typ reflect.Type, seen map[reflect.Type]bool) *Schema {
 		if name == "" {
 			name = field.Name
 		}
-		fieldSchema := schemaFromReflectType(field.Type, seen)
+		fieldSchema := walker.schemaFromReflectType(field.Type)
 		applySchemaTags(fieldSchema, field)
-		schema.Properties[name] = fieldSchema
+		schema.Properties[name] = refToAllOf(fieldSchema)
 		if isRequiredField(field, omitEmpty) {
 			schema.Required = append(schema.Required, name)
 		}

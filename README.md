@@ -66,8 +66,8 @@ func main() {
 		doc.Status(201, envelope.Success[TaskResponse]()),
 	)
 
-	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
-	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
+	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs), doc.Hidden())
+	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"), doc.Hidden())
 
 	http.ListenAndServe(":8080", a.Handler(router))
 }
@@ -176,7 +176,7 @@ Route variables are read with `api.GetRouteVar("id", r)`. `stdadapter` stores th
 
 ## Query parameters
 
-`api.QueryInt`, `api.QueryBool`, `api.QueryEnum` and `api.QueryString` read the first value of a query parameter and tell absent from invalid. `ok` is false when the parameter is absent. An invalid value, an empty one for the typed helpers, or a malformed query string that hides the parameter returns `ok` true and a validation error (`codes.ValFormat`), which `api.WriteError` answers with 400. `api.WithQueryCode` sets your own code; give it `codes.KindValidation` to keep the 400.
+`api.QueryInt`, `api.QueryBool`, `api.QueryEnum` and `api.QueryString` read the first value of a query parameter and tell absent from invalid. `ok` is false when the parameter is absent. An invalid value, an empty one for the typed helpers, or a malformed pair of the parameter itself that hides it (`limit=%zz`, or `a=1;limit=5`, since Go does not split on `;`; a well-formed pair of the same name is still read, so `limit=%zz&limit=5` gives 5) returns `ok` true and a validation error (`codes.ValFormat`), which `api.WriteError` answers with 400. A malformed pair of another parameter is ignored, as `r.URL.Query()` does: since v1.2.0, `?q=100%` no longer fails `api.QueryInt(r, "limit")`. `api.WithQueryCode` sets your own code; give it `codes.KindValidation` to keep the 400.
 
 ```go
 var CodeLimitInvalid = codes.New("PLN-050", "limit must be a number").WithKind(codes.KindValidation)
@@ -226,7 +226,7 @@ Two settings shape the `title` and `message` of every response on the default in
 
 ## Writing errors
 
-`api.WriteError(w, r, err)` answers with the status of the error's code kind (`jgolang/errors` v0.4.0+): validation 400, unauthorized 401, forbidden 403, not_found 404, conflict 409, and 500 for infrastructure or a code without a kind. The response code and message come from the same code, also behind `fmt.Errorf`. `api.StatusForKind` exposes the mapping.
+`api.WriteError(w, r, err)` answers with the status of the error's code kind (`jgolang/errors` v0.4.0+): validation 400, unauthorized 401, forbidden 403, not_found 404, conflict 409, too_large 413 (`codes.KindTooLarge`, since v1.2.0 with `jgolang/errors` v0.9.0), and 500 for infrastructure or a code without a kind. A service's own size limit (an upload over its quota, say) answers with the same 413 status as the library's request body limit, but with the service's code and message and the default error title (the library's own 413 uses `E002` and `Request content too large`). The response code and message come from the same code, also behind `fmt.Errorf`. `api.StatusForKind` exposes the mapping.
 
 ```go
 var ErrTaskNotFound = errors.Define(codes.New("PLN-111", "task not found").WithKind(codes.KindNotFound), "task not found")
@@ -312,6 +312,7 @@ func main() {
 		Title:   "Tasks API",
 		Version: "1.0.0",
 	})
+	docs.SetServers(doc.Server{URL: "http://localhost:8080"})
 	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
 	// Optional: require bearerAuth everywhere and mark exceptions with doc.Public().
 	// docs.SetDefaultSecurity("bearerAuth")
@@ -333,20 +334,20 @@ func main() {
 		doc.Status(200, envelope.Success[[]TaskResponse]()),
 	)
 
-	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs))
-	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"))
+	router.Handle("GET", "/openapi.json", doc.OpenAPIHandler(docs), doc.Hidden())
+	router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json"), doc.Hidden())
 
 	http.ListenAndServe(":8080", router)
 }
 ```
 
-`GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it. The docs page is titled `API Docs` and ships a generic icon; `doc.WithTitle("Orders API")` and `doc.WithFavicon("/static/orders-icon.png")` set your own (see [Docs page title and icon](docs/openapi.md#docs-page-title-and-icon), which also shows how to pass them through the exporter registry).
+`docs.SetServers` writes the spec's `servers` (the base URL for "Try it out" and generated clients); `doc.API` also takes optional `Contact` and `License` (see [API metadata](docs/openapi.md#api-metadata)). `GET /openapi.json` serves the OpenAPI 3 document and `GET /docs` serves Swagger UI pointed at it; `doc.Hidden()` keeps both out of the document. The docs page is titled `API Docs` and ships a generic icon; `doc.WithTitle("Orders API")` and `doc.WithFavicon("/static/orders-icon.png")` set your own (see [Docs page title and icon](docs/openapi.md#docs-page-title-and-icon), which also shows how to pass them through the exporter registry).
 
 ```go
 router.Handle("GET", "/docs", doc.SwaggerUIHandler("/openapi.json",
 	doc.WithTitle("Orders API"),
 	doc.WithFavicon("/static/orders-icon.png"),
-))
+), doc.Hidden())
 ```
 
 Document the body in the shape the request mode expects: the content type itself in plain mode (`doc.Body(CreateTaskRequest{})`), or `doc.Body(envelope.Request[CreateTaskRequest]())` in envelope mode. `envelope.Success[T]()` and `envelope.Error()` document the envelope response mode.

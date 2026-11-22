@@ -222,6 +222,14 @@ func Public() RouteOption {
 	}
 }
 
+// Hidden keeps the route out of the generated spec, for routes such as
+// /openapi.json and /docs that serve the documentation itself.
+func Hidden() RouteOption {
+	return func(route *Route) {
+		route.Hidden = true
+	}
+}
+
 // Security adds a named security requirement to the operation.
 func Security(name string) RouteOption {
 	return func(route *Route) {
