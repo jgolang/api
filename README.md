@@ -354,6 +354,17 @@ Document the body in the shape the request mode expects: the content type itself
 
 `a.DocSuccess(status, sample)` and `a.DocError(status, description)` document a response as the instance `a` sends it, so changing its response mode does not leave the spec wrong: the envelope in envelope mode, the content alone (and JSON `null` for an error) in none mode. They write the schema only, never an example; a 1xx, 204 or 304 is documented without content. Plain mode is documented as envelope for now, and problem mode as none for successes and as envelope for errors. A nil API (the default instance) reads `CurrentResponseMode` when the option is built. See [Instance response options](docs/openapi.md#instance-response-options).
 
+Bodies and responses are documented as `application/json` by default. For a `multipart/form-data` upload, an `application/octet-stream` or `*/*` download, or an `application/problem+json` error, set `doc.Route.BodyContentType` or `doc.RouteResponse.ContentType` with a `func(*doc.Route)` closure:
+
+```go
+api.Post(router, "/files", upload,
+	doc.BodySchema(uploadSchema),
+	func(route *doc.Route) { route.BodyContentType = "multipart/form-data" },
+)
+```
+
+See [Media types](docs/openapi.md#media-types) for the download and problem cases.
+
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
 
 ### stdadapter routing
