@@ -56,5 +56,43 @@
         "code": "TSK-001"
       }
     }
+  },
+  {
+    "name": "found task",
+    "method": "GET",
+    "path": "/projects/7/tasks/42",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "success",
+        "code": "0000"
+      },
+      "content": {
+        "id": 42,
+        "projectId": "7",
+        "title": "Write docs",
+        "priority": "high"
+      }
+    }
+  },
+  {
+    "name": "missing task",
+    "method": "GET",
+    "path": "/projects/7/tasks/1",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 404,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Error response!",
+        "message": "task not found (-TSK-404)",
+        "code": "TSK-404"
+      }
+    }
   }
 ]

@@ -43,6 +43,10 @@ type API struct {
 	// replacesOuterLimit is set by WithMaxBodyBytes: only a limit the
 	// service chose replaces the one of an instance around this one.
 	replacesOuterLimit bool
+	// responseMode is the mode of the built-in formatter, read by DocSuccess
+	// and DocError. It is empty only on the default instance, which reads
+	// CurrentResponseMode.
+	responseMode ResponseMode
 }
 
 // options collects what the Option values passed to New set. New owns it, so
@@ -107,6 +111,7 @@ func New(opts ...Option) *API {
 		sensitiveLogKeys:   instanceSensitiveLogKeys(o.sensitiveLogKeys),
 		maxBodyBytes:       o.maxBodyBytes,
 		replacesOuterLimit: o.maxBodyBytesSet,
+		responseMode:       o.responseMode,
 	}
 }
 
