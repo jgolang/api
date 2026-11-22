@@ -1,0 +1,113 @@
+[
+  {
+    "name": "valid task",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{\"title\":\"Write docs\",\"priority\":\"high\"}",
+    "status": 201,
+    "contentType": "application/json",
+    "headers": {
+      "Location": "/projects/7/tasks/42"
+    },
+    "body": {
+      "header": {
+        "type": "success",
+        "code": "0000",
+        "info": {
+          "formatter": "custom"
+        }
+      },
+      "content": {
+        "id": 42,
+        "projectId": "7",
+        "title": "Write docs",
+        "priority": "high"
+      }
+    }
+  },
+  {
+    "name": "empty title",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{\"title\":\" \"}",
+    "status": 400,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Error response!",
+        "message": "title is required (-TSK-001)",
+        "code": "TSK-001",
+        "info": {
+          "formatter": "custom"
+        }
+      }
+    }
+  },
+  {
+    "name": "malformed body",
+    "method": "POST",
+    "path": "/projects/7/tasks",
+    "requestContentType": "application/json",
+    "requestBody": "{",
+    "status": 400,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Error response!",
+        "message": "title is required (-TSK-001)",
+        "code": "TSK-001",
+        "info": {
+          "formatter": "custom"
+        }
+      }
+    }
+  },
+  {
+    "name": "found task",
+    "method": "GET",
+    "path": "/projects/7/tasks/42",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "success",
+        "code": "0000",
+        "info": {
+          "formatter": "custom"
+        }
+      },
+      "content": {
+        "id": 42,
+        "projectId": "7",
+        "title": "Write docs",
+        "priority": "high"
+      }
+    }
+  },
+  {
+    "name": "missing task",
+    "method": "GET",
+    "path": "/projects/7/tasks/1",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 404,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Error response!",
+        "message": "task not found (-TSK-404)",
+        "code": "TSK-404",
+        "info": {
+          "formatter": "custom"
+        }
+      }
+    }
+  }
+]

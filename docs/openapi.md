@@ -222,13 +222,51 @@ A pointer sample documents the type it points to. A JSON `null` body is
 written as `{"type": "object", "nullable": true, "enum": [null]}`, since
 OpenAPI 3.0.3 needs a type beside `nullable`. An empty description documents
 the HTTP status text. Only the schema is written, never an example: a
-zero-value sample is not a body the route sends, so add a real example with
-`doc.StatusWithExample` instead.
+zero-value sample is not a body the route sends. Add a real example with
+`DocSuccessExample` (below).
 
 The mode is read when the option is built: an API from `api.New` uses its
 own, and the default instance (a nil `*api.API`) reads `CurrentResponseMode`.
 As with every response option, a later option for the same status replaces an
 earlier one. See [ADR 0004](adr/0004-instance-doc-options.md).
+
+### Examples from a sample
+
+`(*api.API).DocSuccessExample(status, sample, headers...)` documents the same
+response as `DocSuccess`, with the given response headers, and adds an
+example built by the instance's own response formatter:
+
+```go
+api.Post(router, "/tasks", createTask,
+	instance.DocSuccessExample(http.StatusCreated, TaskResponse{ID: 42, Title: "Write docs"},
+		doc.ResponseHeader("Location", doc.String, "URL of the created task")),
+	instance.DocError(http.StatusBadRequest, "Invalid body"),
+)
+```
+
+On an envelope instance the 201 example is
+`{"content":{"id":42,"title":"Write docs"},"header":{"code":"0000","type":"success"}}`
+(`ExampleAPI_DocSuccessExample`). The formatter receives the success that
+`Success.Write` would send for `sample`: the default title and message,
+`ResponseCodes.Success`, and no event ID or token, since there is no request.
+So the example shows what the wire shows in each mode: the blank title and
+message omitted from the envelope, the nine plain keys with empty strings and
+`info: null`, the content alone in none and problem modes, and the code as
+the formatter writes it (lowercased with `api.WithLowercaseCodes`).
+
+- The sample is the example: pass real values. A zero value is never turned
+  into an example on its own; that is what `DocSuccess` is for.
+- The example is built when `DocSuccessExample` is called, with the formatter
+  of an API from `api.New` (a custom `api.WithResponseFormatter` included) or,
+  on the default instance, the registered one. Values the formatter computes,
+  such as timestamps, are frozen at that moment.
+- A Content-Type the formatter sets in its headers becomes the documented
+  media type.
+- No example is written for a status without a body (1xx, 204, 304), a
+  formatter that returns nil, a body that cannot be encoded (a NaN), or a JSON
+  `null` body (a nil sample in none and problem modes).
+- Numbers are kept exact: the body is encoded as the writer encodes it and
+  decoded with `UseNumber`.
 
 ### Limits
 
@@ -237,12 +275,14 @@ earlier one. See [ADR 0004](adr/0004-instance-doc-options.md).
   instance that serves it. When several instances with different modes serve
   routes of one `doc.Docs`, the spec holds several formats, one per route, so
   each route must use the methods of the instance that serves it.
-- **Built-in formatter only.** The methods describe what the built-in
+- **Built-in formatter schemas.** The schemas describe what the built-in
   formatter of each mode sends. A custom formatter set with
-  `api.WithResponseFormatter` is not described; document its bodies with the
-  `doc` options (`doc.Status`, `doc.ResponseSchema`,
-  `doc.StatusWithExample`). Building the documentation from the formatter
-  itself is planned separately.
+  `api.WithResponseFormatter` is not described; document a body of another
+  shape with the `doc` options (`doc.Status`, `doc.ResponseSchema`,
+  `doc.StatusWithExample`). Only the example of `DocSuccessExample` comes from
+  the custom formatter, so a formatter that changes the shape documents an
+  example its schema rejects, which an OpenAPI validator with example
+  validation reports.
 
 ## API metadata
 

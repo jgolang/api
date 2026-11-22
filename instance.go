@@ -47,6 +47,10 @@ type API struct {
 	// and DocError. It is empty only on the default instance, which reads
 	// CurrentResponseMode.
 	responseMode ResponseMode
+	// formatter is the response formatter New bound, read by
+	// DocSuccessExample. It is nil only on the default instance, which uses
+	// the registered one.
+	formatter core.APIResponseFormatter
 }
 
 // options collects what the Option values passed to New set. New owns it, so
@@ -112,6 +116,7 @@ func New(opts ...Option) *API {
 		maxBodyBytes:       o.maxBodyBytes,
 		replacesOuterLimit: o.maxBodyBytesSet,
 		responseMode:       o.responseMode,
+		formatter:          formatter,
 	}
 }
 

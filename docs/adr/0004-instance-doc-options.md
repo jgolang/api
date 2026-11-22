@@ -1,6 +1,6 @@
 # 0004 — Instances document the bodies they send
 
-- Status: accepted (2026-11-22)
+- Status: accepted (2026-11-22); amended for story 4.1 (see the end)
 - Initiative: api docs match the wire (epic "mode-aware responses", story 1)
 - Release: next MINOR (new exported methods, no wire change)
 
@@ -33,3 +33,15 @@ The wire format does not change. Whether none mode should keep sending `null` fo
 - **Generic functions `api.DocSuccess[T](a, status)`.** Would avoid reflection, but read as a second family of doc helpers beside `envelope.Success[T]()` and still need the instance; a method on the instance keeps the mode next to its owner.
 - **`doc` reads the mode** (a mode field on `doc.Docs` or the route). `doc` would have to know `api`'s modes and formatter, against ADR 0001 §3, and every route would depend on generation-time state.
 - **Examples from the sample.** Rejected in decision 3: a zero value is not a real body.
+
+## Amendment (story 4.1): examples from an explicit sample
+
+Accepted 2026-11-22. Decision 3 stands for `DocSuccess`, which stays schema-only. A route that wants a real example no longer has to write the nested envelope or plain map by hand with `doc.StatusWithExample`, which drifted from what the formatter sends (code `0000`, blank title, plain's nine keys, custom formatters).
+
+1. **An explicit method.** `(*API).DocSuccessExample(status int, sample any, headers ...doc.ResponseHeaderInfo) doc.RouteOption` documents the response `DocSuccess` documents, with the headers, plus an example. The separate name keeps the author's intent ("this value is the example") in the call, so an example is never written from a type or zero value implicitly. The variadic headers mirror `doc.StatusWithExample`, since a created response carries `Location`.
+2. **The formatter, at call time.** The example is the body the instance's response formatter builds for a success carrying `sample`, as `Success.Write` builds it (default title and message, `ResponseCodes.Success`, `SuccessType`), JSON-encoded as the writer encodes it and decoded with `UseNumber`. An API from `New` stores the formatter it bound in an unexported field; the default instance uses the registered one. As in decision 4, it is read when the method is called. The writer is never called, so documentation has no writer side effects such as logging.
+3. **No request.** There is no request at documentation time, so the event ID and the token are empty.
+4. **Content type.** A Content-Type the formatter sets becomes the response's `doc.RouteResponse.ContentType`.
+5. **No example, no panic.** A status without a body, a nil formatted response, a body that cannot be encoded and a JSON `null` body leave the response with its schema only.
+
+Consequences: a custom formatter's computed values (timestamps, random IDs) are frozen when the method is called. The schema still describes the built-in mode, so a custom formatter that changes the body's shape documents with the `doc` options; kin-openapi example validation flags an example its schema rejects. The complete-route contract test now also records a custom-formatter variant and checks that every documented example equals the recorded wire body.

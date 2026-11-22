@@ -66,6 +66,35 @@ func ExampleAPI_DocError() {
 	// The title is missing {"type":"object","enum":[null],"nullable":true}
 }
 
+// ExampleAPI_DocSuccessExample documents a created task with an example that
+// the instance's formatter builds from the sample, so it is the body the
+// route sends: the blank title and message are omitted and the code is
+// ResponseCodes.Success.
+func ExampleAPI_DocSuccessExample() {
+	type TaskResponse struct {
+		ID    int    `json:"id"`
+		Title string `json:"title"`
+	}
+	instance := api.New() // envelope responses
+
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	router := stdadapter.New(http.NewServeMux(), docs)
+	api.Post(router, "/tasks", func(w http.ResponseWriter, r *http.Request) {},
+		instance.DocSuccessExample(http.StatusCreated, TaskResponse{ID: 42, Title: "Write docs"},
+			doc.ResponseHeader("Location", doc.String, "URL of the created task")),
+	)
+
+	response := doc.GenerateOpenAPI(docs).Paths["/tasks"]["post"].Responses["201"]
+	example, err := json.Marshal(response.Content["application/json"].Example)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(example))
+	// Output:
+	// {"content":{"id":42,"title":"Write docs"},"header":{"code":"0000","type":"success"}}
+}
+
 // ExampleAPI_DocSuccess_envelope documents GET /tasks/{taskID} on an
 // envelope-mode instance: an envelope with header and content for a success
 // and the header alone for an error.

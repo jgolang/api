@@ -3,11 +3,11 @@
 //
 // It is a nested, test-only module so that its OpenAPI validator
 // (kin-openapi) never reaches api's go.mod. It never imports api: the root
-// module's tests write, per response mode, the generated spec to
-// ../testdata/openapi/complete-route.<mode>.json and the real request and
-// response exchanges to ../testdata/contract/complete-route.<mode>.json, for
-// the envelope, none, plain and problem modes, and this package only reads
-// those files. Refresh them from the root module
+// module's tests write, per instance variant, the generated spec to
+// ../testdata/openapi/complete-route.<variant>.json and the real request and
+// response exchanges to ../testdata/contract/complete-route.<variant>.json,
+// for the envelope, none, plain and problem modes and a custom formatter, and
+// this package only reads those files. Refresh them from the root module
 // with: go test -run 'CompleteRoute' -update .
 package contracttest
 
@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -28,8 +29,9 @@ import (
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 )
 
-// modes are the response modes the root module records.
-var modes = []string{"envelope", "none", "plain", "problem"}
+// modes are the instance variants the root module records: the four
+// response modes and an envelope instance with a custom formatter.
+var modes = []string{"envelope", "none", "plain", "problem", "custom-formatter"}
 
 // errBodyWithoutContent reports a response that sends a body for a status
 // the spec documents without content. ValidateResponse accepts any body in
@@ -230,6 +232,57 @@ func TestRecordedResponsesMatchSpec(t *testing.T) {
 	}
 }
 
+// TestDocumentedExamplesMatchRecordedBodies checks that every documented
+// response example equals the body the instance sent for that status and
+// media type, so an example cannot drift from the wire while still matching
+// its schema.
+func TestDocumentedExamplesMatchRecordedBodies(t *testing.T) {
+	compared := 0
+	for _, mode := range modes {
+		contract := loadContract(t, mode)
+		for _, exchange := range contract.exchanges {
+			example, ok := documentedExample(t, contract.router, exchange)
+			if !ok {
+				continue
+			}
+			compared++
+			t.Run(mode+"/"+exchange.Name, func(t *testing.T) {
+				var body any
+				if err := json.Unmarshal(responseBody(exchange.Body), &body); err != nil {
+					t.Fatalf("decode body %s: %v", exchange.Body, err)
+				}
+
+				if !reflect.DeepEqual(example, body) {
+					t.Fatalf("documented example = %v, recorded body = %s", example, exchange.Body)
+				}
+			})
+		}
+	}
+	if compared == 0 {
+		t.Fatal("no recorded exchange has a documented example")
+	}
+}
+
+// documentedExample returns the example the spec documents for the status
+// and media type of exchange, and whether there is one.
+func documentedExample(t *testing.T, router routers.Router, exchange recordedExchange) (any, bool) {
+	t.Helper()
+	request := httptest.NewRequest(exchange.Method, exchange.Path, nil)
+	route, _, err := router.FindRoute(request)
+	if err != nil {
+		t.Fatalf("find route of %q: %v", exchange.Name, err)
+	}
+	response := route.Operation.Responses.Status(exchange.Status)
+	if response == nil || response.Value == nil {
+		return nil, false
+	}
+	media := response.Value.Content.Get(exchange.ContentType)
+	if media == nil || media.Example == nil {
+		return nil, false
+	}
+	return media.Example, true
+}
+
 // TestValidatorRejectsMismatches proves the harness fails on drift: each
 // case breaks each success exchange in one way that the spec does not allow.
 func TestValidatorRejectsMismatches(t *testing.T) {
@@ -292,8 +345,9 @@ func TestValidatorRejectsMismatches(t *testing.T) {
 }
 
 // mutatedExchanges are the success exchanges the mismatch cases break: the
-// 201 documented with doc.StatusWithExample and the 200 documented with
-// (*api.API).DocSuccess, so both kinds of documented body must reject drift.
+// 201 documented with (*api.API).DocSuccessExample and the 200 documented
+// with (*api.API).DocSuccess, so both kinds of documented body must reject
+// drift.
 var mutatedExchanges = []string{"valid task", "found task"}
 
 // exchangeNamed returns the recorded exchange called name.
