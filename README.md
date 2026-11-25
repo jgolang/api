@@ -428,7 +428,7 @@ api.Get(router, "/tasks/{id}", getTask, doc.ResponseRef(http.StatusNotFound, "Ta
 api.Delete(router, "/tasks/{id}", deleteTask, doc.ResponseRef(http.StatusNotFound, "TaskNotFound"))
 ```
 
-Struct fields can also carry the constraint tags `enum`, `default`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern` and `deprecated`, which reach the schema typed like the field; `doc.CheckSchemaTags(docs)` reports a tag whose value does not parse. See [Schema tags](docs/openapi.md#schema-tags).
+Struct fields can also carry the constraint tags `enum`, `default`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern` and `deprecated`, which reach the schema typed like the field; `doc.CheckSchemaTags(docs)` reports a tag whose value does not parse, a tag on a type it does not apply to, and contradictory tags. See [Schema tags](docs/openapi.md#schema-tags).
 
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
 
