@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -29,9 +30,41 @@ import (
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 )
 
-// modes are the instance variants the root module records: the four
-// response modes and an envelope instance with a custom formatter.
-var modes = []string{"envelope", "none", "plain", "problem", "custom-formatter"}
+// recordings is where the root module's tests write the exchanges of every
+// instance variant, as complete-route.<variant>.json. Each recording is
+// contract-checked against the spec of the same variant, so a variant the
+// root module adds is covered without changing this file.
+const recordings = "../testdata/contract"
+
+// recordedVariants returns the <variant> part of every
+// complete-route.<variant>.json in dir, sorted by file name, and an error
+// when there is none.
+func recordedVariants(dir string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "complete-route.*.json"))
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no complete-route.*.json recording in %s", dir)
+	}
+	variants := make([]string, 0, len(paths))
+	for _, path := range paths {
+		name := strings.TrimPrefix(filepath.Base(path), "complete-route.")
+		variants = append(variants, strings.TrimSuffix(name, ".json"))
+	}
+	return variants, nil
+}
+
+// mustRecordedVariants returns the variants recorded under recordings and
+// fails the test when it cannot list them.
+func mustRecordedVariants(t *testing.T) []string {
+	t.Helper()
+	modes, err := recordedVariants(recordings)
+	if err != nil {
+		t.Fatalf("list recorded variants: %v", err)
+	}
+	return modes
+}
 
 // errBodyWithoutContent reports a response that sends a body for a status
 // the spec documents without content. ValidateResponse accepts any body in
@@ -204,6 +237,7 @@ func responseBody(recorded json.RawMessage) []byte {
 }
 
 func TestRecordedResponsesMatchSpec(t *testing.T) {
+	modes := mustRecordedVariants(t)
 	seenGaps := make(map[string]bool)
 	for _, mode := range modes {
 		contract := loadContract(t, mode)
@@ -238,6 +272,7 @@ func TestRecordedResponsesMatchSpec(t *testing.T) {
 // the media type it sent, so an example cannot drift from the wire while
 // still matching its schema. Each recording must compare at least one.
 func TestDocumentedExamplesMatchRecordedBodies(t *testing.T) {
+	modes := mustRecordedVariants(t)
 	for _, mode := range modes {
 		contract := loadContract(t, mode)
 		compared := 0
@@ -281,6 +316,7 @@ func checkExample(examples map[string]any, exchange recordedExchange) error {
 // under a media type other than the one sent must fail, even though the
 // example equals the body.
 func TestExampleCheckRejectsAnExampleUnderAnotherMediaType(t *testing.T) {
+	modes := mustRecordedVariants(t)
 	for _, mode := range modes {
 		contract := loadContract(t, mode)
 		checked := 0
@@ -343,6 +379,7 @@ func documentedExamples(t *testing.T, contract contract, exchange recordedExchan
 // TestValidatorRejectsMismatches proves the harness fails on drift: each
 // case breaks each success exchange in one way that the spec does not allow.
 func TestValidatorRejectsMismatches(t *testing.T) {
+	modes := mustRecordedVariants(t)
 	tests := []struct {
 		name      string
 		modes     []string
@@ -441,4 +478,35 @@ func withField(t *testing.T, body json.RawMessage, parents []string, key string,
 		t.Fatalf("encode body: %v", err)
 	}
 	return changed
+}
+
+// TestRecordedVariantsListsEveryRecording proves a new recording is
+// contract-checked without a change here: every complete-route.*.json in
+// the folder is a variant, and other files are not.
+func TestRecordedVariantsListsEveryRecording(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"complete-route.a.json", "complete-route.new-variant.json", "other.json", "complete-route.notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("[]"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	variants, err := recordedVariants(dir)
+
+	if err != nil {
+		t.Fatalf("list variants: %v", err)
+	}
+	if want := []string{"a", "new-variant"}; !reflect.DeepEqual(variants, want) {
+		t.Fatalf("variants = %q, want %q", variants, want)
+	}
+}
+
+// TestRecordedVariantsFailsWithoutRecordings proves the contract check
+// cannot pass by checking nothing.
+func TestRecordedVariantsFailsWithoutRecordings(t *testing.T) {
+	_, err := recordedVariants(t.TempDir())
+
+	if err == nil || !strings.Contains(err.Error(), "no complete-route.*.json recording") {
+		t.Fatalf("error = %v, want one saying no recording matches", err)
+	}
 }
