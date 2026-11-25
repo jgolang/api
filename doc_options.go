@@ -3,12 +3,15 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"reflect"
+	"slices"
 
 	"github.com/jgolang/api/core"
 	"github.com/jgolang/api/doc"
 	"github.com/jgolang/api/envelope"
+	"github.com/jgolang/errors/codes"
 )
 
 // DocSuccess documents a success response for status whose content is
@@ -82,7 +85,7 @@ func (a *API) documentedSuccess(status int, sample any) doc.RouteResponse {
 // formatter sets. A body the writer could not send, or JSON null, gives no
 // example: the response is then documented by its schema alone.
 func (a *API) successExample(status int, sample any) (example any, contentType string) {
-	formatted := a.responseFormatter().Format(core.ResponseData{
+	return a.formattedExample(core.ResponseData{
 		Title:          DefaultSuccessTitle,
 		Message:        DefaultSuccessMessage,
 		HTTPStatusCode: status,
@@ -90,6 +93,15 @@ func (a *API) successExample(status int, sample any) (example any, contentType s
 		ResponseType:   SuccessType,
 		Content:        sample,
 	})
+}
+
+// formattedExample formats data with the instance's formatter and returns
+// its body as the writer would send it, decoded with UseNumber so numbers
+// stay exact, and the Content-Type the formatter sets. The example is nil,
+// so none is documented, when the formatter returns nil, the body cannot be
+// encoded or it is JSON null.
+func (a *API) formattedExample(data core.ResponseData) (example any, contentType string) {
+	formatted := a.responseFormatter().Format(data)
 	if formatted == nil {
 		return nil, ""
 	}
@@ -164,6 +176,103 @@ func (a *API) DocError(status int, description string) doc.RouteOption {
 	return func(route *doc.Route) {
 		route.Responses = append(route.Responses, errorResponse(mode, status, description))
 	}
+}
+
+// DocErrors documents the error responses that WriteError sends for
+// errorCodes. Each code goes to the status the instance gives its kind (its
+// WithKindStatus override, else StatusForKind; 500 for a code without a
+// kind), and each status gets one response, in ascending order, with the
+// schema DocError documents and the HTTP status text as description. Every
+// code adds a named example to its status: the name is the code the
+// response carries (the code's Str(), or the default code WriteError uses
+// when Str() is empty), the summary its Msg(), and the value the body the
+// instance's formatter builds for the Error that WriteError writes for an
+// error with that code, without an event ID or token since there is no
+// request. A nil code, a nil pointer one included, documents an error
+// without a code, named by the internal server error code; a repeated name
+// keeps its first example.
+//
+// The examples are built when DocErrors is called, like DocSuccessExample:
+// with the mode, overrides and formatter of an API from New, or, on the
+// default instance (a nil API included), with CurrentResponseMode,
+// StatusForKind and the registered formatter. A formatter that returns nil,
+// a body that cannot be encoded and a JSON null body (every error in
+// ResponseModeNone) leave that code without an example.
+// DocErrors never writes a response nor calls the WithErrorHook. With no
+// codes it documents nothing, and as with every response option, a later
+// option for the same status replaces it.
+func (a *API) DocErrors(errorCodes ...codes.Coder) doc.RouteOption {
+	responses := a.documentedErrors(errorCodes)
+	return func(route *doc.Route) {
+		route.Responses = append(route.Responses, responses...)
+	}
+}
+
+// documentedErrors returns the responses DocErrors documents for
+// errorCodes, ordered by status.
+func (a *API) documentedErrors(errorCodes []codes.Coder) []doc.RouteResponse {
+	mode := a.documentedResponseMode()
+	byStatus := make(map[int]*doc.RouteResponse)
+	documentedCodes := make(map[string]bool)
+	for _, coder := range errorCodes {
+		coder = untypedNilCoder(coder)
+		response := errorResponseForCode(coder, a.statusFor).withDefaults()
+		name := string(response.ResponseCode)
+		if documentedCodes[name] {
+			continue
+		}
+		documentedCodes[name] = true
+
+		documented, ok := byStatus[response.HTTPStatusCode]
+		if !ok {
+			created := errorResponse(mode, response.HTTPStatusCode, "")
+			documented = &created
+			byStatus[response.HTTPStatusCode] = documented
+		}
+		example, contentType := a.formattedExample(core.ResponseData(response))
+		if example == nil {
+			continue
+		}
+		if contentType != "" {
+			documented.ContentType = contentType
+		}
+		if documented.Examples == nil {
+			documented.Examples = make(map[string]any)
+		}
+		documented.Examples[name] = doc.ExampleObject{Summary: codeMessage(coder), Value: example}
+	}
+
+	statuses := slices.Sorted(maps.Keys(byStatus))
+	responses := make([]doc.RouteResponse, 0, len(statuses))
+	for _, status := range statuses {
+		responses = append(responses, *byStatus[status])
+	}
+	return responses
+}
+
+// untypedNilCoder returns nil for a nil coder and for a nil pointer (or
+// other nil reference) behind the interface, such as (*codes.Code)(nil),
+// whose methods would panic; DocErrors then documents it as an uncoded error.
+func untypedNilCoder(coder codes.Coder) codes.Coder {
+	if coder == nil {
+		return nil
+	}
+	value := reflect.ValueOf(coder)
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface:
+		if value.IsNil() {
+			return nil
+		}
+	}
+	return coder
+}
+
+// codeMessage returns coder's public message, "" for a nil coder.
+func codeMessage(coder codes.Coder) string {
+	if coder == nil {
+		return ""
+	}
+	return coder.Msg()
 }
 
 // errorResponse returns the response DocError documents in mode.

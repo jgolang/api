@@ -117,6 +117,102 @@
       }
     },
     "/projects/{projectID}/tasks/{taskID}": {
+      "delete": {
+        "operationId": "deleteTask",
+        "summary": "Delete a task",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "projectID",
+            "in": "path",
+            "required": true,
+            "description": "Project that owns the task",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskID",
+            "in": "path",
+            "required": true,
+            "description": "Task to delete",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                },
+                "examples": {
+                  "TSK-404": {
+                    "summary": "task not found",
+                    "value": {
+                      "code": "TSK-404",
+                      "detail": "task not found",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                },
+                "examples": {
+                  "TSK-409": {
+                    "summary": "task is locked",
+                    "value": {
+                      "code": "TSK-409",
+                      "detail": "task is locked",
+                      "status": 409,
+                      "title": "Conflict",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                },
+                "examples": {
+                  "TSK-500": {
+                    "summary": "task store is unavailable",
+                    "value": {
+                      "code": "TSK-500",
+                      "detail": "task store is unavailable",
+                      "status": 500,
+                      "title": "Internal Server Error",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "getTask",
         "summary": "Get a task",

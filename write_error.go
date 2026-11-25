@@ -49,7 +49,11 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // statusFor returns the instance's override for kind, else StatusForKind.
+// A nil API, the default instance, has no overrides.
 func (a *API) statusFor(kind codes.Kind) int {
+	if a == nil {
+		return StatusForKind(kind)
+	}
 	if status, ok := a.kindStatus[kind]; ok {
 		return status
 	}
@@ -60,8 +64,13 @@ func (a *API) statusFor(kind codes.Kind) int {
 // once so the status, code and message always agree. statusFor decides the
 // status from the code's kind.
 func errorResponseFor(err error, statusFor func(codes.Kind) int) Error {
-	coder := errors.CodeOf(err)
+	return errorResponseForCode(errors.CodeOf(err), statusFor)
+}
 
+// errorResponseForCode builds the response WriteError writes for an error
+// whose code is coder, nil for an uncoded error. DocErrors documents the same
+// response, so the two cannot disagree.
+func errorResponseForCode(coder codes.Coder, statusFor func(codes.Kind) int) Error {
 	var kind codes.Kind
 	if kinded, ok := coder.(codes.Kinded); ok {
 		kind = kinded.Kind()

@@ -94,5 +94,59 @@
         "code": "TSK-404"
       }
     }
+  },
+  {
+    "name": "delete missing task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/1",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 404,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Error response!",
+        "message": "task not found (-TSK-404)",
+        "code": "TSK-404"
+      }
+    },
+    "example": "TSK-404"
+  },
+  {
+    "name": "delete locked task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/42",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 409,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Error response!",
+        "message": "task is locked (-TSK-409)",
+        "code": "TSK-409"
+      }
+    },
+    "example": "TSK-409"
+  },
+  {
+    "name": "delete with store down",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/13",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 500,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "title": "Sorry!",
+        "message": "task store is unavailable (-TSK-500)",
+        "code": "TSK-500"
+      }
+    },
+    "example": "TSK-500"
   }
 ]

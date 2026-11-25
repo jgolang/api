@@ -103,5 +103,62 @@
         }
       }
     }
+  },
+  {
+    "name": "delete missing task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/1",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 404,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "code": "TSK-404",
+        "info": {
+          "formatter": "custom"
+        }
+      }
+    },
+    "example": "TSK-404"
+  },
+  {
+    "name": "delete locked task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/42",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 409,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "code": "TSK-409",
+        "info": {
+          "formatter": "custom"
+        }
+      }
+    },
+    "example": "TSK-409"
+  },
+  {
+    "name": "delete with store down",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/13",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 500,
+    "contentType": "application/json",
+    "body": {
+      "header": {
+        "type": "error",
+        "code": "TSK-500",
+        "info": {
+          "formatter": "custom"
+        }
+      }
+    },
+    "example": "TSK-500"
   }
 ]
