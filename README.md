@@ -412,6 +412,14 @@ api.Post(router, "/tasks", createTask,
 )
 ```
 
+A response shared by many routes, such as a 404, can be written once under `components.responses`: register it with `docs.AddResponse(name, option)` and reference it with `doc.ResponseRef(status, name)`, written as `{"$ref": "#/components/responses/<name>"}`. The option is any response option that adds one response (`doc.ResponseSchema`, `doc.ResponseExamples`, `a.DocError`, `a.DocErrors` with codes of one status); the option's status is not the status the response is documented under, which each route chooses; it only shapes the component as the option builds it, such as its default description. A name that was never added is written as is, leaving a dangling `$ref`. See [Component responses](docs/openapi.md#component-responses):
+
+```go
+docs.AddResponse("TaskNotFound", a.DocError(http.StatusNotFound, "Task not found"))
+api.Get(router, "/tasks/{id}", getTask, doc.ResponseRef(http.StatusNotFound, "TaskNotFound"))
+api.Delete(router, "/tasks/{id}", deleteTask, doc.ResponseRef(http.StatusNotFound, "TaskNotFound"))
+```
+
 See [docs/openapi.md](docs/openapi.md) for security schemes, schema tags, response aliases, all route options, and external adapter examples.
 
 ### stdadapter routing

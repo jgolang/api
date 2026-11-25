@@ -139,6 +139,24 @@ func ResponseSchema(status int, description string, schema *Schema) RouteOption 
 	}
 }
 
+// ResponseRef documents the response for status as a reference to the
+// component response name, added with Docs.AddResponse, written as
+// {"$ref": "#/components/responses/<name>"}. The reference is not checked: a
+// name that was never added leaves the spec with a dangling $ref. An empty
+// name adds nothing. Like the other response options, a later option for the
+// same status replaces it.
+func ResponseRef(status int, name string) RouteOption {
+	return func(route *Route) {
+		if name == "" {
+			return
+		}
+		route.Responses = append(route.Responses, RouteResponse{
+			Status: status,
+			Ref:    name,
+		})
+	}
+}
+
 // ResponseHeader documents a header returned by a response.
 func ResponseHeader(name string, typ DataType, description string) ResponseHeaderInfo {
 	return ResponseHeaderInfo{

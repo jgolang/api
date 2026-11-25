@@ -25,6 +25,7 @@ type OpenAPI struct {
 type Components struct {
 	SecuritySchemes map[string]SecurityScheme `json:"securitySchemes,omitempty"`
 	Schemas         map[string]*Schema        `json:"schemas,omitempty"`
+	Responses       map[string]ResponseObject `json:"responses,omitempty"`
 }
 
 // SecurityScheme is an OpenAPI security scheme object.
@@ -125,11 +126,29 @@ type ExampleObject struct {
 	Value   interface{} `json:"value"`
 }
 
-// ResponseObject is an OpenAPI response object.
+// ResponseObject is an OpenAPI response object, or a reference to a
+// component response when Ref is set.
 type ResponseObject struct {
 	Description string                   `json:"description"`
 	Headers     map[string]OpenAPIHeader `json:"headers,omitempty"`
 	Content     map[string]MediaType     `json:"content,omitempty"`
+	// Ref is a reference such as #/components/responses/NotFound; when set,
+	// it is the only key written.
+	Ref string `json:"$ref,omitempty"`
+}
+
+// MarshalJSON writes only $ref for a reference, since OpenAPI ignores the
+// keys beside it and description would otherwise always be written. It
+// leaves HTML escaping to the caller's encoder. A struct that embeds
+// ResponseObject gets this method too and marshals as ResponseObject.
+func (object ResponseObject) MarshalJSON() ([]byte, error) {
+	if object.Ref != "" {
+		return marshalNoEscape(struct {
+			Ref string `json:"$ref"`
+		}{Ref: object.Ref})
+	}
+	type plain ResponseObject
+	return marshalNoEscape(plain(object))
 }
 
 // OpenAPIHeader is an OpenAPI header object.
@@ -178,6 +197,7 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 		doc.Security = append(doc.Security, map[string][]string{security: {}})
 		ensureSecurityScheme(&doc, security)
 	}
+	addComponentResponses(&doc, docs, schemas)
 	if len(schemas.components) > 0 {
 		ensureComponents(&doc)
 		doc.Components.Schemas = schemas.components
@@ -198,6 +218,26 @@ func ensureSecurityScheme(doc *OpenAPI, name string) {
 			Scheme:       "bearer",
 			BearerFormat: "JWT",
 		}
+	}
+}
+
+// addComponentResponses writes the responses added with Docs.AddResponse.
+// Names are visited in order so the schema names their bodies take do not
+// depend on map iteration.
+func addComponentResponses(doc *OpenAPI, docs *Docs, schemas *schemaWalker) {
+	responses := docs.componentResponses()
+	if len(responses) == 0 {
+		return
+	}
+	names := make([]string, 0, len(responses))
+	for name := range responses {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	ensureComponents(doc)
+	doc.Components.Responses = make(map[string]ResponseObject, len(names))
+	for _, name := range names {
+		doc.Components.Responses[name] = responseObject(responses[name], schemas)
 	}
 }
 
@@ -244,40 +284,7 @@ func buildOperation(route Route, schemas *schemaWalker) Operation {
 		}
 	}
 	for _, response := range route.Responses {
-		description := response.Description
-		if description == "" {
-			description = http.StatusText(response.Status)
-		}
-		if description == "" {
-			description = "Response"
-		}
-		object := ResponseObject{Description: description}
-		if len(response.Headers) > 0 {
-			object.Headers = make(map[string]OpenAPIHeader, len(response.Headers))
-			for _, header := range response.Headers {
-				schema := header.Schema
-				if schema == nil {
-					schema = schemaFromDataType(header.Type)
-				}
-				object.Headers[header.Name] = OpenAPIHeader{
-					Description: header.Description,
-					Schema:      schema,
-				}
-			}
-		}
-		schema := response.Schema
-		if schema == nil && response.Body != nil {
-			schema = schemas.schemaForBody(response.Body)
-		}
-		if schema != nil {
-			media := MediaType{Schema: schema, Example: response.Example}
-			if len(response.Examples) > 0 {
-				media.Example = nil
-				media.Examples = exampleObjects(response.Examples)
-			}
-			object.Content = map[string]MediaType{mediaType(response.ContentType): media}
-		}
-		operation.Responses[strconv.Itoa(response.Status)] = object
+		operation.Responses[strconv.Itoa(response.Status)] = responseObject(response, schemas)
 	}
 	if len(operation.Responses) == 0 {
 		operation.Responses["204"] = ResponseObject{Description: "No Content"}
@@ -290,6 +297,48 @@ func buildOperation(route Route, schemas *schemaWalker) Operation {
 		operation.Security = append(operation.Security, map[string][]string{security: {}})
 	}
 	return operation
+}
+
+// responseObject builds the OpenAPI response for response, a $ref when it
+// names a component response.
+func responseObject(response RouteResponse, schemas *schemaWalker) ResponseObject {
+	if response.Ref != "" {
+		return ResponseObject{Ref: "#/components/responses/" + response.Ref}
+	}
+	description := response.Description
+	if description == "" {
+		description = http.StatusText(response.Status)
+	}
+	if description == "" {
+		description = "Response"
+	}
+	object := ResponseObject{Description: description}
+	if len(response.Headers) > 0 {
+		object.Headers = make(map[string]OpenAPIHeader, len(response.Headers))
+		for _, header := range response.Headers {
+			schema := header.Schema
+			if schema == nil {
+				schema = schemaFromDataType(header.Type)
+			}
+			object.Headers[header.Name] = OpenAPIHeader{
+				Description: header.Description,
+				Schema:      schema,
+			}
+		}
+	}
+	schema := response.Schema
+	if schema == nil && response.Body != nil {
+		schema = schemas.schemaForBody(response.Body)
+	}
+	if schema != nil {
+		media := MediaType{Schema: schema, Example: response.Example}
+		if len(response.Examples) > 0 {
+			media.Example = nil
+			media.Examples = exampleObjects(response.Examples)
+		}
+		object.Content = map[string]MediaType{mediaType(response.ContentType): media}
+	}
+	return object
 }
 
 // exampleObjects turns a named-examples map into OpenAPI example objects.
