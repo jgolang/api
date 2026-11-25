@@ -169,12 +169,17 @@ func statusCarriesBody(status int) bool {
 // ResponseModeEnvelope, envelope.PlainErrorResponse in ResponseModePlain,
 // envelope.ProblemDetails under application/problem+json in
 // ResponseModeProblem, and JSON null in ResponseModeNone, where an error has
-// no content. An empty description documents the HTTP status text. The mode
-// is read as in DocSuccess, and only the schema is written.
+// no content. A status that never carries a body (1xx, 204 and 304) is
+// documented without content in every mode, as in DocSuccess. An empty
+// description documents the HTTP status text. The mode is read as in
+// DocSuccess, and only the schema is written.
 func (a *API) DocError(status int, description string) doc.RouteOption {
-	mode := a.documentedResponseMode()
+	response := doc.RouteResponse{Status: status, Description: description}
+	if statusCarriesBody(status) {
+		response = errorResponse(a.documentedResponseMode(), status, description)
+	}
 	return func(route *doc.Route) {
-		route.Responses = append(route.Responses, errorResponse(mode, status, description))
+		route.Responses = append(route.Responses, response)
 	}
 }
 
@@ -189,8 +194,9 @@ func (a *API) DocError(status int, description string) doc.RouteOption {
 // instance's formatter builds for the Error that WriteError writes for an
 // error with that code, without an event ID or token since there is no
 // request. A nil code, a nil pointer one included, documents an error
-// without a code, named by the internal server error code; a repeated name
-// keeps its first example.
+// without a code, named by the internal server error code. A repeated name
+// keeps its first example; a later code with that name still documents its
+// own status, without an example.
 //
 // The examples are built when DocErrors is called, like DocSuccessExample:
 // with the mode, overrides and formatter of an API from New, or, on the
@@ -217,18 +223,19 @@ func (a *API) documentedErrors(errorCodes []codes.Coder) []doc.RouteResponse {
 	for _, coder := range errorCodes {
 		coder = untypedNilCoder(coder)
 		response := errorResponseForCode(coder, a.statusFor).withDefaults()
-		name := string(response.ResponseCode)
-		if documentedCodes[name] {
-			continue
-		}
-		documentedCodes[name] = true
-
 		documented, ok := byStatus[response.HTTPStatusCode]
 		if !ok {
 			created := errorResponse(mode, response.HTTPStatusCode, "")
 			documented = &created
 			byStatus[response.HTTPStatusCode] = documented
 		}
+
+		// A repeated name drops only its example: its status is still sent.
+		name := string(response.ResponseCode)
+		if documentedCodes[name] {
+			continue
+		}
+		documentedCodes[name] = true
 		a.addErrorExample(documented, name, codeMessage(coder), response)
 	}
 
@@ -277,7 +284,8 @@ func (a *API) addErrorExample(documented *doc.RouteResponse, name, summary strin
 // the route uses the middleware that sends it; as with every response
 // option, a later option for the same status replaces it. The 415 of
 // RequestHeaderJSON and headers such as WWW-Authenticate are not
-// documented.
+// documented. Since it adds several responses, doc.Docs.AddResponse ignores
+// it: it cannot be registered as one component response.
 func (a *API) DocRejections() doc.RouteOption {
 	responses := a.documentedRejections()
 	return func(route *doc.Route) {

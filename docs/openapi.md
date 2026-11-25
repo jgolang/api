@@ -328,8 +328,9 @@ as description, and one named example per code. On an envelope instance the
   its null-body schema only.
 - **Edge cases.** A `nil` code, a nil pointer such as `(*codes.Code)(nil)`
   included, documents an uncoded error: a 500 named by the internal server
-  error code. A code whose name was already documented is skipped (first
-  wins). With no codes the option documents nothing. A
+  error code. A code whose name was already documented adds no example
+  (first wins), but its status is still documented, without an example when
+  no other code gives it one. With no codes the option documents nothing. A
   formatter that returns nil, or a body that cannot be encoded, leaves that
   code without an example and its response with the schema.
 - **When.** Like `DocSuccessExample`, the examples are built when `DocErrors`
@@ -399,6 +400,10 @@ null-body schema without examples.
   400 codes). The examples have no event ID, which the wire bodies carry.
   The 415 of `RequestHeaderJSON` and headers such as `WWW-Authenticate` are
   not documented.
+- **Not a component response.** `docs.AddResponse` keeps only an option
+  that adds exactly one response, so `DocRejections` (four responses) and a
+  `DocErrors` over codes of several statuses register nothing, with no error
+  or log. Add them to each route instead.
 - **No per-code problem type.** `DocErrors` documents the `about:blank`
   problem type `WriteError` sends; there is no example URI or problem `type`
   per code.
@@ -464,7 +469,7 @@ api.Delete(router, "/tasks/{id}", deleteTask, doc.ResponseRef(http.StatusNotFoun
 
 Each route's `404` is written as `{"$ref": "#/components/responses/TaskNotFound"}`, and the component is written like an operation's response: description, headers, schema (a body's Go type goes to `components.schemas`), and examples.
 
-- `docs.AddResponse(name, option)` takes any `doc.RouteOption` that adds exactly one response: `doc.ResponseSchema`, `doc.ResponseExamples`, `doc.Status`, `a.DocError`, or `a.DocErrors` with codes of one status. An empty name, a nil option, and an option that adds no response or several are ignored. Adding a name again replaces it. The stored response is a copy.
+- `docs.AddResponse(name, option)` takes any `doc.RouteOption` that adds exactly one response: `doc.ResponseSchema`, `doc.ResponseExamples`, `doc.Status`, `a.DocError`, or `a.DocErrors` with codes of one status. An empty name, a nil option, and an option that adds no response or several are ignored without an error or log, so `a.DocRejections()` and `a.DocErrors` over codes of several statuses register nothing: add them to each route instead. Adding a name again replaces it. The stored response is a copy.
 - The option's status is not the status the response is documented under: `doc.ResponseRef(status, name)` chooses that on each route, so one component can be referenced as a `404` on one route and a `410` on another. The option's status only shapes the component as the option builds it: its default description is that status's text, and `a.DocError` writes no content for a status without a body. An empty name adds nothing, and as with every response option, a later option for the same status replaces it.
 - References are not checked or inlined: a name that was never added is written as is, and the spec then has a dangling `$ref` that validators reject.
 - `components.responses` is written only when a response is added, so a spec that does not use these names is unchanged. `doc.RouteResponse.Ref` carries the name in Go, and `doc.ResponseObject.Ref` the written reference; a `ResponseObject` with `Ref` marshals as `$ref` alone.

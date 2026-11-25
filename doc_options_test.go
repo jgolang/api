@@ -162,6 +162,30 @@ func TestDocErrorDocumentsTheInstanceModeBody(t *testing.T) {
 	}
 }
 
+func TestDocErrorDocumentsAStatusWithoutBodyWithoutContent(t *testing.T) {
+	modes := []api.ResponseMode{api.ResponseModeEnvelope, api.ResponseModeNone, api.ResponseModePlain, api.ResponseModeProblem}
+	statuses := []int{http.StatusContinue, http.StatusNoContent, http.StatusNotModified}
+	for _, mode := range modes {
+		for _, status := range statuses {
+			t.Run(string(mode)+"/"+strconv.Itoa(status), func(t *testing.T) {
+				option := api.New(api.WithResponseMode(mode)).DocError(status, "")
+
+				description, schema, hasExample := documentedResponse(t, strconv.Itoa(status), option)
+
+				if mediaType := documentedMediaType(t, strconv.Itoa(status), option); mediaType != "" {
+					t.Errorf("media type = %q (schema %s), want no content", mediaType, schema)
+				}
+				if hasExample {
+					t.Error("response has an example, want none")
+				}
+				if want := http.StatusText(status); description != want {
+					t.Errorf("description = %q, want %q", description, want)
+				}
+			})
+		}
+	}
+}
+
 func TestDocOptionsOfTheDefaultInstanceReadCurrentResponseMode(t *testing.T) {
 	saved := api.CurrentResponseMode
 	t.Cleanup(func() { api.CurrentResponseMode = saved })
