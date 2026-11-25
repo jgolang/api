@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/jgolang/api"
+	"github.com/jgolang/api/core"
 	"github.com/jgolang/api/doc"
 	"github.com/jgolang/api/envelope"
 	"github.com/jgolang/api/stdadapter"
@@ -24,10 +25,43 @@ import (
 
 var updateGolden = flag.Bool("update", false, "rewrite the golden files in testdata")
 
-// completeRouteModes are the response modes whose spec and real exchanges
-// are pinned in testdata; the contracttest module validates one against the
-// other.
-var completeRouteModes = []api.ResponseMode{api.ResponseModeEnvelope, api.ResponseModeNone, api.ResponseModePlain, api.ResponseModeProblem}
+// completeRouteVariant is an instance configuration whose spec and real
+// exchanges are pinned in testdata as complete-route.<name>.json; the
+// contracttest module validates one against the other.
+type completeRouteVariant struct {
+	name    string
+	options []api.Option
+}
+
+// completeRouteVariants are the four response modes and a custom formatter.
+var completeRouteVariants = []completeRouteVariant{
+	{name: "envelope", options: []api.Option{api.WithResponseMode(api.ResponseModeEnvelope)}},
+	{name: "none", options: []api.Option{api.WithResponseMode(api.ResponseModeNone)}},
+	{name: "plain", options: []api.Option{api.WithResponseMode(api.ResponseModePlain)}},
+	{name: "problem", options: []api.Option{api.WithResponseMode(api.ResponseModeProblem)}},
+	{name: "custom-formatter", options: []api.Option{api.WithResponseFormatter(infoFormatter{})}},
+}
+
+// infoFormatter is a custom formatter that builds an envelope with only the
+// type, code and a fixed info in its header, so the recordings show that
+// DocSuccessExample documents what a custom formatter sends. It reads no
+// package variable, so the recording does not depend on global state.
+type infoFormatter struct{}
+
+func (infoFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
+	return &core.ResponseFormatted{
+		HTTPStatusCode: data.HTTPStatusCode,
+		Headers:        data.Headers,
+		Body: envelope.Response{
+			Header: envelope.ResponseInfo{
+				Type: data.ResponseType,
+				Code: string(data.ResponseCode),
+				Info: map[string]string{"formatter": "custom"},
+			},
+			Content: data.Content,
+		},
+	}
+}
 
 // refreshHint tells a reader how to rewrite the golden files after an
 // intended change.
@@ -52,12 +86,12 @@ type projectTaskResponse struct {
 	Priority  string `json:"priority,omitempty"`
 }
 
-// newCompleteRoute returns the handler of an instance in mode serving
-// realistic routes that use every kind of doc option, documented for the
-// bodies mode really sends. Stories that pin other modes or validate the
-// spec reuse it.
-func newCompleteRoute(mode api.ResponseMode) (http.Handler, *doc.Docs) {
-	instance := api.New(api.WithResponseMode(mode))
+// newCompleteRoute returns the handler of an instance configured by options
+// serving realistic routes that use every kind of doc option, documented for
+// the bodies the instance really sends. Stories that pin other modes or
+// validate the spec reuse it.
+func newCompleteRoute(options ...api.Option) (http.Handler, *doc.Docs) {
+	instance := api.New(options...)
 	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
 	docs.AddSecurityScheme("bearerAuth", doc.BearerSecurity("JWT"))
 	router := stdadapter.New(http.NewServeMux(), docs)
@@ -71,7 +105,7 @@ func newCompleteRoute(mode api.ResponseMode) (http.Handler, *doc.Docs) {
 		doc.HeaderWithDescription("X-Request-ID", doc.String, false, "Client request ID for tracing"),
 		doc.BodyWithExample(createProjectTaskRequest{}, createProjectTaskRequest{Title: "Write docs", Priority: "high"}),
 		doc.Security("bearerAuth"),
-		doc.StatusWithExample(http.StatusCreated, createdBody(mode), createdTaskExample(mode),
+		instance.DocSuccessExample(http.StatusCreated, createdTask,
 			doc.ResponseHeader("Location", doc.String, "URL of the created task")),
 		instance.DocError(http.StatusBadRequest, "The title is missing or the body is not valid JSON"),
 		instance.DocError(http.StatusUnauthorized, "The bearer token is missing or invalid"),
@@ -89,55 +123,9 @@ func newCompleteRoute(mode api.ResponseMode) (http.Handler, *doc.Docs) {
 	return instance.Handler(router), docs
 }
 
-// createdBody returns the 201 body model of mode, which carries a real
-// example, so it stays a doc option instead of DocSuccess: none and problem
-// modes write the task alone.
-func createdBody(mode api.ResponseMode) any {
-	switch mode {
-	case api.ResponseModeNone, api.ResponseModeProblem:
-		return projectTaskResponse{}
-	case api.ResponseModePlain:
-		return envelope.PlainSuccess[projectTaskResponse]()
-	default:
-		return envelope.Success[projectTaskResponse]()
-	}
-}
-
-// createdTaskExample is the body createTask sends in mode for the request
-// example, captured from a real run.
-func createdTaskExample(mode api.ResponseMode) map[string]any {
-	content := map[string]any{
-		"id":        createdTaskID,
-		"projectId": "7",
-		"title":     "Write docs",
-		"priority":  "high",
-	}
-	switch mode {
-	case api.ResponseModeNone, api.ResponseModeProblem:
-		return content
-	case api.ResponseModePlain:
-		// Plain mode writes every key, even an empty one.
-		return map[string]any{
-			"title":    "",
-			"message":  "",
-			"type":     "success",
-			"code":     "0000",
-			"token":    "",
-			"action":   "",
-			"event_id": "",
-			"info":     nil,
-			"content":  content,
-		}
-	default:
-		return map[string]any{
-			"header": map[string]any{
-				"type": "success",
-				"code": "0000",
-			},
-			"content": content,
-		}
-	}
-}
+// createdTask is the task createTask returns for the request example, the
+// sample of the documented 201 example.
+var createdTask = projectTaskResponse{ID: createdTaskID, ProjectID: "7", Title: "Write docs", Priority: "high"}
 
 func createTask(w http.ResponseWriter, r *http.Request) {
 	var request createProjectTaskRequest
@@ -176,16 +164,16 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestCompleteRouteSpecMatchesGolden(t *testing.T) {
-	for _, mode := range completeRouteModes {
-		t.Run(string(mode), func(t *testing.T) {
-			_, docs := newCompleteRoute(mode)
+	for _, variant := range completeRouteVariants {
+		t.Run(variant.name, func(t *testing.T) {
+			_, docs := newCompleteRoute(variant.options...)
 
 			got, err := json.MarshalIndent(doc.GenerateOpenAPI(docs), "", "  ")
 			if err != nil {
 				t.Fatalf("marshal spec: %v", err)
 			}
 
-			assertMatchesGolden(t, fmt.Sprintf("testdata/openapi/complete-route.%s.json", mode), got)
+			assertMatchesGolden(t, fmt.Sprintf("testdata/openapi/complete-route.%s.json", variant.name), got)
 		})
 	}
 }
@@ -225,9 +213,9 @@ var completeRouteRequests = []struct {
 }
 
 func TestCompleteRouteExchangesMatchGolden(t *testing.T) {
-	for _, mode := range completeRouteModes {
-		t.Run(string(mode), func(t *testing.T) {
-			handler, _ := newCompleteRoute(mode)
+	for _, variant := range completeRouteVariants {
+		t.Run(variant.name, func(t *testing.T) {
+			handler, _ := newCompleteRoute(variant.options...)
 			exchanges := make([]recordedExchange, 0, len(completeRouteRequests))
 			for _, request := range completeRouteRequests {
 				exchanges = append(exchanges, recordExchange(t, handler, request.name, request.method, request.path, request.body))
@@ -238,7 +226,7 @@ func TestCompleteRouteExchangesMatchGolden(t *testing.T) {
 				t.Fatalf("marshal exchanges: %v", err)
 			}
 
-			assertMatchesGolden(t, fmt.Sprintf("testdata/contract/complete-route.%s.json", mode), got)
+			assertMatchesGolden(t, fmt.Sprintf("testdata/contract/complete-route.%s.json", variant.name), got)
 		})
 	}
 }
@@ -426,7 +414,7 @@ func TestCompleteRouteServesDocumentedResponses(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler, _ := newCompleteRoute(api.ResponseModeEnvelope)
+			handler, _ := newCompleteRoute(api.WithResponseMode(api.ResponseModeEnvelope))
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/projects/7/tasks", strings.NewReader(test.body))
 
@@ -442,36 +430,45 @@ func TestCompleteRouteServesDocumentedResponses(t *testing.T) {
 	}
 }
 
-// TestCompleteRouteCreatedExampleMatchesWire keeps each mode's documented
-// 201 example equal to the body the handler really sends for the request
-// example.
+// TestCompleteRouteCreatedExampleMatchesWire keeps each variant's
+// documented 201 example equal to the body the handler really sends for the
+// request example.
 func TestCompleteRouteCreatedExampleMatchesWire(t *testing.T) {
-	for _, mode := range completeRouteModes {
-		t.Run(string(mode), func(t *testing.T) {
-			handler, _ := newCompleteRoute(mode)
+	for _, variant := range completeRouteVariants {
+		t.Run(variant.name, func(t *testing.T) {
+			handler, docs := newCompleteRoute(variant.options...)
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/projects/7/tasks", strings.NewReader(`{"title":"Write docs","priority":"high"}`))
 
 			handler.ServeHTTP(recorder, request)
 
-			var gotBody any
-			if err := json.Unmarshal(recorder.Body.Bytes(), &gotBody); err != nil {
-				t.Fatalf("decode body %s: %v", recorder.Body, err)
+			gotBody := decodedJSON(t, recorder.Body.Bytes())
+			created := doc.GenerateOpenAPI(docs).Paths["/projects/{projectID}/tasks"]["post"].Responses["201"]
+			media, ok := created.Content[recorder.Header().Get("Content-Type")]
+			if !ok {
+				t.Fatalf("201 documents no %q media type", recorder.Header().Get("Content-Type"))
 			}
-			wantJSON, err := json.Marshal(createdTaskExample(mode))
+			example, err := json.Marshal(media.Example)
 			if err != nil {
 				t.Fatalf("marshal example: %v", err)
 			}
-			var wantBody any
-			if err := json.Unmarshal(wantJSON, &wantBody); err != nil {
-				t.Fatalf("decode example: %v", err)
-			}
-			if !reflect.DeepEqual(gotBody, wantBody) {
-				t.Fatalf("wire body = %s, documented example = %s", recorder.Body, wantJSON)
+			if !reflect.DeepEqual(gotBody, decodedJSON(t, example)) {
+				t.Fatalf("wire body = %s, documented example = %s", recorder.Body, example)
 			}
 			if location := recorder.Header().Get("Location"); location != "/projects/7/tasks/42" {
 				t.Fatalf("Location = %q, want /projects/7/tasks/42", location)
 			}
 		})
 	}
+}
+
+// decodedJSON returns encoded decoded into generic values, so two bodies
+// compare by content whatever their key order.
+func decodedJSON(t *testing.T, encoded []byte) any {
+	t.Helper()
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode %s: %v", encoded, err)
+	}
+	return decoded
 }

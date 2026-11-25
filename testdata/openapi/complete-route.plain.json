@@ -67,7 +67,65 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlainResponseOfProjectTaskResponse"
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string",
+                      "example": "refresh"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "0000 by default on success.",
+                      "example": "0000"
+                    },
+                    "content": {
+                      "nullable": true,
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/ProjectTaskResponse"
+                        }
+                      ]
+                    },
+                    "event_id": {
+                      "type": "string",
+                      "example": "f716243f2c92df55fcd8f67018b1dcfb"
+                    },
+                    "info": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "nullable": true,
+                      "example": {
+                        "field": "value"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+                    },
+                    "type": {
+                      "type": "string",
+                      "example": "success"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "message",
+                    "type",
+                    "code",
+                    "token",
+                    "action",
+                    "event_id",
+                    "info",
+                    "content"
+                  ]
                 },
                 "example": {
                   "action": "",
@@ -304,67 +362,6 @@
           "type": {
             "type": "string",
             "example": "error"
-          }
-        },
-        "required": [
-          "title",
-          "message",
-          "type",
-          "code",
-          "token",
-          "action",
-          "event_id",
-          "info",
-          "content"
-        ]
-      },
-      "PlainResponseOfProjectTaskResponse": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string",
-            "example": "refresh"
-          },
-          "code": {
-            "type": "string",
-            "description": "0000 by default on success.",
-            "example": "0000"
-          },
-          "content": {
-            "nullable": true,
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProjectTaskResponse"
-              }
-            ]
-          },
-          "event_id": {
-            "type": "string",
-            "example": "f716243f2c92df55fcd8f67018b1dcfb"
-          },
-          "info": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "nullable": true,
-            "example": {
-              "field": "value"
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "token": {
-            "type": "string",
-            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
-          },
-          "type": {
-            "type": "string",
-            "example": "success"
           }
         },
         "required": [

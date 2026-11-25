@@ -2,11 +2,13 @@ package api_test
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"strconv"
 	"testing"
 
 	"github.com/jgolang/api"
+	"github.com/jgolang/api/core"
 	"github.com/jgolang/api/doc"
 	"github.com/jgolang/api/envelope"
 )
@@ -210,5 +212,177 @@ func TestDocOptionsKeepTheLastResponseOfAStatus(t *testing.T) {
 	}
 	if description != "Gone" || overridden != docOptionsTaskRef {
 		t.Errorf("404 = %q %s, want %q %s", description, overridden, "Gone", docOptionsTaskRef)
+	}
+}
+
+// fixedFormatter is a custom formatter that sends body under contentType
+// whatever the response, or nothing when nilResponse is set.
+type fixedFormatter struct {
+	body        any
+	contentType string
+	nilResponse bool
+}
+
+func (formatter fixedFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
+	if formatter.nilResponse {
+		return nil
+	}
+	var headers map[string]string
+	if formatter.contentType != "" {
+		headers = map[string]string{"Content-Type": formatter.contentType}
+	}
+	return &core.ResponseFormatted{HTTPStatusCode: data.HTTPStatusCode, Headers: headers, Body: formatter.body}
+}
+
+// documentedExample returns the media type, the JSON of the schema and the
+// JSON of the example that opts document for status; the example is "" when
+// there is none.
+func documentedExample(t *testing.T, status string, opts ...doc.RouteOption) (mediaType, schema, example string) {
+	t.Helper()
+	for mediaType, media := range generatedResponse(t, status, opts...).Content {
+		encodedSchema, err := json.Marshal(media.Schema)
+		if err != nil {
+			t.Fatalf("marshal schema: %v", err)
+		}
+		if media.Example == nil {
+			return mediaType, string(encodedSchema), ""
+		}
+		encodedExample, err := json.Marshal(media.Example)
+		if err != nil {
+			t.Fatalf("marshal example: %v", err)
+		}
+		return mediaType, string(encodedSchema), string(encodedExample)
+	}
+	return "", "", ""
+}
+
+func TestDocSuccessExampleFormatsTheSampleAsTheInstanceSendsIt(t *testing.T) {
+	task := docOptionsTask{ID: 42, Title: "Write docs"}
+	const taskJSON = `{"id":42,"title":"Write docs"}`
+	tests := []struct {
+		name          string
+		api           *api.API
+		status        int
+		sample        any
+		wantSchema    string
+		wantMediaType string
+		wantExample   string
+	}{
+		{
+			name: "envelope", api: api.New(), status: http.StatusCreated, sample: task,
+			wantSchema: envelopeTaskSchema, wantMediaType: "application/json",
+			wantExample: `{"content":` + taskJSON + `,"header":{"code":"0000","type":"success"}}`,
+		},
+		{
+			name: "plain", api: api.New(api.WithResponseMode(api.ResponseModePlain)), status: http.StatusCreated, sample: task,
+			wantSchema: docTypeSchema(t, envelope.PlainSuccess[docOptionsTask]()), wantMediaType: "application/json",
+			wantExample: `{"action":"","code":"0000","content":` + taskJSON + `,"event_id":"","info":null,"message":"","title":"","token":"","type":"success"}`,
+		},
+		{
+			name: "none", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusOK, sample: task,
+			wantSchema: docOptionsTaskRef, wantMediaType: "application/json", wantExample: taskJSON,
+		},
+		{
+			name: "problem", api: api.New(api.WithResponseMode(api.ResponseModeProblem)), status: http.StatusOK, sample: &task,
+			wantSchema: docOptionsTaskRef, wantMediaType: "application/json", wantExample: taskJSON,
+		},
+		{
+			name: "envelope nil sample", api: api.New(), status: http.StatusOK, sample: nil,
+			wantSchema: envelopeOnlyHeader, wantMediaType: "application/json",
+			wantExample: `{"header":{"code":"0000","type":"success"}}`,
+		},
+		{
+			name: "none nil sample sends null", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusOK, sample: nil,
+			wantSchema: nullBodySchema, wantMediaType: "application/json",
+		},
+		{
+			name: "no body status", api: api.New(), status: http.StatusNoContent, sample: task,
+		},
+		{
+			name:   "custom formatter body and content type",
+			api:    api.New(api.WithResponseFormatter(fixedFormatter{body: map[string]any{"task": task}, contentType: "application/vnd.tasks+json"})),
+			status: http.StatusOK, sample: task,
+			wantSchema: envelopeTaskSchema, wantMediaType: "application/vnd.tasks+json",
+			wantExample: `{"task":` + taskJSON + `}`,
+		},
+		{
+			name:   "custom formatter without a body",
+			api:    api.New(api.WithResponseFormatter(fixedFormatter{nilResponse: true})),
+			status: http.StatusOK, sample: task,
+			wantSchema: envelopeTaskSchema, wantMediaType: "application/json",
+		},
+		{
+			name: "unencodable body", api: api.New(api.WithResponseMode(api.ResponseModeNone)), status: http.StatusOK, sample: math.NaN(),
+			wantSchema: `{"type":"number","format":"double"}`, wantMediaType: "application/json",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			option := test.api.DocSuccessExample(test.status, test.sample)
+
+			mediaType, schema, example := documentedExample(t, strconv.Itoa(test.status), option)
+
+			if mediaType != test.wantMediaType {
+				t.Errorf("media type = %q, want %q", mediaType, test.wantMediaType)
+			}
+			if schema != test.wantSchema {
+				t.Errorf("schema = %s, want %s", schema, test.wantSchema)
+			}
+			if example != test.wantExample {
+				t.Errorf("example = %s, want %s", example, test.wantExample)
+			}
+		})
+	}
+}
+
+func TestDocSuccessExampleSendsTheCodeAsTheFormatterDoes(t *testing.T) {
+	saved := api.ResponseCodes.Success
+	t.Cleanup(func() { api.ResponseCodes.Success = saved })
+	api.ResponseCodes.Success = "TSK-000"
+	instance := api.New(api.WithLowercaseCodes())
+
+	_, _, example := documentedExample(t, "200", instance.DocSuccessExample(http.StatusOK, nil))
+
+	if want := `{"header":{"code":"tsk-000","type":"success"}}`; example != want {
+		t.Errorf("example = %s, want %s", example, want)
+	}
+}
+
+func TestDocSuccessExampleDocumentsTheHeaders(t *testing.T) {
+	option := api.New().DocSuccessExample(http.StatusCreated, docOptionsTask{ID: 42},
+		doc.ResponseHeader("Location", doc.String, "URL of the created task"))
+
+	response := generatedResponse(t, "201", option)
+
+	header, ok := response.Headers["Location"]
+	if !ok || header.Description != "URL of the created task" {
+		t.Errorf("headers = %+v, want Location", response.Headers)
+	}
+}
+
+func TestDocSuccessExampleOfTheDefaultInstanceUsesTheRegisteredFormatter(t *testing.T) {
+	api.RegisterNewAPIResponseFormatter(fixedFormatter{body: "registered"})
+	t.Cleanup(func() { api.RegisterNewAPIResponseFormatter(api.ResponseFormatter{}) })
+	var defaultInstance *api.API
+
+	_, _, example := documentedExample(t, "200", defaultInstance.DocSuccessExample(http.StatusOK, docOptionsTask{}))
+
+	if example != `"registered"` {
+		t.Errorf("example = %s, want %q", example, "registered")
+	}
+}
+
+func TestDocSuccessExampleIsFormattedWhenCalled(t *testing.T) {
+	saved := api.CurrentResponseMode
+	t.Cleanup(func() { api.CurrentResponseMode = saved })
+	api.CurrentResponseMode = api.ResponseModeNone
+	var defaultInstance *api.API
+
+	option := defaultInstance.DocSuccessExample(http.StatusOK, docOptionsTask{ID: 42})
+	api.CurrentResponseMode = api.ResponseModeEnvelope // read when called, not when generated
+
+	_, _, example := documentedExample(t, "200", option)
+	if want := `{"id":42,"title":""}`; example != want {
+		t.Errorf("example = %s, want %s", example, want)
 	}
 }

@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"reflect"
 
+	"github.com/jgolang/api/core"
 	"github.com/jgolang/api/doc"
 	"github.com/jgolang/api/envelope"
 )
@@ -21,7 +24,7 @@ import (
 // none and problem modes). A status that never carries a body (1xx, 204 and
 // 304) is documented without content in every mode. Only the schema is
 // written, never an example, since a zero-value sample is not what the route
-// sends.
+// sends; DocSuccessExample adds one built from a sample with real values.
 //
 // The mode is read when DocSuccess is called: an API from New uses its own,
 // and the default instance, including a nil API, reads CurrentResponseMode.
@@ -29,19 +32,87 @@ import (
 // routes keep documenting their bodies with the doc options. As with every
 // response option, a later option for the same status replaces it.
 func (a *API) DocSuccess(status int, sample any) doc.RouteOption {
+	response := a.documentedSuccess(status, sample)
+	return func(route *doc.Route) {
+		route.Responses = append(route.Responses, response)
+	}
+}
+
+// DocSuccessExample documents the same response as DocSuccess, with headers,
+// and adds an example: the body the instance's response formatter builds
+// for a success carrying sample, as Success.Write builds it (default title
+// and message, ResponseCodes.Success, no event ID or token since there is no
+// request), decoded from its JSON. A Content-Type the formatter sets becomes
+// the documented media type. Pass a sample with real values: it is what the
+// example shows.
+//
+// The example is built when DocSuccessExample is called, with the formatter
+// of an API from New (a custom one set with WithResponseFormatter included)
+// or, on the default instance, the registered one. Values the formatter
+// computes, such as timestamps, are frozen at that moment. A status that
+// never carries a body, a formatter that returns nil, a body that cannot be
+// encoded and a JSON null body leave the response without an example.
+func (a *API) DocSuccessExample(status int, sample any, headers ...doc.ResponseHeaderInfo) doc.RouteOption {
+	response := a.documentedSuccess(status, sample)
+	response.Headers = append([]doc.ResponseHeaderInfo(nil), headers...)
+	if statusCarriesBody(status) {
+		response.Example, response.ContentType = a.successExample(status, sample)
+	}
+	return func(route *doc.Route) {
+		route.Responses = append(route.Responses, response)
+	}
+}
+
+// documentedSuccess returns the response DocSuccess documents for status
+// and sample in the instance's mode.
+func (a *API) documentedSuccess(status int, sample any) doc.RouteResponse {
 	if !statusCarriesBody(status) {
-		return func(route *doc.Route) {
-			route.Responses = append(route.Responses, doc.RouteResponse{Status: status})
-		}
+		return doc.RouteResponse{Status: status}
 	}
 	contentType := reflect.TypeOf(sample)
 	for contentType != nil && contentType.Kind() == reflect.Ptr {
 		contentType = contentType.Elem()
 	}
-	mode := a.documentedResponseMode()
-	return func(route *doc.Route) {
-		route.Responses = append(route.Responses, successResponse(mode, status, contentType))
+	return successResponse(a.documentedResponseMode(), status, contentType)
+}
+
+// successExample formats a success response for status carrying sample with
+// the instance's formatter and returns its body as the writer would send it,
+// decoded with UseNumber so numbers stay exact, and the Content-Type the
+// formatter sets. A body the writer could not send, or JSON null, gives no
+// example: the response is then documented by its schema alone.
+func (a *API) successExample(status int, sample any) (example any, contentType string) {
+	formatted := a.responseFormatter().Format(core.ResponseData{
+		Title:          DefaultSuccessTitle,
+		Message:        DefaultSuccessMessage,
+		HTTPStatusCode: status,
+		ResponseCode:   ResponseCodes.Success,
+		ResponseType:   SuccessType,
+		Content:        sample,
+	})
+	if formatted == nil {
+		return nil, ""
 	}
+	contentType = formattedContentType(formatted.Headers)
+	encoded, err := json.Marshal(formatted.Body)
+	if err != nil {
+		return nil, contentType
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	if err := decoder.Decode(&example); err != nil {
+		return nil, contentType
+	}
+	return example, contentType
+}
+
+// responseFormatter returns the formatter the instance's writes use: the one
+// New bound, or the registered one on the default instance.
+func (a *API) responseFormatter() core.APIResponseFormatter {
+	if a == nil || a.formatter == nil {
+		return responseFormatter
+	}
+	return a.formatter
 }
 
 // successResponse returns the response DocSuccess documents in mode for a

@@ -67,7 +67,23 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResponseOfProjectTaskResponse"
+                  "type": "object",
+                  "properties": {
+                    "content": {
+                      "nullable": true,
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/ProjectTaskResponse"
+                        }
+                      ]
+                    },
+                    "header": {
+                      "$ref": "#/components/schemas/ResponseInfo"
+                    }
+                  },
+                  "required": [
+                    "header"
+                  ]
                 },
                 "example": {
                   "content": {
@@ -292,25 +308,6 @@
         },
         "required": [
           "type"
-        ]
-      },
-      "ResponseOfProjectTaskResponse": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "nullable": true,
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProjectTaskResponse"
-              }
-            ]
-          },
-          "header": {
-            "$ref": "#/components/schemas/ResponseInfo"
-          }
-        },
-        "required": [
-          "header"
         ]
       }
     }

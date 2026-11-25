@@ -62,7 +62,7 @@ func main() {
 		doc.Summary("Create task"),
 		doc.Tags("tasks"),
 		doc.Body(CreateTaskRequest{}),
-		a.DocSuccess(201, TaskResponse{}),
+		a.DocSuccessExample(201, TaskResponse{ID: 1, Title: "Buy milk"}),
 		a.DocError(400, "The title is missing or the body is not valid JSON"),
 	)
 
@@ -354,6 +354,16 @@ Document the body in the shape the request mode expects: the content type itself
 
 `a.DocSuccess(status, sample)` and `a.DocError(status, description)` document a response as the instance `a` sends it, so changing its response mode does not leave the spec wrong: the envelope in envelope mode, the nine top-level keys in plain mode, the content alone (and JSON `null` for an error) in none mode, and the content alone for a success and problem details under `application/problem+json` for an error in problem mode. They write the schema only, never an example; a 1xx, 204 or 304 is documented without content. A nil API (the default instance) reads `CurrentResponseMode` when the option is built. See [Instance response options](docs/openapi.md#instance-response-options).
 
+`a.DocSuccessExample(status, sample, headers...)` documents the same response as `a.DocSuccess`, with optional response headers, plus an example: the body the instance's formatter builds for a success carrying `sample`, so pass a sample with real values. The example matches what the route sends (code `0000`, blank title and message omitted in envelope mode, the nine plain keys, the content alone in none and problem modes) except that it has no event ID or token, and so no trace suffix in a message, since there is no request; a route under `api.ProcessRequest` sends an event ID that the example leaves out. It is built when the option is, with a custom `api.WithResponseFormatter` included:
+
+```go
+api.Post(router, "/tasks", createTask,
+	a.DocSuccessExample(http.StatusCreated, TaskResponse{ID: 42, Title: "Write docs"},
+		doc.ResponseHeader("Location", doc.String, "URL of the created task")),
+	a.DocError(http.StatusBadRequest, "Invalid body"),
+)
+```
+
 The `ExampleAPI_DocSuccess_envelope`, `_none`, `_plain` and `_problem` examples declare the same route in each mode and print what the spec documents; the route declaration does not change, only the instance:
 
 ```go
@@ -365,7 +375,7 @@ api.Get(router, "/tasks/{taskID}", func(w http.ResponseWriter, r *http.Request) 
 )
 ```
 
-Two limits apply. A route documents the mode of the instance whose methods it called, so when instances with different modes serve routes of one `doc.Docs`, each route must use the instance that serves it. The methods describe the built-in formatter only: a custom `api.WithResponseFormatter` is not described, so document its bodies with the `doc` options. See [Limits](docs/openapi.md#limits).
+Two limits apply. A route documents the mode of the instance whose methods it called, so when instances with different modes serve routes of one `doc.Docs`, each route must use the instance that serves it. The schemas describe the built-in formatter only: a custom `api.WithResponseFormatter` is not described, so document a body of another shape with the `doc` options. Only the example of `DocSuccessExample` comes from the custom formatter. See [Limits](docs/openapi.md#limits).
 
 Bodies and responses are documented as `application/json` by default. For a `multipart/form-data` upload, an `application/octet-stream` or `*/*` download, or an `application/problem+json` error, set `doc.Route.BodyContentType` or `doc.RouteResponse.ContentType` with a `func(*doc.Route)` closure:
 
