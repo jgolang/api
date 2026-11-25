@@ -46,6 +46,19 @@ func BodyWithExample(body interface{}, example interface{}) RouteOption {
 	}
 }
 
+// BodyExamples sets the request body model and several named examples,
+// written as the OpenAPI examples map, for a body that has more than one
+// meaningful case. A doc.ExampleObject value is written as is, so it can carry
+// a summary; any other value becomes the example's value. When set, the single
+// example from BodyWithExample is not written (OpenAPI allows one or the other).
+func BodyExamples(body interface{}, examples map[string]interface{}) RouteOption {
+	examples = cloneExamples(examples)
+	return func(route *Route) {
+		route.Body = body
+		route.BodyExamples = cloneExamples(examples)
+	}
+}
+
 // BodySchema sets a manual request body schema.
 func BodySchema(schema *Schema) RouteOption {
 	return func(route *Route) {
@@ -99,8 +112,10 @@ func ResponseWithDescriptionAndExample(status int, description string, body inte
 
 // ResponseExamples adds a response model with several named examples, written
 // as the OpenAPI examples map, for a status that can answer in more than one
-// way (for example a 409 for two different conflicts). Like the other response
-// options, a later option for the same status replaces it.
+// way (for example a 409 for two different conflicts). A doc.ExampleObject
+// value is written as is, so it can carry a summary; any other value becomes
+// the example's value. Like the other response options, a later option for
+// the same status replaces it.
 func ResponseExamples(status int, description string, body interface{}, examples map[string]interface{}) RouteOption {
 	examples = cloneExamples(examples)
 	return func(route *Route) {

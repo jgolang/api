@@ -154,7 +154,11 @@ response other than an error writes its content alone in problem mode, so
 document it with the content type itself (`doc.Status(200, TaskResponse{})`).
 
 Use `doc.BodyWithExample` and `doc.StatusWithExample` to add complete request or
-response examples to the generated OpenAPI media type.
+response examples to the generated OpenAPI media type. For several labelled
+cases use `doc.BodyExamples` or `doc.ResponseExamples`, written as the media
+type's `examples` map instead of `example` (OpenAPI allows one or the other). A
+`doc.ExampleObject{Summary: "...", Value: v}` value in that map is written as is,
+with its summary; any other value is written as `{"value": v}`.
 
 These types are for documentation only. They do not change the runtime request or response format.
 In generated OpenAPI documents, inferred Go types are emitted under
@@ -318,12 +322,13 @@ docs.SetServers(
 - `doc.Tags("tasks")`
 - `doc.Body(envelope.Request[CreateTaskRequest]())`
 - `doc.BodyWithExample(envelope.Request[CreateTaskRequest](), map[string]any{"content": map[string]any{"title": "Buy milk"}})`
+- `doc.BodyExamples(envelope.Request[CreateTaskRequest](), map[string]any{"minimal": doc.ExampleObject{Summary: "Only the title", Value: minimalExample}, "urgent": urgentExample})` (OpenAPI `examples` map; replaces the `doc.BodyWithExample` example)
 - `doc.BodySchema(&doc.Schema{Type: "object"})`
 - `doc.Status(200, envelope.Success[TaskResponse]())`
 - `doc.StatusWithExample(200, envelope.Success[TaskResponse](), map[string]any{"content": map[string]any{"id": 1}})`
 - `doc.StatusWithHeaders(201, envelope.Success[TaskResponse](), doc.ResponseHeader("Location", doc.String, "Created resource URL"))`
 - `doc.ResponseSchema(400, "Bad Request", &doc.Schema{Type: "object"})`
-- `doc.ResponseExamples(409, "Transition not allowed or system record", ErrorBody{}, map[string]any{"transition": transitionExample, "system": systemExample})` (OpenAPI `examples` map; one option per status, a later one for the same status replaces it)
+- `doc.ResponseExamples(409, "Transition not allowed or system record", ErrorBody{}, map[string]any{"transition": transitionExample, "system": systemExample})` (OpenAPI `examples` map; a `doc.ExampleObject` value keeps its summary; one option per status, a later one for the same status replaces it)
 - `doc.Query("page", doc.Int, false)`
 - `doc.QueryWithDescription("page", doc.Int, false, "Page number")`
 - `doc.QueryEnum("in_inbox", doc.Bool, false, "Only true is accepted.", true)` (writes `schema.enum`; values match the type)
