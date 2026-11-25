@@ -275,9 +275,9 @@ func (a *API) addErrorExample(documented *doc.RouteResponse, name, summary strin
 // so they carry the values of DefaultInvalidAuthHeaderMsg and the other
 // message variables at that moment. Every status is added whether or not
 // the route uses the middleware that sends it; as with every response
-// option, a later option for the same status replaces it. Responses without
-// a body of their own, such as the 415 of RequestHeaderJSON, and headers
-// such as WWW-Authenticate are not documented.
+// option, a later option for the same status replaces it. The 415 of
+// RequestHeaderJSON and headers such as WWW-Authenticate are not
+// documented.
 func (a *API) DocRejections() doc.RouteOption {
 	responses := a.documentedRejections()
 	return func(route *doc.Route) {
