@@ -58,3 +58,15 @@ Accepted 2026-11-25. A route documented its error statuses by hand with `DocErro
 6. **No side effects.** The examples are built when `DocErrors` is called; the writer and the error hook are never called.
 
 Consequences: the complete-route contract test adds a `DELETE` route documented only with `DocErrors` and checks, in every variant whose error body is not `null` (all but none mode), that each recorded wire body equals the named example of its code. Per-code problem types and component responses are out of scope.
+
+## Amendment (story 3.3): the library's own rejections
+
+Accepted 2026-11-25. The library answers some requests itself: 400 for a body `ProcessRequest` or `RequestBody` cannot parse, 401 from the token and session middlewares, 413 for a body over the limit and 500 for a handler panic under `ProcessRequest`. No route documented those bodies, so a client met them first in production.
+
+1. **One opt-in method.** `(*API).DocRejections() doc.RouteOption` adds the 400, 401, 413 and 500 responses, in ascending order, with the schema `DocError` documents and the HTTP status text as description. It is the only new exported name: a route without it documents nothing new, and there is no per-status selection (YAGNI); a later response option for the same status replaces one, as with every response option.
+2. **One constructor per body.** The middlewares and `DocRejections` build each rejection with the same unexported constructor (`bodyParseError`, `bodyTooLargeError`, `unauthorizedError`, `Error500`; the session message is a constant), so the documented body cannot drift from the wire. The wire output is unchanged.
+3. **Named examples by trigger.** Each body is a named example whose name describes it (`invalidBasicToken`) and whose summary says what triggers it. Codes cannot be the names, because the four 401 bodies share one code.
+4. **Built as `DocErrors` builds them.** The defaults `Error.Write` applies are applied, and the body is formatted when the method is called through the shared `formattedExample`: no event ID or token, a formatter Content-Type as the media type, and no example for a nil, unencodable or JSON `null` body (none mode). The message variables are read at that moment.
+5. **Out of scope.** The 415 of `RequestHeaderJSON` and response headers such as `WWW-Authenticate` are not documented.
+
+Consequences: the library-rejections goldens record a route with the option and one without it in every variant, validated by the contracttest module, and a test serves each rejection through the real middleware and checks that its body equals the named example once the event ID is removed.

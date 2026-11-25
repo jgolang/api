@@ -1,0 +1,184 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Library rejections API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "post": {
+        "operationId": "createTask",
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                },
+                "examples": {
+                  "invalidRequestContent": {
+                    "summary": "ProcessRequest or RequestBody could not parse the request body",
+                    "value": {
+                      "code": "E002",
+                      "detail": "Request content empty json structure",
+                      "status": 400,
+                      "title": "Bad Request",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                },
+                "examples": {
+                  "invalidAuthorizationHeader": {
+                    "summary": "BasicToken or CustomToken found no Authorization header of their scheme",
+                    "value": {
+                      "code": "B001",
+                      "detail": "Invalid Authorization header!",
+                      "status": 401,
+                      "title": "Unauthorized",
+                      "type": "about:blank"
+                    }
+                  },
+                  "invalidBasicToken": {
+                    "summary": "BasicToken rejected the credentials",
+                    "value": {
+                      "code": "B001",
+                      "detail": "Invalid basic token",
+                      "status": 401,
+                      "title": "Unauthorized",
+                      "type": "about:blank"
+                    }
+                  },
+                  "invalidBearerToken": {
+                    "summary": "CustomToken rejected the token",
+                    "value": {
+                      "code": "B001",
+                      "detail": "Invalid bearer token",
+                      "status": 401,
+                      "title": "Unauthorized",
+                      "type": "about:blank"
+                    }
+                  },
+                  "invalidSessionID": {
+                    "summary": "RequestHeaderSession found no session ID",
+                    "value": {
+                      "code": "B001",
+                      "detail": "Invalid session ID",
+                      "status": 401,
+                      "title": "Unauthorized",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                },
+                "examples": {
+                  "requestContentTooLarge": {
+                    "summary": "The request body exceeds the size limit",
+                    "value": {
+                      "code": "E002",
+                      "detail": "Request content exceeds the size limit",
+                      "status": 413,
+                      "title": "Request Entity Too Large",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                },
+                "examples": {
+                  "internalServerError": {
+                    "summary": "The handler panicked under ProcessRequest before writing",
+                    "value": {
+                      "code": "E300",
+                      "detail": "An error has occurred please try again later.",
+                      "status": 500,
+                      "title": "Internal Server Error",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "TSK-404"
+          },
+          "detail": {
+            "type": "string",
+            "example": "task not found"
+          },
+          "event_id": {
+            "type": "string",
+            "example": "f716243f2c92df55fcd8f67018b1dcfb"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "example": 404
+          },
+          "title": {
+            "type": "string",
+            "example": "Not Found"
+          },
+          "type": {
+            "type": "string",
+            "example": "about:blank"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      }
+    }
+  }
+}

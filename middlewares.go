@@ -53,16 +53,12 @@ func BasicToken(next http.HandlerFunc) http.HandlerFunc {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(auth) != 2 || auth[0] != "Basic" {
 			w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
-			response := Error401()
-			response.Message = DefaultInvalidAuthHeaderMsg
-			response.Write(w, r)
+			unauthorizedError(DefaultInvalidAuthHeaderMsg).Write(w, r)
 			return
 		}
 		client, _, tokenValid := ValidateBasicToken(auth[1])
 		if !tokenValid {
-			response := Error401()
-			response.Message = DefaultBasicUnauthorizedMsg
-			response.Write(w, r)
+			unauthorizedError(DefaultBasicUnauthorizedMsg).Write(w, r)
 			return
 		}
 		r.Header.Set("Basic-Client", client)
@@ -77,16 +73,12 @@ func CustomToken(next http.HandlerFunc) http.HandlerFunc {
 		auth := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(auth) != 2 || auth[0] != CustomTokenPrefix {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="api"`)
-			response := Error401()
-			response.Message = DefaultInvalidAuthHeaderMsg
-			response.Write(w, r)
+			unauthorizedError(DefaultInvalidAuthHeaderMsg).Write(w, r)
 			return
 		}
 		tokenInfo, tokenValid := ValidateCustomToken(auth[1])
 		if !tokenValid {
-			response := Error401()
-			response.Message = DefaultBearerUnauthorizedMsg
-			response.Write(w, r)
+			unauthorizedError(DefaultBearerUnauthorizedMsg).Write(w, r)
 			return
 		}
 		buf, _ := tokenInfo.MarshalJSON()
@@ -94,6 +86,17 @@ func CustomToken(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	}
 }
+
+// unauthorizedError is the 401 the token and session middlewares answer
+// with message. DocRejections documents the same values.
+func unauthorizedError(message string) Error {
+	response := Error401()
+	response.Message = message
+	return response
+}
+
+// invalidSessionIDMessage is the message RequestHeaderSession answers with.
+const invalidSessionIDMessage = "Invalid session ID"
 
 // RequestHeaderJSON validate header Content-Type, is required and equal to application/json
 func RequestHeaderJSON(next http.HandlerFunc) http.HandlerFunc {
@@ -133,9 +136,7 @@ func RequestHeaderSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID := r.Header.Get(SecurityTokenHeaderKey)
 		if sessionID == "" {
-			response := Error401()
-			response.Message = "Invalid session ID"
-			response.Write(w, r)
+			unauthorizedError(invalidSessionIDMessage).Write(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -171,6 +172,12 @@ func bodyRejection(err error) Error {
 	if bodyTooLarge(err) {
 		return bodyTooLargeError()
 	}
+	return bodyParseError()
+}
+
+// bodyParseError is the 400 answered for a request body the receiver could
+// not parse.
+func bodyParseError() Error {
 	return Error{
 		Title:        "Invalid request content",
 		Message:      "Request content empty json structure",
