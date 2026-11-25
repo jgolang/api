@@ -1,9 +1,6 @@
 package core
 
-import (
-	"net/http"
-	"net/http/httptest"
-)
+import "net/http"
 
 // Middleware provides a convenient mechanism for filtering HTTP requests
 // entering the application. It returns a new handler which may perform various
@@ -12,20 +9,17 @@ type Middleware func(next http.HandlerFunc) http.HandlerFunc
 
 // MiddlewaresChain provides syntactic sugar to create a new middleware
 // which will be the result of chaining the ones received as parameters.
+//
+// The first middleware is the outermost: MiddlewaresChain(a, b)(h) runs a,
+// then b, then h. The middlewares wrap final once, when the chain is applied,
+// not per request. The chain writes straight to the http.ResponseWriter it is
+// given, nothing is buffered, so responses stream and Flush and
+// http.ResponseController reach the connection.
 func MiddlewaresChain(mw ...Middleware) Middleware {
 	return func(final http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			last := final
-			for i := len(mw) - 1; i >= 0; i-- {
-				last = mw[i](last)
-			}
-			res := httptest.NewRecorder()
-			last(res, r)
-			for i, header := range res.Header() {
-				w.Header()[i] = header
-			}
-			w.WriteHeader(res.Code)
-			w.Write(res.Body.Bytes())
+		for i := len(mw) - 1; i >= 0; i-- {
+			final = mw[i](final)
 		}
+		return final
 	}
 }

@@ -120,7 +120,7 @@ func TestValidateMethods(t *testing.T) {
 	}
 }
 
-func TestMiddlewaresChainRunsInOrderAndCopiesTheResponse(t *testing.T) {
+func TestMiddlewaresChainRunsInOrderAndWritesTheResponse(t *testing.T) {
 	var order []string
 	tag := func(name string) Middleware {
 		return func(next http.HandlerFunc) http.HandlerFunc {
@@ -145,6 +145,39 @@ func TestMiddlewaresChainRunsInOrderAndCopiesTheResponse(t *testing.T) {
 	}
 	if rec.Code != http.StatusCreated || rec.Header().Get("X-Test") != "yes" || rec.Body.String() != "body" {
 		t.Fatalf("got status %d, header %q, body %q", rec.Code, rec.Header().Get("X-Test"), rec.Body.String())
+	}
+}
+
+// markedWriter is a ResponseWriter of a type the chain cannot create, so a
+// final handler that receives it got the writer passed in.
+type markedWriter struct {
+	*httptest.ResponseRecorder
+}
+
+func TestMiddlewaresChainPassesTheWriterThrough(t *testing.T) {
+	passThrough := func(next http.HandlerFunc) http.HandlerFunc { return next }
+	var got http.ResponseWriter
+	final := func(w http.ResponseWriter, r *http.Request) { got = w }
+	writer := markedWriter{httptest.NewRecorder()}
+
+	MiddlewaresChain(passThrough, passThrough)(final)(writer, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if got != http.ResponseWriter(writer) {
+		t.Fatalf("final handler got writer %T, want the one passed in", got)
+	}
+}
+
+func TestMiddlewaresChainWithoutMiddlewaresRunsTheFinalHandler(t *testing.T) {
+	final := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte("final"))
+	}
+	rec := httptest.NewRecorder()
+
+	MiddlewaresChain()(final)(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if rec.Code != http.StatusAccepted || rec.Body.String() != "final" {
+		t.Fatalf("got status %d, body %q; want %d, %q", rec.Code, rec.Body.String(), http.StatusAccepted, "final")
 	}
 }
 

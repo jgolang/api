@@ -253,6 +253,18 @@ Before v1.2.0 nested instance limits combined and the smallest applied. Now the 
 
 Check nested instances whose inner limit is larger than the outer one: a service that relied on the outer limit to cap them now accepts the inner limit, and must lower it.
 
+## v1.3.1: MiddlewaresChain writes through
+
+`api.MiddlewaresChain` ran the chain against its own recorder and copied the response afterwards, so a route wrapped with `api.MiddlewaresChain(api.ProcessRequest)` was still buffered after v1.2.0 (#106). Since v1.3.1 it composes the middlewares directly ([ADR 0003](adr/0003-process-request-writes-through.md), addendum). No exported name changes, and the execution order is the same (the first middleware is the outermost). What changes behind the chain, as for `ProcessRequest` in v1.2.0:
+
+- **Responses stream.** `Flush` sends what was written, and `http.NewResponseController(w)` (`SetReadDeadline`, `SetWriteDeadline`, `Flush`) reaches the connection instead of returning `http.ErrNotSupported`.
+- **Headers follow `net/http`.** Headers set after the first `WriteHeader` or `Write` are no longer sent.
+- **Headers set outside the chain are visible inside it.** Middlewares and handlers in the chain see the headers that outer middlewares set on `w.Header()`, so `Header().Add` on such a key appends instead of replacing it. An early panic's 500 from `ProcessRequest` keeps them.
+- **A panic after the first write sends the partial response.** `ProcessRequest` inside the chain already re-panicked it as `http.ErrAbortHandler`, and the connection was aborted with nothing sent. Now the bytes written before the panic reach the client, then the connection is aborted, as without the chain.
+- **Middlewares wrap once.** The middlewares wrap the handler when the chain is applied, not on every request, so a middleware's constructor (`mw(next)`) runs once per wrap and any state it creates is shared by every request. Per-request work and state belong in the handler it returns.
+
+Check handlers behind the chain that set headers after writing or rely on an empty `w.Header()`, and middleware constructors that did per-request work.
+
 ## Checklist
 
 - [ ] Upgrade and build. Nothing is removed, so the program compiles.

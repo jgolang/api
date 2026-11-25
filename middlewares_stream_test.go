@@ -51,15 +51,7 @@ type streamSetup struct {
 var streamSetups = []streamSetup{
 	{name: "default instance", build: func(t *testing.T, next http.HandlerFunc, _ ...Option) (http.Handler, *syncBuffer) {
 		t.Helper()
-		logs := &syncBuffer{}
-		previous, previousOutput, previousFlags := slog.Default(), log.Writer(), log.Flags()
-		slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-		t.Cleanup(func() {
-			slog.SetDefault(previous)
-			log.SetOutput(previousOutput)
-			log.SetFlags(previousFlags)
-		})
-		return ProcessRequest(next), logs
+		return ProcessRequest(next), captureDefaultLogs(t)
 	}},
 	{name: "instance", build: func(t *testing.T, next http.HandlerFunc, opts ...Option) (http.Handler, *syncBuffer) {
 		t.Helper()
@@ -67,6 +59,21 @@ var streamSetups = []streamSetup{
 		opts = append([]Option{WithLogger(slog.New(slog.NewJSONHandler(logs, nil)))}, opts...)
 		return New(opts...).Handler(ProcessRequest(next)), logs
 	}},
+}
+
+// captureDefaultLogs sends the default instance's records, which go through
+// slog.Default, to the returned buffer until the test ends.
+func captureDefaultLogs(t *testing.T) *syncBuffer {
+	t.Helper()
+	logs := &syncBuffer{}
+	previous, previousOutput, previousFlags := slog.Default(), log.Writer(), log.Flags()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(previousOutput)
+		log.SetFlags(previousFlags)
+	})
+	return logs
 }
 
 // receiveFromHandler returns what the handler sent on got. The handler

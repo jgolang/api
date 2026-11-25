@@ -32,7 +32,12 @@ var (
 )
 
 // MiddlewaresChain provides syntactic sugar to create a new middleware
-// which will be the result of chaining the ones received as parameters
+// which will be the result of chaining the ones received as parameters.
+//
+// The first middleware is the outermost, and the middlewares wrap the handler
+// once, when the chain is applied. Since v1.3.1 the chain writes straight to
+// the http.ResponseWriter like ProcessRequest, so a route wrapped with
+// MiddlewaresChain(ProcessRequest) streams too.
 var MiddlewaresChain = core.MiddlewaresChain
 
 // BasicToken validates basic authentication token middleware.
