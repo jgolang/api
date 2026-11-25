@@ -27,7 +27,8 @@ type Schema struct {
 	Nullable             bool               `json:"nullable,omitempty"`
 	Ref                  string             `json:"$ref,omitempty"`
 	Example              interface{}        `json:"example,omitempty"`
-	// Minimum is the smallest allowed number, read from a minimum tag.
+	// Minimum is the smallest allowed number, read from a minimum tag. An
+	// unsigned integer field has 0 unless a minimum tag replaces it.
 	Minimum *float64 `json:"minimum,omitempty"`
 	// Maximum is the largest allowed number, read from a maximum tag.
 	Maximum *float64 `json:"maximum,omitempty"`
@@ -122,10 +123,13 @@ func (walker *schemaWalker) schemaFromReflectType(typ reflect.Type) *Schema {
 		return &Schema{Type: "integer", Format: "int32"}
 	case reflect.Int64:
 		return &Schema{Type: "integer", Format: "int64"}
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
-		return &Schema{Type: "integer", Format: "int32"}
+	case reflect.Uint8, reflect.Uint16:
+		return unsignedSchema("int32")
+	case reflect.Uint, reflect.Uint32:
+		return unsignedSchema("int64")
 	case reflect.Uint64:
-		return &Schema{Type: "integer", Format: "int64"}
+		// No OpenAPI format holds every uint64 value.
+		return unsignedSchema("")
 	case reflect.Float32:
 		return &Schema{Type: "number", Format: "float"}
 	case reflect.Float64:
@@ -147,6 +151,14 @@ func (walker *schemaWalker) schemaFromReflectType(typ reflect.Type) *Schema {
 	default:
 		return &Schema{Type: "string"}
 	}
+}
+
+// unsignedSchema documents an unsigned integer with format, or with no format
+// when none holds every value of its type, and a minimum of 0, which a
+// minimum tag on the field replaces.
+func unsignedSchema(format string) *Schema {
+	minimum := 0.0
+	return &Schema{Type: "integer", Format: format, Minimum: &minimum}
 }
 
 func (walker *schemaWalker) structSchema(typ reflect.Type) *Schema {
