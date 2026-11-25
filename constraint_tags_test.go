@@ -23,6 +23,10 @@ type constraintTagsCapture struct {
 	Archived   bool     `json:"archived,omitempty" default:"false"`
 	LegacyID   string   `json:"legacy_id,omitempty" deprecated:"true"`
 	Tags       []string `json:"tags,omitempty" default:"[]"`
+	// Level is a nullable enum: the request example leaves it nil, so it is
+	// sent as null, which the contracttest module validates against an enum
+	// that lists null.
+	Level *int `json:"level" enum:"1,2,3"`
 }
 
 func newConstraintTagsRoutes() *doc.Docs {

@@ -7,8 +7,8 @@
 // ../testdata/openapi/complete-route.<variant>.json and the real request and
 // response exchanges to ../testdata/contract/complete-route.<variant>.json,
 // for the envelope, none, plain and problem modes and a custom formatter, and
-// this package only reads those files. Refresh them from the root module
-// with: go test -run 'CompleteRoute' -update .
+// this package only reads those files. Refresh them, and the root module's
+// other golden files, from the root module with: go test -update .
 package contracttest
 
 import (
@@ -248,21 +248,59 @@ func TestDocumentedExamplesMatchRecordedBodies(t *testing.T) {
 			}
 			compared++
 			t.Run(mode+"/"+exchange.Name, func(t *testing.T) {
-				example, ok := examples[exchange.ContentType]
-				if !ok {
-					t.Fatalf("status %d documents examples only under other media types than the sent %q", exchange.Status, exchange.ContentType)
-				}
-				var body any
-				if err := json.Unmarshal(responseBody(exchange.Body), &body); err != nil {
-					t.Fatalf("decode body %s: %v", exchange.Body, err)
-				}
-
-				if !reflect.DeepEqual(example, body) {
-					t.Fatalf("documented example = %v, recorded body = %s", example, exchange.Body)
+				if err := checkExample(examples, exchange); err != nil {
+					t.Fatal(err)
 				}
 			})
 		}
 		if compared == 0 {
+			t.Errorf("no %s exchange has a documented example", mode)
+		}
+	}
+}
+
+// checkExample reports whether examples, by media type, document the body
+// of exchange under the media type it was sent with.
+func checkExample(examples map[string]any, exchange recordedExchange) error {
+	example, ok := examples[exchange.ContentType]
+	if !ok {
+		return fmt.Errorf("status %d documents examples only under other media types than the sent %q", exchange.Status, exchange.ContentType)
+	}
+	var body any
+	if err := json.Unmarshal(responseBody(exchange.Body), &body); err != nil {
+		return fmt.Errorf("decode body %s: %w", exchange.Body, err)
+	}
+	if !reflect.DeepEqual(example, body) {
+		return fmt.Errorf("documented example = %v, recorded body = %s", example, exchange.Body)
+	}
+	return nil
+}
+
+// TestExampleCheckRejectsAnExampleUnderAnotherMediaType proves the example
+// check compares media types: an exchange whose example is documented only
+// under a media type other than the one sent must fail, even though the
+// example equals the body.
+func TestExampleCheckRejectsAnExampleUnderAnotherMediaType(t *testing.T) {
+	for _, mode := range modes {
+		contract := loadContract(t, mode)
+		checked := 0
+		for _, exchange := range contract.exchanges {
+			examples := documentedExamples(t, contract, exchange)
+			if len(examples) == 0 {
+				continue
+			}
+			checked++
+			t.Run(mode+"/"+exchange.Name, func(t *testing.T) {
+				exchange.ContentType = "application/vnd.other+json"
+
+				err := checkExample(examples, exchange)
+
+				if err == nil || !strings.Contains(err.Error(), "only under other media types") {
+					t.Fatalf("check error = %v, want it to reject the example under another media type", err)
+				}
+			})
+		}
+		if checked == 0 {
 			t.Errorf("no %s exchange has a documented example", mode)
 		}
 	}

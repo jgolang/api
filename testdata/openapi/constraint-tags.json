@@ -20,7 +20,8 @@
                 "priority": 1,
                 "title": "Write docs",
                 "slug": "write-docs",
-                "estimate": 2.5
+                "estimate": 2.5,
+                "level": null
               }
             }
           }
@@ -58,6 +59,17 @@
           "legacy_id": {
             "type": "string",
             "deprecated": true
+          },
+          "level": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+              1,
+              2,
+              3,
+              null
+            ],
+            "nullable": true
           },
           "priority": {
             "type": "integer",
