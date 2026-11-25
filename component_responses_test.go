@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -44,4 +45,40 @@ func TestComponentResponsesSpecMatchesGolden(t *testing.T) {
 	}
 
 	assertMatchesGolden(t, "testdata/openapi/component-responses.json", got)
+}
+
+// newLibraryRejectionsRoutes returns docs where POST /tasks documents the
+// library's own rejections and GET /health does not, so the contracttest
+// module validates them and the spec shows they stay on their route.
+func newLibraryRejectionsRoutes(options ...api.Option) *doc.Docs {
+	docs := doc.New(doc.API{Title: "Library rejections API", Version: "1.0.0"})
+	router := stdadapter.New(http.NewServeMux(), docs)
+	noop := func(http.ResponseWriter, *http.Request) {}
+	instance := api.New(options...)
+
+	api.Post(router, "/tasks", noop,
+		doc.OperationID("createTask"),
+		doc.Status(http.StatusCreated, nil),
+		instance.DocRejections(),
+	)
+	api.Get(router, "/health", noop,
+		doc.OperationID("health"),
+		doc.Status(http.StatusOK, nil),
+	)
+	return docs
+}
+
+func TestLibraryRejectionsSpecMatchesGolden(t *testing.T) {
+	for _, variant := range completeRouteVariants {
+		t.Run(variant.name, func(t *testing.T) {
+			docs := newLibraryRejectionsRoutes(variant.options...)
+
+			got, err := json.MarshalIndent(doc.GenerateOpenAPI(docs), "", "  ")
+			if err != nil {
+				t.Fatalf("marshal spec: %v", err)
+			}
+
+			assertMatchesGolden(t, fmt.Sprintf("testdata/openapi/library-rejections.%s.json", variant.name), got)
+		})
+	}
 }

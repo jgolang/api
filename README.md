@@ -377,6 +377,14 @@ api.Delete(router, "/tasks/{taskID}", deleteTask,
 )
 ```
 
+`a.DocRejections()` documents the errors the library's middlewares send on their own, which no handler writes: 400 when `api.ProcessRequest` or `api.RequestBody` cannot parse the body, 401 from `api.BasicToken`, `api.CustomToken` and `api.RequestHeaderSession`, 413 for a body over the limit, and 500 for a handler that panics under `ProcessRequest` before writing. It adds those four responses with the `DocError` schema and one named example per body (`invalidRequestContent`; `invalidAuthorizationHeader`, `invalidBasicToken`, `invalidBearerToken`, `invalidSessionID`; `requestContentTooLarge`; `internalServerError`), built from the same `Error` value the middleware writes, without an event ID. The examples carry the message variables (`api.DefaultBasicUnauthorizedMsg`...) as they are when it is called. A later option for the same status replaces its response, so a route can add `a.DocErrors` for its own 400 codes after it. See [Library rejections](docs/openapi.md#library-rejections):
+
+```go
+api.Post(router, "/tasks", api.ProcessRequest(api.BasicToken(createTask)),
+	a.DocRejections(), // 400, 401, 413 and 500 as the middlewares send them
+)
+```
+
 The `ExampleAPI_DocSuccess_envelope`, `_none`, `_plain` and `_problem` examples declare the same route in each mode and print what the spec documents; the route declaration does not change, only the instance:
 
 ```go
@@ -388,7 +396,7 @@ api.Get(router, "/tasks/{taskID}", func(w http.ResponseWriter, r *http.Request) 
 )
 ```
 
-Two limits apply. A route documents the mode of the instance whose methods it called, so when instances with different modes serve routes of one `doc.Docs`, each route must use the instance that serves it. The schemas describe the built-in formatter only: a custom `api.WithResponseFormatter` is not described, so document a body of another shape with the `doc` options. Only the examples of `DocSuccessExample` and `DocErrors` come from the custom formatter. See [Limits](docs/openapi.md#limits).
+Two limits apply. A route documents the mode of the instance whose methods it called, so when instances with different modes serve routes of one `doc.Docs`, each route must use the instance that serves it. The schemas describe the built-in formatter only: a custom `api.WithResponseFormatter` is not described, so document a body of another shape with the `doc` options. Only the examples of `DocSuccessExample`, `DocErrors` and `DocRejections` come from the custom formatter. See [Limits](docs/openapi.md#limits).
 
 Bodies and responses are documented as `application/json` by default. For a `multipart/form-data` upload, an `application/octet-stream` or `*/*` download, or an `application/problem+json` error, set `doc.Route.BodyContentType` or `doc.RouteResponse.ContentType` with a `func(*doc.Route)` closure:
 

@@ -340,6 +340,43 @@ as description, and one named example per code. On an envelope instance the
 - A later response option for the same status replaces the `DocErrors`
   response, as with every response option.
 
+### Library rejections
+
+`(*api.API).DocRejections()` documents the error responses the library's
+middlewares send on their own, which no handler writes, so a client sees them
+in the spec instead of first meeting them in production:
+
+```go
+api.Post(router, "/tasks", api.ProcessRequest(api.BasicToken(createTask)),
+	instance.DocRejections(),
+)
+```
+
+| Status | Example | Sent by |
+|--------|---------|---------|
+| 400 | `invalidRequestContent` | `ProcessRequest` or `RequestBody`, for a body it cannot parse |
+| 401 | `invalidAuthorizationHeader` | `BasicToken` or `CustomToken`, for a missing header or another scheme |
+| 401 | `invalidBasicToken` | `BasicToken`, for rejected credentials |
+| 401 | `invalidBearerToken` | `CustomToken`, for a rejected token |
+| 401 | `invalidSessionID` | `RequestHeaderSession`, for a missing session ID |
+| 413 | `requestContentTooLarge` | `ProcessRequest` or `RequestBody`, for a body over the limit |
+| 500 | `internalServerError` | `ProcessRequest`, for a handler that panics before writing |
+
+The four responses are added in ascending order, each with the schema
+`DocError` documents in the instance's mode and the HTTP status text as
+description. Each example's summary says what triggers it, and its value is
+the body the instance's formatter builds for the same `Error` value the
+middleware writes (one constructor serves both), with no event ID or token
+since there is no request. The names are descriptions, not codes, because
+the four 401 bodies share one code. As with `DocErrors`, the examples are
+built when `DocRejections` is called, with the mode and formatter of an API
+from `api.New` or, on the default instance (a nil `*api.API`), with
+`CurrentResponseMode` and the registered formatter; the message variables
+(`DefaultInvalidAuthHeaderMsg`, `DefaultBasicUnauthorizedMsg`,
+`DefaultBearerUnauthorizedMsg`) are read at that moment. Problem mode
+documents them under `application/problem+json`; none mode keeps the
+null-body schema without examples.
+
 ### Limits
 
 - **One mode per route, from the instance it calls.** A route documents the mode of the
@@ -351,10 +388,17 @@ as description, and one named example per code. On an envelope instance the
   formatter of each mode sends. A custom formatter set with
   `api.WithResponseFormatter` is not described; document a body of another
   shape with the `doc` options (`doc.Status`, `doc.ResponseSchema`,
-  `doc.StatusWithExample`). Only the examples of `DocSuccessExample` and
-  `DocErrors` come from the custom formatter, so a formatter that changes the
+  `doc.StatusWithExample`). Only the examples of `DocSuccessExample`,
+  `DocErrors` and `DocRejections` come from the custom formatter, so a formatter that changes the
   shape documents an example its schema rejects, which an OpenAPI validator
   with example validation reports.
+- **Library rejections are all or nothing.** `DocRejections` adds all four
+  statuses whether or not the route uses the middleware that sends each one,
+  and there is no per-route selection; a later response option for the same
+  status replaces its response (for example `DocErrors` with the route's own
+  400 codes). The examples have no event ID, which the wire bodies carry.
+  The 415 of `RequestHeaderJSON` and headers such as `WWW-Authenticate` are
+  not documented.
 - **No per-code problem type.** `DocErrors` documents the `about:blank`
   problem type `WriteError` sends; there is no example URI or problem `type`
   per code.

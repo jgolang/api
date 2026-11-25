@@ -3,6 +3,7 @@ package api_test
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 
@@ -124,6 +125,30 @@ func ExampleAPI_DocErrors() {
 	// Output:
 	// 404 {"TSK-404":{"summary":"task not found","value":{"header":{"code":"TSK-404","message":"task not found (-TSK-404)","title":"Error response!","type":"error"}}}}
 	// 409 {"TSK-409":{"summary":"task is locked","value":{"header":{"code":"TSK-409","message":"task is locked (-TSK-409)","title":"Error response!","type":"error"}}}}
+}
+
+// ExampleAPI_DocRejections documents the errors the library's middlewares
+// send on their own: one response per status, each with a named example per
+// body the library sends for it.
+func ExampleAPI_DocRejections() {
+	instance := api.New() // envelope responses
+
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	router := stdadapter.New(http.NewServeMux(), docs)
+	api.Post(router, "/tasks", api.ProcessRequest(api.BasicToken(func(w http.ResponseWriter, r *http.Request) {})),
+		instance.DocRejections(),
+	)
+
+	operation := doc.GenerateOpenAPI(docs).Paths["/tasks"]["post"]
+	for _, status := range []string{"400", "401", "413", "500"} {
+		examples := operation.Responses[status].Content["application/json"].Examples
+		fmt.Println(status, slices.Sorted(maps.Keys(examples)))
+	}
+	// Output:
+	// 400 [invalidRequestContent]
+	// 401 [invalidAuthorizationHeader invalidBasicToken invalidBearerToken invalidSessionID]
+	// 413 [requestContentTooLarge]
+	// 500 [internalServerError]
 }
 
 // ExampleAPI_DocSuccess_envelope documents GET /tasks/{taskID} on an

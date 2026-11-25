@@ -1,0 +1,215 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Library rejections API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "post": {
+        "operationId": "createTask",
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalidRequestContent": {
+                    "summary": "ProcessRequest or RequestBody could not parse the request body",
+                    "value": {
+                      "header": {
+                        "code": "E002",
+                        "message": "Request content empty json structure (-E002)",
+                        "title": "Invalid request content",
+                        "type": "error"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalidAuthorizationHeader": {
+                    "summary": "BasicToken or CustomToken found no Authorization header of their scheme",
+                    "value": {
+                      "header": {
+                        "code": "B001",
+                        "message": "Invalid Authorization header! (-B001)",
+                        "title": "Unauthorized!",
+                        "type": "error"
+                      }
+                    }
+                  },
+                  "invalidBasicToken": {
+                    "summary": "BasicToken rejected the credentials",
+                    "value": {
+                      "header": {
+                        "code": "B001",
+                        "message": "Invalid basic token (-B001)",
+                        "title": "Unauthorized!",
+                        "type": "error"
+                      }
+                    }
+                  },
+                  "invalidBearerToken": {
+                    "summary": "CustomToken rejected the token",
+                    "value": {
+                      "header": {
+                        "code": "B001",
+                        "message": "Invalid bearer token (-B001)",
+                        "title": "Unauthorized!",
+                        "type": "error"
+                      }
+                    }
+                  },
+                  "invalidSessionID": {
+                    "summary": "RequestHeaderSession found no session ID",
+                    "value": {
+                      "header": {
+                        "code": "B001",
+                        "message": "Invalid session ID (-B001)",
+                        "title": "Unauthorized!",
+                        "type": "error"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "requestContentTooLarge": {
+                    "summary": "The request body exceeds the size limit",
+                    "value": {
+                      "header": {
+                        "code": "E002",
+                        "message": "Request content exceeds the size limit (-E002)",
+                        "title": "Request content too large",
+                        "type": "error"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "internalServerError": {
+                    "summary": "The handler panicked under ProcessRequest before writing",
+                    "value": {
+                      "header": {
+                        "code": "E300",
+                        "message": "An error has occurred please try again later. (-E300)",
+                        "title": "Sorry!",
+                        "type": "error"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "header": {
+            "$ref": "#/components/schemas/ResponseInfo"
+          }
+        },
+        "required": [
+          "header"
+        ]
+      },
+      "ResponseInfo": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "example": "refresh"
+          },
+          "code": {
+            "type": "string",
+            "description": "0000 by default on success; on an error, the error's code, such as E001 or TSK-404.",
+            "example": "0000"
+          },
+          "event_id": {
+            "type": "string",
+            "example": "f716243f2c92df55fcd8f67018b1dcfb"
+          },
+          "info": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "field": "value"
+            }
+          },
+          "message": {
+            "type": "string",
+            "example": "Operation completed"
+          },
+          "title": {
+            "type": "string",
+            "example": "Success"
+          },
+          "token": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+          },
+          "type": {
+            "type": "string",
+            "example": "success"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      }
+    }
+  }
+}

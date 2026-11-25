@@ -229,23 +229,104 @@ func (a *API) documentedErrors(errorCodes []codes.Coder) []doc.RouteResponse {
 			documented = &created
 			byStatus[response.HTTPStatusCode] = documented
 		}
-		example, contentType := a.formattedExample(core.ResponseData(response))
-		if example == nil {
-			continue
-		}
-		if contentType != "" {
-			documented.ContentType = contentType
-		}
-		if documented.Examples == nil {
-			documented.Examples = make(map[string]any)
-		}
-		documented.Examples[name] = doc.ExampleObject{Summary: codeMessage(coder), Value: example}
+		a.addErrorExample(documented, name, codeMessage(coder), response)
 	}
 
 	statuses := slices.Sorted(maps.Keys(byStatus))
 	responses := make([]doc.RouteResponse, 0, len(statuses))
 	for _, status := range statuses {
 		responses = append(responses, *byStatus[status])
+	}
+	return responses
+}
+
+// addErrorExample adds to documented the named example of response, an
+// error with its defaults applied, as the instance's formatter sends it. A
+// body with no example (see formattedExample) adds nothing; a Content-Type
+// the formatter sets becomes the documented media type.
+func (a *API) addErrorExample(documented *doc.RouteResponse, name, summary string, response Error) {
+	example, contentType := a.formattedExample(core.ResponseData(response))
+	if example == nil {
+		return
+	}
+	if contentType != "" {
+		documented.ContentType = contentType
+	}
+	if documented.Examples == nil {
+		documented.Examples = make(map[string]any)
+	}
+	documented.Examples[name] = doc.ExampleObject{Summary: summary, Value: example}
+}
+
+// DocRejections documents the error responses the library's middlewares
+// send on their own, which no handler writes: 400 when ProcessRequest or
+// RequestBody cannot parse the request body, 401 from BasicToken,
+// CustomToken and RequestHeaderSession, 413 for a body over the limit, and
+// 500 for a handler that panics under ProcessRequest before writing. It
+// adds the four responses in ascending order, each with the schema DocError
+// documents and the HTTP status text as description, and one named example
+// per body the library sends for that status: invalidRequestContent;
+// invalidAuthorizationHeader, invalidBasicToken, invalidBearerToken and
+// invalidSessionID; requestContentTooLarge; and internalServerError. Each
+// example is the body the instance's formatter builds for the Error the
+// middleware writes, without an event ID or token since there is no request.
+//
+// The examples are built when DocRejections is called, as with DocErrors,
+// so they carry the values of DefaultInvalidAuthHeaderMsg and the other
+// message variables at that moment. Every status is added whether or not
+// the route uses the middleware that sends it; as with every response
+// option, a later option for the same status replaces it. The 415 of
+// RequestHeaderJSON and headers such as WWW-Authenticate are not
+// documented.
+func (a *API) DocRejections() doc.RouteOption {
+	responses := a.documentedRejections()
+	return func(route *doc.Route) {
+		route.Responses = append(route.Responses, responses...)
+	}
+}
+
+// libraryRejection is an error the library's middlewares answer on their
+// own, with the name and summary of its documented example.
+type libraryRejection struct {
+	name    string
+	summary string
+	build   func() Error
+}
+
+// libraryRejections returns the errors DocRejections documents, ordered by
+// status. Each is built by the constructor its middleware writes with.
+func libraryRejections() []libraryRejection {
+	return []libraryRejection{
+		{name: "invalidRequestContent", summary: "ProcessRequest or RequestBody could not parse the request body", build: bodyParseError},
+		{name: "invalidAuthorizationHeader", summary: "BasicToken or CustomToken found no Authorization header of their scheme", build: func() Error {
+			return unauthorizedError(DefaultInvalidAuthHeaderMsg)
+		}},
+		{name: "invalidBasicToken", summary: "BasicToken rejected the credentials", build: func() Error {
+			return unauthorizedError(DefaultBasicUnauthorizedMsg)
+		}},
+		{name: "invalidBearerToken", summary: "CustomToken rejected the token", build: func() Error {
+			return unauthorizedError(DefaultBearerUnauthorizedMsg)
+		}},
+		{name: "invalidSessionID", summary: "RequestHeaderSession found no session ID", build: func() Error {
+			return unauthorizedError(invalidSessionIDMessage)
+		}},
+		{name: "requestContentTooLarge", summary: "The request body exceeds the size limit", build: bodyTooLargeError},
+		{name: "internalServerError", summary: "The handler panicked under ProcessRequest before writing", build: func() Error {
+			return Error500()
+		}},
+	}
+}
+
+// documentedRejections returns the responses DocRejections documents.
+func (a *API) documentedRejections() []doc.RouteResponse {
+	mode := a.documentedResponseMode()
+	var responses []doc.RouteResponse
+	for _, rejection := range libraryRejections() {
+		response := rejection.build().withDefaults()
+		if len(responses) == 0 || responses[len(responses)-1].Status != response.HTTPStatusCode {
+			responses = append(responses, errorResponse(mode, response.HTTPStatusCode, ""))
+		}
+		a.addErrorExample(&responses[len(responses)-1], rejection.name, rejection.summary, response)
 	}
 	return responses
 }
