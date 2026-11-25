@@ -27,6 +27,9 @@ type constraintTagsCapture struct {
 	// sent as null, which the contracttest module validates against an enum
 	// that lists null.
 	Level *int `json:"level" enum:"1,2,3"`
+	// Count is unsigned with no tags, so the contracttest module validates
+	// the minimum 0 and int64 format the walker gives it.
+	Count uint32 `json:"count"`
 }
 
 func newConstraintTagsRoutes() *doc.Docs {

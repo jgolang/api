@@ -6,6 +6,7 @@ import (
 	"math"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -82,8 +83,9 @@ type schemaWalker struct {
 	// components, where the component placeholder stops recursion and an
 	// anonymous struct must still expand inside a component it reaches.
 	seen map[reflect.Type]bool
-	// tagErrors holds the constraint tags left out because their value does
-	// not parse, for CheckSchemaTags.
+	// tagErrors holds, for CheckSchemaTags, the constraint tags left out
+	// because their value does not parse, and the tags written although
+	// they sit on the wrong type or contradict each other.
 	tagErrors []error
 }
 
@@ -279,24 +281,30 @@ func isNullable(typ reflect.Type) bool {
 type constraintTag struct {
 	name  string
 	apply func(schema *Schema, fieldType reflect.Type, raw string) error
+	// appliesTo names the schema types the tag is meant for, as the walker
+	// classifies the field; nil means any type.
+	appliesTo []string
 }
 
 func constraintTags() []constraintTag {
+	numberTypes := []string{"number", "integer"}
+	stringTypes := []string{"string"}
 	return []constraintTag{
-		{"enum", applyEnumTag},
-		{"default", applyDefaultTag},
-		{"minimum", applyMinimumTag},
-		{"maximum", applyMaximumTag},
-		{"minLength", applyMinLengthTag},
-		{"maxLength", applyMaxLengthTag},
-		{"pattern", applyPatternTag},
-		{"deprecated", applyDeprecatedTag},
+		{"enum", applyEnumTag, nil},
+		{"default", applyDefaultTag, nil},
+		{"minimum", applyMinimumTag, numberTypes},
+		{"maximum", applyMaximumTag, numberTypes},
+		{"minLength", applyMinLengthTag, stringTypes},
+		{"maxLength", applyMaxLengthTag, stringTypes},
+		{"pattern", applyPatternTag, stringTypes},
+		{"deprecated", applyDeprecatedTag, nil},
 	}
 }
 
 // applyConstraintTags reads the constraint tags of field, a field of owner.
 // A value that does not parse is left out rather than guessed, and recorded
-// for CheckSchemaTags.
+// for CheckSchemaTags. A tag on a type it does not apply to, and tags that
+// contradict each other, are written as they are and also recorded.
 func (walker *schemaWalker) applyConstraintTags(schema *Schema, owner reflect.Type, field reflect.StructField) {
 	for _, tag := range constraintTags() {
 		raw := field.Tag.Get(tag.name)
@@ -306,8 +314,44 @@ func (walker *schemaWalker) applyConstraintTags(schema *Schema, owner reflect.Ty
 		if err := tag.apply(schema, field.Type, raw); err != nil {
 			walker.tagErrors = append(walker.tagErrors, errors.NewC(codes.CfgInvalid,
 				"doc: field %s.%s has an invalid %s tag %q: %w", owner, field.Name, tag.name, raw, err))
+			continue
+		}
+		if tag.appliesTo != nil && !slices.Contains(tag.appliesTo, schema.Type) {
+			walker.tagErrors = append(walker.tagErrors, errors.NewC(codes.CfgInvalid,
+				"doc: field %s.%s has a %s tag, which applies only to %s fields, not %s",
+				owner, field.Name, tag.name, strings.Join(tag.appliesTo, " and "), field.Type))
 		}
 	}
+	for _, contradiction := range tagContradictions(schema) {
+		walker.tagErrors = append(walker.tagErrors, errors.NewC(codes.CfgInvalid,
+			"doc: field %s.%s has %s", owner, field.Name, contradiction))
+	}
+}
+
+// tagContradictions describes the limits of schema that no value can meet.
+// The enum and default values are typed like the field, so a default of 1.0
+// matches an enum value of 1 on a float field.
+func tagContradictions(schema *Schema) []string {
+	var found []string
+	if schema.Minimum != nil && schema.Maximum != nil && *schema.Minimum > *schema.Maximum {
+		found = append(found, fmt.Sprintf("minimum %v greater than maximum %v", *schema.Minimum, *schema.Maximum))
+	}
+	if schema.MinLength != nil && schema.MaxLength != nil && *schema.MinLength > *schema.MaxLength {
+		found = append(found, fmt.Sprintf("minLength %d greater than maxLength %d", *schema.MinLength, *schema.MaxLength))
+	}
+	if schema.Enum != nil && schema.Default != nil && !containsValue(schema.Enum, schema.Default) {
+		found = append(found, fmt.Sprintf("default %v that is not one of its enum values %v", schema.Default, schema.Enum))
+	}
+	return found
+}
+
+func containsValue(values []interface{}, value interface{}) bool {
+	for _, candidate := range values {
+		if reflect.DeepEqual(candidate, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func applyEnumTag(schema *Schema, fieldType reflect.Type, raw string) error {

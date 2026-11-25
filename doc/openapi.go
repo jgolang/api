@@ -167,10 +167,15 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 // CheckSchemaTags reports the schema tags of the body and response types in
 // docs that GenerateOpenAPI leaves out because their value does not parse,
 // such as enum:"1,two" on an int field or pattern:"[a-" that does not
-// compile. It walks the same types as GenerateOpenAPI. Each error carries
-// codes.CfgInvalid and names the Go type, field, tag and value; several are
-// joined with errors.Join. It returns nil when every tag parses or docs is
-// nil, so a service can call it at startup or in a test.
+// compile. It also reports tags GenerateOpenAPI writes as they are although
+// they are mistakes: minimum or maximum on a field that is not a number or
+// integer, minLength, maxLength or pattern on a field that is not a string,
+// minimum greater than maximum, minLength greater than maxLength, and a
+// default that is not one of the enum values. It walks the same types as
+// GenerateOpenAPI. Each error carries codes.CfgInvalid and names the Go type,
+// field and tags; several are joined with errors.Join. It returns nil when
+// every tag is valid or docs is nil, so a service can call it at startup or
+// in a test.
 func CheckSchemaTags(docs *Docs) error {
 	_, schemas := generateOpenAPI(docs)
 	return stderrors.Join(schemas.tagErrors...)

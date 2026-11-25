@@ -569,7 +569,16 @@ type Capture struct {
 - `pattern:"^[a-z]+$"` sets a regular expression; it must compile with Go's `regexp`.
 - `deprecated:"true"` marks the field deprecated. On a field whose schema is a `$ref`, the keyword sits in an `allOf` wrapper, because OpenAPI 3.0.3 ignores keys beside `$ref`.
 
-A tag whose value does not parse for its field, such as `enum:"1,two"` on an `int`, a `NaN` limit or a pattern that does not compile, is left out of the schema rather than guessed; the library never panics or logs for it. `doc.CheckSchemaTags(docs)` walks the same types as `doc.GenerateOpenAPI` and returns every such tag as a `codes.CfgInvalid` error naming the Go type, field, tag and value (several are joined with `errors.Join`), so a service can fail its startup or a test on a typo:
+A tag whose value does not parse for its field, such as `enum:"1,two"` on an `int`, a `NaN` limit or a pattern that does not compile, is left out of the schema rather than guessed; the library never panics or logs for it. `doc.CheckSchemaTags(docs)` walks the same types as `doc.GenerateOpenAPI` and returns every such tag as a `codes.CfgInvalid` error naming the Go type, field, tag and value (several are joined with `errors.Join`), so a service can fail its startup or a test on a typo.
+
+`CheckSchemaTags` also reports, as the same kind of error, tags that are mistakes even though the schema keeps them as they are:
+
+- a tag on a type it does not apply to: `minimum` or `maximum` on a field that is not documented as a number or integer, or `minLength`, `maxLength` or `pattern` on a field that is not documented as a string (a pointer counts as its element, and `time.Time` is a string);
+- `minimum` greater than `maximum`, including a `maximum` below the `minimum: 0` of an unsigned field;
+- `minLength` greater than `maxLength`;
+- a `default` that is not one of the `enum` values, compared as typed values, so `default:"1.0"` matches `enum:"1"` on a `float64`.
+
+A service calls it at startup or in a test:
 
 ```go
 if err := doc.CheckSchemaTags(docs); err != nil {
