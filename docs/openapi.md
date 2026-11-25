@@ -542,9 +542,12 @@ type CreateUserRequest struct {
 Supported tags:
 
 - `json:"name,omitempty"` controls property names and optional fields.
+- `json:"name,string"` on a bool, integer or float field (or an unnamed pointer to one) documents it as `type: string`, because `encoding/json` sends it as a JSON string (`"42"`). No `format`, and no `minimum` for an unsigned field, is generated; a `format` tag still sets one. Its `enum` and `default` values are typed like the field first, so out-of-range values are still rejected, and then written as the strings sent on the wire (`enum:"1,2"` writes `["1","2"]`); a pointer's `null` entry stays `null`. A `minimum` or `maximum` tag on such a field is written but reported by `CheckSchemaTags` as a tag on the wrong type. Because such a field is documented as a string, `minLength`, `maxLength` and `pattern` tags apply to it and are not reported, and an `example` tag is written as a string (`example:"42"` writes `"42"`).
 - `description:"..."` sets the schema description.
 - `format:"email"` sets the OpenAPI format.
 - `example:"..."` sets an example value. JSON literals such as `3`, `true`, or `{"x":1}` are parsed.
+- A `[]byte` field, or any slice of a byte kind, is documented as `{"type":"string","format":"byte"}`, because `encoding/json` sends it base64-encoded.
+- Neither rule applies to a type that implements `json.Marshaler` or `encoding.TextMarshaler` (or whose element does, for a byte slice), nor to a `string` field with the `string` option (it stays `type: string`), nor to a `[N]byte` array, which `encoding/json` sends as an array of numbers.
 - `validate:"required"` marks a field as required even when it has `omitempty`. No other `validate` rule is read.
 
 Constraint tags write the matching OpenAPI keyword. They document the contract only: the library does not validate requests against them.

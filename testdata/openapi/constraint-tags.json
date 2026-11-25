@@ -22,7 +22,10 @@
                 "slug": "write-docs",
                 "estimate": 2.5,
                 "level": null,
-                "count": 0
+                "count": 0,
+                "attachment": "aGVsbG8=",
+                "external_id": "42",
+                "rank": "1"
               }
             }
           }
@@ -51,6 +54,10 @@
             "type": "boolean",
             "default": false
           },
+          "attachment": {
+            "type": "string",
+            "format": "byte"
+          },
           "count": {
             "type": "integer",
             "format": "int64",
@@ -61,6 +68,10 @@
             "format": "double",
             "minimum": 0,
             "maximum": 99.5
+          },
+          "external_id": {
+            "type": "string",
+            "example": "42"
           },
           "legacy_id": {
             "type": "string",
@@ -86,6 +97,15 @@
               3
             ],
             "default": 2
+          },
+          "rank": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "default": "2"
           },
           "slug": {
             "type": "string",
@@ -124,7 +144,9 @@
           "title",
           "slug",
           "estimate",
-          "count"
+          "count",
+          "external_id",
+          "rank"
         ]
       }
     }
