@@ -111,5 +111,68 @@
       "token": "",
       "type": "error"
     }
+  },
+  {
+    "name": "delete missing task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/1",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 404,
+    "contentType": "application/json",
+    "body": {
+      "action": "",
+      "code": "TSK-404",
+      "content": null,
+      "event_id": "",
+      "info": null,
+      "message": "task not found (-TSK-404)",
+      "title": "Error response!",
+      "token": "",
+      "type": "error"
+    },
+    "example": "TSK-404"
+  },
+  {
+    "name": "delete locked task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/42",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 409,
+    "contentType": "application/json",
+    "body": {
+      "action": "",
+      "code": "TSK-409",
+      "content": null,
+      "event_id": "",
+      "info": null,
+      "message": "task is locked (-TSK-409)",
+      "title": "Error response!",
+      "token": "",
+      "type": "error"
+    },
+    "example": "TSK-409"
+  },
+  {
+    "name": "delete with store down",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/13",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 500,
+    "contentType": "application/json",
+    "body": {
+      "action": "",
+      "code": "TSK-500",
+      "content": null,
+      "event_id": "",
+      "info": null,
+      "message": "task store is unavailable (-TSK-500)",
+      "title": "Sorry!",
+      "token": "",
+      "type": "error"
+    },
+    "example": "TSK-500"
   }
 ]

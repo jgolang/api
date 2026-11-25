@@ -79,5 +79,56 @@
       "detail": "task not found",
       "code": "TSK-404"
     }
+  },
+  {
+    "name": "delete missing task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/1",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 404,
+    "contentType": "application/problem+json",
+    "body": {
+      "type": "about:blank",
+      "title": "Not Found",
+      "status": 404,
+      "detail": "task not found",
+      "code": "TSK-404"
+    },
+    "example": "TSK-404"
+  },
+  {
+    "name": "delete locked task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/42",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 409,
+    "contentType": "application/problem+json",
+    "body": {
+      "type": "about:blank",
+      "title": "Conflict",
+      "status": 409,
+      "detail": "task is locked",
+      "code": "TSK-409"
+    },
+    "example": "TSK-409"
+  },
+  {
+    "name": "delete with store down",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/13",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 500,
+    "contentType": "application/problem+json",
+    "body": {
+      "type": "about:blank",
+      "title": "Internal Server Error",
+      "status": 500,
+      "detail": "task store is unavailable",
+      "code": "TSK-500"
+    },
+    "example": "TSK-500"
   }
 ]

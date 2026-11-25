@@ -50,7 +50,7 @@ var knownGaps = map[string]string{}
 // recordedExchange mirrors the root module's recording format. Headers are
 // the documented response headers the instance sent, besides Content-Type.
 // Body holds the response JSON as is, or a JSON string when the response was
-// not JSON.
+// not JSON. Example, when set, names the named example the body must equal.
 type recordedExchange struct {
 	Name               string            `json:"name"`
 	Method             string            `json:"method"`
@@ -61,6 +61,7 @@ type recordedExchange struct {
 	ContentType        string            `json:"contentType"`
 	Headers            map[string]string `json:"headers"`
 	Body               json.RawMessage   `json:"body"`
+	Example            string            `json:"example"`
 }
 
 // contract is one mode's spec, ready to validate against, and its recorded
@@ -241,7 +242,7 @@ func TestDocumentedExamplesMatchRecordedBodies(t *testing.T) {
 		contract := loadContract(t, mode)
 		compared := 0
 		for _, exchange := range contract.exchanges {
-			examples := documentedExamples(t, contract.router, exchange)
+			examples := documentedExamples(t, contract, exchange)
 			if len(examples) == 0 {
 				continue
 			}
@@ -267,12 +268,13 @@ func TestDocumentedExamplesMatchRecordedBodies(t *testing.T) {
 	}
 }
 
-// documentedExamples returns, by media type, the examples the spec documents
-// for the status of exchange.
-func documentedExamples(t *testing.T, router routers.Router, exchange recordedExchange) map[string]any {
+// documentedExamples returns, by media type, the example the spec documents
+// for the status of exchange: the named example exchange.Example when it is
+// set, failing when a media type lacks it, else the single example.
+func documentedExamples(t *testing.T, contract contract, exchange recordedExchange) map[string]any {
 	t.Helper()
 	request := httptest.NewRequest(exchange.Method, exchange.Path, nil)
-	route, _, err := router.FindRoute(request)
+	route, _, err := contract.router.FindRoute(request)
 	if err != nil {
 		t.Fatalf("find route of %q: %v", exchange.Name, err)
 	}
@@ -282,7 +284,18 @@ func documentedExamples(t *testing.T, router routers.Router, exchange recordedEx
 	}
 	examples := make(map[string]any)
 	for mediaType, media := range response.Value.Content {
-		if media != nil && media.Example != nil {
+		if media == nil {
+			continue
+		}
+		if exchange.Example != "" {
+			named, ok := media.Examples[exchange.Example]
+			if !ok || named == nil || named.Value == nil {
+				t.Fatalf("status %d under %q has no example %q", exchange.Status, mediaType, exchange.Example)
+			}
+			examples[mediaType] = named.Value.Value
+			continue
+		}
+		if media.Example != nil {
 			examples[mediaType] = media.Example
 		}
 	}

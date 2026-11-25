@@ -9,6 +9,7 @@ import (
 	"github.com/jgolang/api"
 	"github.com/jgolang/api/doc"
 	"github.com/jgolang/api/stdadapter"
+	"github.com/jgolang/errors/codes"
 )
 
 // ExampleAPI_DocSuccess documents a route's bodies as the instance sends
@@ -93,6 +94,36 @@ func ExampleAPI_DocSuccessExample() {
 	fmt.Println(string(example))
 	// Output:
 	// {"content":{"id":42,"title":"Write docs"},"header":{"code":"0000","type":"success"}}
+}
+
+// ExampleAPI_DocErrors documents the errors WriteError sends for a route's
+// codes: one response per status, each with a named example per code that is
+// the body the instance sends for it.
+func ExampleAPI_DocErrors() {
+	var (
+		errTaskNotFound = codes.New("TSK-404", "task not found").WithKind(codes.KindNotFound)
+		errTaskLocked   = codes.New("TSK-409", "task is locked").WithKind(codes.KindConflict)
+	)
+	instance := api.New() // envelope responses
+
+	docs := doc.New(doc.API{Title: "Tasks API", Version: "1.0.0"})
+	router := stdadapter.New(http.NewServeMux(), docs)
+	api.Delete(router, "/tasks/{taskID}", func(w http.ResponseWriter, r *http.Request) {},
+		instance.DocErrors(errTaskNotFound, errTaskLocked),
+	)
+
+	operation := doc.GenerateOpenAPI(docs).Paths["/tasks/{taskID}"]["delete"]
+	for _, status := range []string{"404", "409"} {
+		examples, err := json.Marshal(operation.Responses[status].Content["application/json"].Examples)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(status, string(examples))
+	}
+	// Output:
+	// 404 {"TSK-404":{"summary":"task not found","value":{"header":{"code":"TSK-404","message":"task not found (-TSK-404)","title":"Error response!","type":"error"}}}}
+	// 409 {"TSK-409":{"summary":"task is locked","value":{"header":{"code":"TSK-409","message":"task is locked (-TSK-409)","title":"Error response!","type":"error"}}}}
 }
 
 // ExampleAPI_DocSuccess_envelope documents GET /tasks/{taskID} on an

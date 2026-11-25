@@ -142,6 +142,108 @@
       }
     },
     "/projects/{projectID}/tasks/{taskID}": {
+      "delete": {
+        "operationId": "deleteTask",
+        "summary": "Delete a task",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "projectID",
+            "in": "path",
+            "required": true,
+            "description": "Project that owns the task",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskID",
+            "in": "path",
+            "required": true,
+            "description": "Task to delete",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "TSK-404": {
+                    "summary": "task not found",
+                    "value": {
+                      "header": {
+                        "code": "TSK-404",
+                        "info": {
+                          "formatter": "custom"
+                        },
+                        "type": "error"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "TSK-409": {
+                    "summary": "task is locked",
+                    "value": {
+                      "header": {
+                        "code": "TSK-409",
+                        "info": {
+                          "formatter": "custom"
+                        },
+                        "type": "error"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "TSK-500": {
+                    "summary": "task store is unavailable",
+                    "value": {
+                      "header": {
+                        "code": "TSK-500",
+                        "info": {
+                          "formatter": "custom"
+                        },
+                        "type": "error"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "getTask",
         "summary": "Get a task",

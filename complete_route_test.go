@@ -74,6 +74,18 @@ var errTaskTitleRequired = codes.New("TSK-001", "title is required").WithKind(co
 
 var errTaskNotFound = codes.New("TSK-404", "task not found").WithKind(codes.KindNotFound)
 
+var errTaskLocked = codes.New("TSK-409", "task is locked").WithKind(codes.KindConflict)
+
+// errTaskStoreDown has no kind, so WriteError answers it with 500.
+var errTaskStoreDown = codes.New("TSK-500", "task store is unavailable")
+
+// lockedTaskID and storeDownTaskID make deleteTask answer the conflict and
+// the kindless error, so every code DocErrors documents is recorded.
+const (
+	lockedTaskID    = "42"
+	storeDownTaskID = "13"
+)
+
 type createProjectTaskRequest struct {
 	Title    string `json:"title"`
 	Priority string `json:"priority,omitempty"`
@@ -120,6 +132,14 @@ func newCompleteRoute(options ...api.Option) (http.Handler, *doc.Docs) {
 		instance.DocSuccess(http.StatusOK, projectTaskResponse{}),
 		instance.DocError(http.StatusNotFound, "Task not found"),
 	)
+	api.Delete(router, "/projects/{projectID}/tasks/{taskID}", deleteTask,
+		doc.OperationID("deleteTask"),
+		doc.Summary("Delete a task"),
+		doc.Tags("tasks"),
+		doc.PathWithDescription("projectID", doc.String, true, "Project that owns the task"),
+		doc.PathWithDescription("taskID", doc.Int, true, "Task to delete"),
+		instance.DocErrors(errTaskNotFound, errTaskLocked, errTaskStoreDown),
+	)
 	return instance.Handler(router), docs
 }
 
@@ -163,6 +183,19 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 	}).Write(w, r)
 }
 
+// deleteTask never deletes: it answers each error DocErrors documents for it.
+func deleteTask(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("taskID")
+	switch taskID {
+	case lockedTaskID:
+		api.WriteError(w, r, errors.NewC(errTaskLocked, "task %s is locked", taskID))
+	case storeDownTaskID:
+		api.WriteError(w, r, errors.NewC(errTaskStoreDown, "store timeout deleting %s", taskID))
+	default:
+		api.WriteError(w, r, errors.NewC(errTaskNotFound, "no task %s", taskID))
+	}
+}
+
 func TestCompleteRouteSpecMatchesGolden(t *testing.T) {
 	for _, variant := range completeRouteVariants {
 		t.Run(variant.name, func(t *testing.T) {
@@ -181,6 +214,8 @@ func TestCompleteRouteSpecMatchesGolden(t *testing.T) {
 // recordedExchange is one real request and the response the instance sent,
 // as the contracttest module reads it. Body holds the response JSON as is,
 // or a JSON string when the response is not JSON (see recordedBody).
+// Example names the named example the body must equal, for a status
+// documented with named examples; a JSON null body has none.
 type recordedExchange struct {
 	Name               string            `json:"name"`
 	Method             string            `json:"method"`
@@ -191,25 +226,31 @@ type recordedExchange struct {
 	ContentType        string            `json:"contentType"`
 	Headers            map[string]string `json:"headers,omitempty"`
 	Body               json.RawMessage   `json:"body"`
+	Example            string            `json:"example,omitempty"`
 }
 
 // recordedHeaders are the response headers the complete route documents,
 // besides Content-Type; only these are recorded so the files stay stable.
 var recordedHeaders = []string{"Location"}
 
-// completeRouteRequests cover the 201 and both 400 paths of createTask, and
-// the 200 and 404 of getTask.
+// completeRouteRequests cover the 201 and both 400 paths of createTask, the
+// 200 and 404 of getTask, and the three codes of deleteTask, each with the
+// named example it must equal.
 var completeRouteRequests = []struct {
-	name   string
-	method string
-	path   string
-	body   string
+	name    string
+	method  string
+	path    string
+	body    string
+	example string
 }{
 	{name: "valid task", method: http.MethodPost, path: "/projects/7/tasks", body: `{"title":"Write docs","priority":"high"}`},
 	{name: "empty title", method: http.MethodPost, path: "/projects/7/tasks", body: `{"title":" "}`},
 	{name: "malformed body", method: http.MethodPost, path: "/projects/7/tasks", body: `{`},
 	{name: "found task", method: http.MethodGet, path: "/projects/7/tasks/42"},
 	{name: "missing task", method: http.MethodGet, path: "/projects/7/tasks/1"},
+	{name: "delete missing task", method: http.MethodDelete, path: "/projects/7/tasks/1", example: "TSK-404"},
+	{name: "delete locked task", method: http.MethodDelete, path: "/projects/7/tasks/" + lockedTaskID, example: "TSK-409"},
+	{name: "delete with store down", method: http.MethodDelete, path: "/projects/7/tasks/" + storeDownTaskID, example: "TSK-500"},
 }
 
 func TestCompleteRouteExchangesMatchGolden(t *testing.T) {
@@ -218,7 +259,12 @@ func TestCompleteRouteExchangesMatchGolden(t *testing.T) {
 			handler, _ := newCompleteRoute(variant.options...)
 			exchanges := make([]recordedExchange, 0, len(completeRouteRequests))
 			for _, request := range completeRouteRequests {
-				exchanges = append(exchanges, recordExchange(t, handler, request.name, request.method, request.path, request.body))
+				exchange := recordExchange(t, handler, request.name, request.method, request.path, request.body)
+				if string(exchange.Body) != "null" {
+					// A JSON null body (none mode) is documented without example.
+					exchange.Example = request.example
+				}
+				exchanges = append(exchanges, exchange)
 			}
 
 			got, err := json.MarshalIndent(exchanges, "", "  ")

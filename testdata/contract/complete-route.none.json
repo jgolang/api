@@ -61,5 +61,35 @@
     "status": 404,
     "contentType": "application/json",
     "body": null
+  },
+  {
+    "name": "delete missing task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/1",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 404,
+    "contentType": "application/json",
+    "body": null
+  },
+  {
+    "name": "delete locked task",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/42",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 409,
+    "contentType": "application/json",
+    "body": null
+  },
+  {
+    "name": "delete with store down",
+    "method": "DELETE",
+    "path": "/projects/7/tasks/13",
+    "requestContentType": "",
+    "requestBody": "",
+    "status": 500,
+    "contentType": "application/json",
+    "body": null
   }
 ]

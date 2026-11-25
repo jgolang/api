@@ -129,6 +129,78 @@
       }
     },
     "/projects/{projectID}/tasks/{taskID}": {
+      "delete": {
+        "operationId": "deleteTask",
+        "summary": "Delete a task",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "projectID",
+            "in": "path",
+            "required": true,
+            "description": "Project that owns the task",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskID",
+            "in": "path",
+            "required": true,
+            "description": "Task to delete",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "enum": [
+                    null
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "enum": [
+                    null
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "enum": [
+                    null
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "getTask",
         "summary": "Get a task",

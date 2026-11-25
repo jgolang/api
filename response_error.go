@@ -35,7 +35,15 @@ type Error core.ResponseData
 
 // Write response error in screen.
 func (err Error) Write(w http.ResponseWriter, r *http.Request) {
+	err = err.withDefaults()
 	err.EventID = getEventID(r)
+	instanceFrom(r).core.Write(core.ResponseData(err), w)
+}
+
+// withDefaults returns err as Write sends it, before the event ID is added:
+// the error type, and the default title, message, status and code for the
+// ones left empty. DocErrors builds its examples from it.
+func (err Error) withDefaults() Error {
 	err.ResponseType = ErrorType
 	if err.Title == "" {
 		err.Title = DefaultErrorTitle
@@ -49,7 +57,7 @@ func (err Error) Write(w http.ResponseWriter, r *http.Request) {
 	if err.ResponseCode == "" {
 		err.ResponseCode = ResponseCodes.DefaultError
 	}
-	instanceFrom(r).core.Write(core.ResponseData(err), w)
+	return err
 }
 
 // getErrCode returns the code and public message of the first coded error in

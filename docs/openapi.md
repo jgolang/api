@@ -278,6 +278,68 @@ the formatter writes it (lowercased with `api.WithLowercaseCodes`).
   `ResponseOf…`/`PlainResponseOf…` component with an inline schema, so
   generated clients lose that type name.
 
+### Errors from codes
+
+`(*api.API).DocErrors(errorCodes ...codes.Coder)` documents the error
+responses `api.WriteError` sends for `jgolang/errors` codes, so the statuses
+and bodies a client sees come from the same codes the handler writes:
+
+```go
+var (
+	errTaskNotFound  = codes.New("TSK-404", "task not found").WithKind(codes.KindNotFound)
+	errTaskLocked    = codes.New("TSK-409", "task is locked").WithKind(codes.KindConflict)
+	errTaskStoreDown = codes.New("TSK-500", "task store is unavailable") // no kind: 500
+)
+
+api.Delete(router, "/projects/{projectID}/tasks/{taskID}", deleteTask,
+	instance.DocErrors(errTaskNotFound, errTaskLocked, errTaskStoreDown),
+)
+```
+
+The spec gets a 404, a 409 and a 500 response, in ascending order, each with
+the schema `DocError` documents in the instance's mode, the HTTP status text
+as description, and one named example per code. On an envelope instance the
+404 is:
+
+```json
+"examples": {
+  "TSK-404": {
+    "summary": "task not found",
+    "value": {"header": {"code": "TSK-404", "message": "task not found (-TSK-404)", "title": "Error response!", "type": "error"}}
+  }
+}
+```
+
+- **Status.** A code goes to the status the instance gives its kind: its
+  `api.WithKindStatus` override, else `api.StatusForKind`; 500 for a code
+  without a kind. It is the function `WriteError` uses, so an override moves
+  the documentation and the wire together. Codes of one status share one
+  response with one example each.
+- **Example.** The name is the code the response carries: the code's
+  `Str()`, or the default code `WriteError` uses when `Str()` is empty
+  (`ResponseCodes.DefaultError`, or the internal server error code for a
+  500). The summary is its `Msg()` (none
+  when empty), and the value the body the instance's formatter builds for the
+  `Error` that `WriteError` writes for an error with that code (same title,
+  message, code and status rules), with no event ID or token since there is
+  no request. In problem mode it is problem details under
+  `application/problem+json`. In none mode every error body is JSON `null`,
+  so, as with `DocSuccessExample`, no example is written: the response keeps
+  its null-body schema only.
+- **Edge cases.** A `nil` code, a nil pointer such as `(*codes.Code)(nil)`
+  included, documents an uncoded error: a 500 named by the internal server
+  error code. A code whose name was already documented is skipped (first
+  wins). With no codes the option documents nothing. A
+  formatter that returns nil, or a body that cannot be encoded, leaves that
+  code without an example and its response with the schema.
+- **When.** Like `DocSuccessExample`, the examples are built when `DocErrors`
+  is called: with the mode, overrides and formatter of an API from `api.New`,
+  or, on the default instance (a nil `*api.API`), with `CurrentResponseMode`,
+  `StatusForKind` and the registered formatter. The writer and the
+  `api.WithErrorHook` are never called.
+- A later response option for the same status replaces the `DocErrors`
+  response, as with every response option.
+
 ### Limits
 
 - **One mode per route, from the instance it calls.** A route documents the mode of the
@@ -289,10 +351,13 @@ the formatter writes it (lowercased with `api.WithLowercaseCodes`).
   formatter of each mode sends. A custom formatter set with
   `api.WithResponseFormatter` is not described; document a body of another
   shape with the `doc` options (`doc.Status`, `doc.ResponseSchema`,
-  `doc.StatusWithExample`). Only the example of `DocSuccessExample` comes from
-  the custom formatter, so a formatter that changes the shape documents an
-  example its schema rejects, which an OpenAPI validator with example
-  validation reports.
+  `doc.StatusWithExample`). Only the examples of `DocSuccessExample` and
+  `DocErrors` come from the custom formatter, so a formatter that changes the
+  shape documents an example its schema rejects, which an OpenAPI validator
+  with example validation reports.
+- **No per-code problem type.** `DocErrors` documents the `about:blank`
+  problem type `WriteError` sends; there is no example URI or problem `type`
+  per code.
 
 ## API metadata
 

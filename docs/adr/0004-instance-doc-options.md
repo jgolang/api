@@ -1,6 +1,6 @@
 # 0004 — Instances document the bodies they send
 
-- Status: accepted (2026-11-22); amended for story 4.1 (see the end)
+- Status: accepted (2026-11-22); amended for stories 4.1 and 3.1 (see the end)
 - Initiative: api docs match the wire (epic "mode-aware responses", story 1)
 - Release: next MINOR (new exported methods, no wire change)
 
@@ -45,3 +45,16 @@ Accepted 2026-11-22. Decision 3 stands for `DocSuccess`, which stays schema-only
 5. **No example, no panic.** A status without a body, a nil formatted response, a body that cannot be encoded and a JSON `null` body leave the response with its schema only.
 
 Consequences: a custom formatter's computed values (timestamps, random IDs) are frozen when the method is called. The schema still describes the built-in mode, so a custom formatter that changes the body's shape documents with the `doc` options; kin-openapi example validation flags an example its schema rejects. The complete-route contract test now also records a custom-formatter variant and checks that every documented example equals the recorded wire body.
+
+## Amendment (story 3.1): errors from their codes
+
+Accepted 2026-11-25. A route documented its error statuses by hand with `DocError(status, description)`, schema only, repeating per route the statuses `WriteError` already derives from `jgolang/errors` codes, with no example of the code and message a client receives.
+
+1. **One method over codes.** `(*API).DocErrors(errorCodes ...codes.Coder) doc.RouteOption` groups the codes by the status the instance gives their kind and writes one response per status, ordered by status, with the schema `DocError` documents (decisions 5 and 6) and one named example per code. The parameter is not named `codes`, which would shadow the package.
+2. **The status `WriteError` uses.** Grouping calls the instance's own kind-to-status function (`WithKindStatus` overrides, else `StatusForKind`, 500 without a kind), so an override moves documentation and wire together. A nil API, the default instance, has no overrides.
+3. **The body `WriteError` sends.** `WriteError`'s body rules take the code, not the error (`errorResponseForCode`), and the defaults `Error.Write` applies before writing (`withDefaults`) are shared, so the example is built from the same `Error` value `WriteError` writes, then formatted as in the story 4.1 amendment (decision 2, a shared `formattedExample`). There is no second copy of the status, title or message rules.
+4. **Named examples.** The name is the code the response carries: the code's `Str()`, or the default code `WriteError` uses when `Str()` is empty (`ResponseCodes.DefaultError`, or the internal server error code for a 500), so a client sees which code each body carries; the summary is its `Msg()`. A repeated name keeps its first example; a nil code, a nil pointer one included, documents an uncoded error, named by the internal server error code.
+5. **No example for JSON null.** As with `DocSuccessExample`, a JSON `null` body (every error in none mode), a nil formatted response or an unencodable body leaves that code without an example, so the response keeps its schema only. A `"value": null` example is valid OpenAPI 3.0, but common validators such as kin-openapi read it as a missing value and reject the spec.
+6. **No side effects.** The examples are built when `DocErrors` is called; the writer and the error hook are never called.
+
+Consequences: the complete-route contract test adds a `DELETE` route documented only with `DocErrors` and checks, in every variant whose error body is not `null` (all but none mode), that each recorded wire body equals the named example of its code. Per-code problem types and component responses are out of scope.
