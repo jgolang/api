@@ -1,6 +1,6 @@
 # 0004 — Instances document the bodies they send
 
-- Status: accepted (2026-11-22); amended for stories 4.1 and 3.1 (see the end)
+- Status: accepted (2026-11-22); amended for stories 4.1, 3.1 and 3.3, and smaller decisions recorded on 2026-11-25 (see the end)
 - Initiative: api docs match the wire (epic "mode-aware responses", story 1)
 - Release: next MINOR (new exported methods, no wire change)
 
@@ -70,3 +70,11 @@ Accepted 2026-11-25. The library answers some requests itself: 400 for a body `P
 5. **Out of scope.** The 415 of `RequestHeaderJSON` and response headers such as `WWW-Authenticate` are not documented.
 
 Consequences: the library-rejections goldens record a route with the option and one without it in every variant, validated by the contracttest module, and a test serves each rejection through the real middleware and checks that its body equals the named example once the event ID is removed.
+
+## Smaller decisions
+
+Recorded 2026-11-25 from the initiative's retrospectives. Each one is small, but changes spec output or the exported API in a way a reader would not guess.
+
+1. **A `doc.ExampleObject` in a named-examples map is written as the example object** (v1.4.0, PR #107, commit `f4db89c`). In a `doc.ResponseExamples` or `doc.BodyExamples` map, a `doc.ExampleObject{Summary, Value}` value, or a non-nil pointer to one, is written as the OpenAPI example object with its summary; any other value, a nil pointer included, is wrapped as `{"value": v}`. Reusing the exported type gave summaries without a new type or option. Before v1.4.0 an `ExampleObject` in a `ResponseExamples` map was nested under `value`; the release notes list the change as a fix.
+2. **The media type is a field on the route, not an option** (v1.3.0, PR #100, commit `7f23b9a`). `doc.Route.BodyContentType` sets the request body's media type and `doc.RouteResponse.ContentType` a response's; empty means `application/json`, and the string is written as given, so existing routes generate the same output. #75 (API-19) asked for multipart uploads and binary downloads, and problem mode needed `application/problem+json`. The owner's triage of #75 kept the need and declined the proposed `BodyWithContentType` and `ResponseWithContentType` options: a route sets the field with a `func(*doc.Route)` closure, as `docs/openapi.md` shows, and the instance options set `RouteResponse.ContentType` themselves (decision 6 and the story 4.1 amendment, item 4).
+3. **The plain doc types mark nullable required fields with `validate:"required"`** (v1.3.0, PR #101, commit `4c07ccd`). The schema walker makes a pointer field nullable and not required, unless the field carries `validate:"required"` (`doc/schema.go`, `isRequiredField`). Plain mode writes every key and sends `info` and `content` as `null` when unset, so `envelope.PlainResponseOf[T]` and `envelope.PlainErrorResponse` declare `Info *map[string]string` and `Content` as pointers with `validate:"required"`, and the spec lists them as required and nullable. It is a doc-only use of a validation tag on documentation types, chosen over a new tag; the type comments say why. `envelope.ProblemDetails` has no pointer field and needs no such tag: its `type` is required because it has no `omitempty`.
