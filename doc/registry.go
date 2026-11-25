@@ -449,6 +449,19 @@ func cloneSchema(schema *Schema) *Schema {
 	clone.AdditionalProperties = cloneSchema(schema.AdditionalProperties)
 	clone.Required = append([]string(nil), schema.Required...)
 	clone.Enum = append([]interface{}(nil), schema.Enum...)
+	clone.Minimum = clonePointer(schema.Minimum)
+	clone.Maximum = clonePointer(schema.Maximum)
+	clone.MinLength = clonePointer(schema.MinLength)
+	clone.MaxLength = clonePointer(schema.MaxLength)
+	clone.Default = cloneValue(schema.Default)
+	return &clone
+}
+
+func clonePointer[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	clone := *value
 	return &clone
 }
 

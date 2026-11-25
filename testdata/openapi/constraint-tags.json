@@ -1,0 +1,113 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Constraint tags API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/captures": {
+      "post": {
+        "operationId": "createCapture",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConstraintTagsCapture"
+              },
+              "example": {
+                "target_type": "task",
+                "priority": 1,
+                "title": "Write docs",
+                "slug": "write-docs",
+                "estimate": 2.5
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstraintTagsCapture"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ConstraintTagsCapture": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean",
+            "default": false
+          },
+          "estimate": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 99.5
+          },
+          "legacy_id": {
+            "type": "string",
+            "deprecated": true
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 2
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z-]+$"
+          },
+          "status": {
+            "type": "string",
+            "default": "open"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "target_type": {
+            "type": "string",
+            "description": "What the capture becomes.",
+            "enum": [
+              "goal",
+              "project",
+              "task",
+              "note"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "target_type",
+          "priority",
+          "title",
+          "slug",
+          "estimate"
+        ]
+      }
+    }
+  }
+}
