@@ -30,7 +30,7 @@ We'd also love PRs. If you're thinking of a large PR, we advise opening up an is
    `contracttest` is a nested test-only module: it validates the responses recorded in `testdata/contract` against the specs in `testdata/openapi`.
 1. Create a new branch: `git checkout -b my-branch-name`.
 1. Make your change, add tests, and make sure the tests still pass.
-   Golden files live in `testdata`; after an intended change to a generated spec or a recorded response, run `go test -run 'CompleteRoute' -update .` in the root and review the diff.
+   Golden files live in `testdata`; after an intended change to a generated spec or a recorded response, run `go test -update .` in the root and review the diff.
 1. Push to your fork and [submit a pull request][pr].
 1. Pat your self on the back and wait for your pull request to be reviewed and merged.
 

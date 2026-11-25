@@ -64,8 +64,9 @@ func (infoFormatter) Format(data core.ResponseData) *core.ResponseFormatted {
 }
 
 // refreshHint tells a reader how to rewrite the golden files after an
-// intended change.
-const refreshHint = "if the change is intended, run: go test -run 'CompleteRoute' -update . and review the diff"
+// intended change. It names the whole package because every golden test
+// shares assertMatchesGolden.
+const refreshHint = "if the change is intended, run: go test -update . and review the diff"
 
 // createdTaskID is fixed so the documented 201 example equals the real body.
 const createdTaskID = 42
