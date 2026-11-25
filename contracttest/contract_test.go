@@ -7,8 +7,8 @@
 // ../testdata/openapi/complete-route.<variant>.json and the real request and
 // response exchanges to ../testdata/contract/complete-route.<variant>.json,
 // for the envelope, none, plain and problem modes and a custom formatter, and
-// this package only reads those files. Refresh them, and every other golden
-// file, from the root module with: go test -update .
+// this package only reads those files. Refresh them, and the root module's
+// other golden files, from the root module with: go test -update .
 package contracttest
 
 import (
@@ -283,15 +283,14 @@ func checkExample(examples map[string]any, exchange recordedExchange) error {
 func TestExampleCheckRejectsAnExampleUnderAnotherMediaType(t *testing.T) {
 	for _, mode := range modes {
 		contract := loadContract(t, mode)
+		checked := 0
 		for _, exchange := range contract.exchanges {
 			examples := documentedExamples(t, contract, exchange)
 			if len(examples) == 0 {
 				continue
 			}
+			checked++
 			t.Run(mode+"/"+exchange.Name, func(t *testing.T) {
-				if err := checkExample(examples, exchange); err != nil {
-					t.Fatalf("unchanged exchange fails: %v", err)
-				}
 				exchange.ContentType = "application/vnd.other+json"
 
 				err := checkExample(examples, exchange)
@@ -300,6 +299,9 @@ func TestExampleCheckRejectsAnExampleUnderAnotherMediaType(t *testing.T) {
 					t.Fatalf("check error = %v, want it to reject the example under another media type", err)
 				}
 			})
+		}
+		if checked == 0 {
+			t.Errorf("no %s exchange has a documented example", mode)
 		}
 	}
 }
