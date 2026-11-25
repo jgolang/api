@@ -540,7 +540,38 @@ Supported tags:
 - `description:"..."` sets the schema description.
 - `format:"email"` sets the OpenAPI format.
 - `example:"..."` sets an example value. JSON literals such as `3`, `true`, or `{"x":1}` are parsed.
-- `validate:"required"` marks a field as required even when it has `omitempty`.
+- `validate:"required"` marks a field as required even when it has `omitempty`. No other `validate` rule is read.
+
+Constraint tags write the matching OpenAPI keyword. They document the contract only: the library does not validate requests against them.
+
+```go
+type Capture struct {
+	TargetType string  `json:"target_type" enum:"goal,project,task,note"`
+	Priority   int     `json:"priority" enum:"1,2,3" default:"2"`
+	Title      string  `json:"title" minLength:"1" maxLength:"80" pattern:"^[^<>]+$"`
+	Estimate   float64 `json:"estimate" minimum:"0" maximum:"99.5"`
+	LegacyID   string  `json:"legacy_id,omitempty" deprecated:"true"`
+}
+// target_type: {"type":"string","enum":["goal","project","task","note"]}
+// priority:    {"type":"integer","format":"int32","enum":[1,2,3],"default":2}
+```
+
+- `enum:"a,b,c"` lists the allowed values, split on `,` with spaces trimmed. Only scalar fields (bool, integer, float, string, `time.Time` as a string, or a pointer to one) take it; each value is typed like the field, so `enum:"1,2,3"` on an `int` writes JSON numbers and a value out of the field's range (`enum:"300"` on an `int8`) is rejected. A `time.Time` value must be RFC 3339. On a pointer field, which is nullable, `null` is added to the list, because OpenAPI 3.0.3 validators check `enum` even for `null`.
+- `default:"..."` sets the default value. A scalar field's default is typed like the field (`default:"false"` and `default:"0"` are written); a struct, map, slice or interface field's default is read as JSON (`default:"{\"a\":1}"`).
+- `minimum:"0"` and `maximum:"99.5"` set number limits.
+- `minLength:"1"` and `maxLength:"80"` set string lengths; they must be non-negative integers.
+- `pattern:"^[a-z]+$"` sets a regular expression; it must compile with Go's `regexp`.
+- `deprecated:"true"` marks the field deprecated. On a field whose schema is a `$ref`, the keyword sits in an `allOf` wrapper, because OpenAPI 3.0.3 ignores keys beside `$ref`.
+
+A tag whose value does not parse for its field, such as `enum:"1,two"` on an `int`, a `NaN` limit or a pattern that does not compile, is left out of the schema rather than guessed; the library never panics or logs for it. `doc.CheckSchemaTags(docs)` walks the same types as `doc.GenerateOpenAPI` and returns every such tag as a `codes.CfgInvalid` error naming the Go type, field, tag and value (several are joined with `errors.Join`), so a service can fail its startup or a test on a typo:
+
+```go
+if err := doc.CheckSchemaTags(docs); err != nil {
+	return err
+}
+```
+
+`CheckSchemaTags` covers only types given as sample values (`doc.Body`, `doc.Status` and similar options); a ready-made `*doc.Schema` passed to `doc.BodySchema` or `doc.ResponseSchema`, such as one built with `doc.SchemaFromType`, is not walked. `doc.SchemaFromType` reads the same tags and leaves a bad value out silently.
 
 ## External router adapter example
 

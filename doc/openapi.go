@@ -3,6 +3,7 @@ package doc
 import (
 	"bytes"
 	"encoding/json"
+	stderrors "errors"
 	"net/http"
 	"reflect"
 	"sort"
@@ -159,16 +160,35 @@ type OpenAPIHeader struct {
 
 // GenerateOpenAPI renders an OpenAPI 3.0 document from a docs.
 func GenerateOpenAPI(docs *Docs) OpenAPI {
+	doc, _ := generateOpenAPI(docs)
+	return doc
+}
+
+// CheckSchemaTags reports the schema tags of the body and response types in
+// docs that GenerateOpenAPI leaves out because their value does not parse,
+// such as enum:"1,two" on an int field or pattern:"[a-" that does not
+// compile. It walks the same types as GenerateOpenAPI. Each error carries
+// codes.CfgInvalid and names the Go type, field, tag and value; several are
+// joined with errors.Join. It returns nil when every tag parses or docs is
+// nil, so a service can call it at startup or in a test.
+func CheckSchemaTags(docs *Docs) error {
+	_, schemas := generateOpenAPI(docs)
+	return stderrors.Join(schemas.tagErrors...)
+}
+
+// generateOpenAPI renders the document and returns the walker that built its
+// schemas, so CheckSchemaTags reads the tag errors of the exact same walk.
+func generateOpenAPI(docs *Docs) (OpenAPI, *schemaWalker) {
 	doc := OpenAPI{
 		OpenAPI: "3.0.3",
 		Paths:   make(map[string]map[string]Operation),
 	}
+	schemas := newComponentSchemaWalker()
 	if docs == nil {
-		return doc
+		return doc, schemas
 	}
 	doc.Info = docs.API()
 	doc.Servers = docs.serverList()
-	schemas := newComponentSchemaWalker()
 	for name, scheme := range docs.SecuritySchemes() {
 		ensureComponents(&doc)
 		if doc.Components.SecuritySchemes == nil {
@@ -202,7 +222,7 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 		ensureComponents(&doc)
 		doc.Components.Schemas = schemas.components
 	}
-	return doc
+	return doc, schemas
 }
 
 // ensureSecurityScheme adds a bearer JWT scheme named name unless the docs
