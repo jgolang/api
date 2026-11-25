@@ -89,7 +89,7 @@ var constraintTagCases = []struct {
 	{"target_type", `{"type":"string","enum":["goal","project","task","note"]}`},
 	{"priority", `{"type":"integer","format":"int32","enum":[1,2,3],"default":2}`},
 	{"level", `{"type":"integer","format":"int32","enum":[1,2,3,null],"nullable":true}`},
-	{"unsigned", `{"type":"integer","format":"int32","enum":[1,2]}`},
+	{"unsigned", `{"type":"integer","format":"int32","enum":[1,2],"minimum":0}`},
 	{"ratio", `{"type":"number","format":"double","enum":[0.5,1.5]}`},
 	{"flag", `{"type":"boolean","enum":[true]}`},
 	{"at", `{"type":"string","format":"date-time","enum":["2026-01-01T00:00:00Z"]}`},

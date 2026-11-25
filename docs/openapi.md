@@ -564,6 +564,7 @@ type Capture struct {
 - `enum:"a,b,c"` lists the allowed values, split on `,` with spaces trimmed. Only scalar fields (bool, integer, float, string, `time.Time` as a string, or a pointer to one) take it; each value is typed like the field, so `enum:"1,2,3"` on an `int` writes JSON numbers and a value out of the field's range (`enum:"300"` on an `int8`) is rejected. A `time.Time` value must be RFC 3339. On a pointer field, which is nullable, `null` is added to the list, because OpenAPI 3.0.3 validators check `enum` even for `null`.
 - `default:"..."` sets the default value. A scalar field's default is typed like the field (`default:"false"` and `default:"0"` are written); a struct, map, slice or interface field's default is read as JSON (`default:"{\"a\":1}"`).
 - `minimum:"0"` and `maximum:"99.5"` set number limits.
+  Unsigned integer fields carry `minimum: 0` without a tag, and a `minimum` tag replaces it. `uint8` and `uint16` are documented as `format: int32`, `uint` and `uint32` as `format: int64`, and `uint64` with no format, because no OpenAPI format holds every value.
 - `minLength:"1"` and `maxLength:"80"` set string lengths; they must be non-negative integers.
 - `pattern:"^[a-z]+$"` sets a regular expression; it must compile with Go's `regexp`.
 - `deprecated:"true"` marks the field deprecated. On a field whose schema is a `$ref`, the keyword sits in an `allOf` wrapper, because OpenAPI 3.0.3 ignores keys beside `$ref`.
