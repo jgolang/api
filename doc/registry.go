@@ -103,6 +103,10 @@ type RouteResponse struct {
 	// set, Example is not written (OpenAPI allows one or the other).
 	Examples map[string]interface{}
 	Headers  []ResponseHeaderInfo
+	// Ref is the name of a component response added with Docs.AddResponse.
+	// When set, every other field but Status is ignored and the response is
+	// written as a $ref to components.responses.
+	Ref string
 }
 
 // ResponseHeaderInfo describes a documented response header.
@@ -121,6 +125,7 @@ type Docs struct {
 	securitySchemes map[string]SecurityScheme
 	defaultSecurity []string
 	servers         []Server
+	responses       map[string]RouteResponse
 }
 
 // New creates an OpenAPI documentation collector.
@@ -128,6 +133,7 @@ func New(info API) *Docs {
 	return &Docs{
 		info:            cloneAPI(info),
 		securitySchemes: make(map[string]SecurityScheme),
+		responses:       make(map[string]RouteResponse),
 	}
 }
 
@@ -198,6 +204,45 @@ func (docs *Docs) AddSecurityScheme(name string, scheme SecurityScheme) {
 	docs.mu.Lock()
 	defer docs.mu.Unlock()
 	docs.securitySchemes[name] = scheme
+}
+
+// AddResponse registers a reusable response, written once under the spec's
+// components.responses, that routes reference with ResponseRef. response is
+// any option that adds exactly one response, such as ResponseSchema,
+// ResponseExamples or an API's DocError. The option's status is not the
+// status the response is documented under, which each referencing route
+// chooses; it only shapes the component as the option builds it, such as its
+// default description (the status text). An empty name, a nil option, and an
+// option that adds no response or more than one are ignored. Adding a name
+// again replaces its response.
+func (docs *Docs) AddResponse(name string, response RouteOption) {
+	if docs == nil || name == "" || response == nil {
+		return
+	}
+	var scratch Route
+	response(&scratch)
+	if len(scratch.Responses) != 1 {
+		return
+	}
+	docs.mu.Lock()
+	defer docs.mu.Unlock()
+	if docs.responses == nil {
+		docs.responses = make(map[string]RouteResponse)
+	}
+	docs.responses[name] = cloneResponse(scratch.Responses[0])
+}
+
+func (docs *Docs) componentResponses() map[string]RouteResponse {
+	if docs == nil {
+		return nil
+	}
+	docs.mu.RLock()
+	defer docs.mu.RUnlock()
+	responses := make(map[string]RouteResponse, len(docs.responses))
+	for name, response := range docs.responses {
+		responses[name] = cloneResponse(response)
+	}
+	return responses
 }
 
 // SetDefaultSecurity sets the security schemes that apply to every operation
@@ -331,14 +376,20 @@ func cloneRoute(route Route) Route {
 	clone.Security = append([]string(nil), route.Security...)
 	clone.Responses = append([]RouteResponse(nil), route.Responses...)
 	for i := range clone.Responses {
-		clone.Responses[i].Schema = cloneSchema(route.Responses[i].Schema)
-		clone.Responses[i].Example = cloneValue(route.Responses[i].Example)
-		clone.Responses[i].Examples = cloneExamples(route.Responses[i].Examples)
-		clone.Responses[i].Headers = cloneResponseHeaders(route.Responses[i].Headers)
+		clone.Responses[i] = cloneResponse(route.Responses[i])
 	}
 	clone.BodySchema = cloneSchema(route.BodySchema)
 	clone.BodyExample = cloneValue(route.BodyExample)
 	clone.BodyExamples = cloneExamples(route.BodyExamples)
+	return clone
+}
+
+func cloneResponse(response RouteResponse) RouteResponse {
+	clone := response
+	clone.Schema = cloneSchema(response.Schema)
+	clone.Example = cloneValue(response.Example)
+	clone.Examples = cloneExamples(response.Examples)
+	clone.Headers = cloneResponseHeaders(response.Headers)
 	return clone
 }
 

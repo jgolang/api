@@ -394,6 +394,7 @@ docs.SetServers(
 - `doc.StatusWithHeaders(201, envelope.Success[TaskResponse](), doc.ResponseHeader("Location", doc.String, "Created resource URL"))`
 - `doc.ResponseSchema(400, "Bad Request", &doc.Schema{Type: "object"})`
 - `doc.ResponseExamples(409, "Transition not allowed or system record", ErrorBody{}, map[string]any{"transition": transitionExample, "system": systemExample})` (OpenAPI `examples` map; a `doc.ExampleObject` value keeps its summary; one option per status, a later one for the same status replaces it)
+- `doc.ResponseRef(404, "TaskNotFound")` (writes `{"$ref": "#/components/responses/TaskNotFound"}`; see [Component responses](#component-responses))
 - `doc.Query("page", doc.Int, false)`
 - `doc.QueryWithDescription("page", doc.Int, false, "Page number")`
 - `doc.QueryEnum("in_inbox", doc.Bool, false, "Only true is accepted.", true)` (writes `schema.enum`; values match the type)
@@ -405,6 +406,24 @@ docs.SetServers(
 - `doc.Public()` (writes `security: []`; overrides `doc.Security` and the default)
 - `doc.Hidden()` (keeps the route out of the spec, e.g. `/openapi.json` and `/docs`; `docs.Routes()` still returns it with `Hidden` set)
 - `doc.Security("bearerAuth")`
+
+### Component responses
+
+A response that many routes share (a 404, a 401, an error built by an instance) can be written once under `components.responses` and referenced from each route, so an edit is made in one place:
+
+```go
+docs.AddResponse("TaskNotFound", a.DocError(http.StatusNotFound, "Task not found"))
+
+api.Get(router, "/tasks/{id}", getTask, doc.ResponseRef(http.StatusNotFound, "TaskNotFound"))
+api.Delete(router, "/tasks/{id}", deleteTask, doc.ResponseRef(http.StatusNotFound, "TaskNotFound"))
+```
+
+Each route's `404` is written as `{"$ref": "#/components/responses/TaskNotFound"}`, and the component is written like an operation's response: description, headers, schema (a body's Go type goes to `components.schemas`), and examples.
+
+- `docs.AddResponse(name, option)` takes any `doc.RouteOption` that adds exactly one response: `doc.ResponseSchema`, `doc.ResponseExamples`, `doc.Status`, `a.DocError`, or `a.DocErrors` with codes of one status. An empty name, a nil option, and an option that adds no response or several are ignored. Adding a name again replaces it. The stored response is a copy.
+- The option's status is not the status the response is documented under: `doc.ResponseRef(status, name)` chooses that on each route, so one component can be referenced as a `404` on one route and a `410` on another. The option's status only shapes the component as the option builds it: its default description is that status's text, and `a.DocError` writes no content for a status without a body. An empty name adds nothing, and as with every response option, a later option for the same status replaces it.
+- References are not checked or inlined: a name that was never added is written as is, and the spec then has a dangling `$ref` that validators reject.
+- `components.responses` is written only when a response is added, so a spec that does not use these names is unchanged. `doc.RouteResponse.Ref` carries the name in Go, and `doc.ResponseObject.Ref` the written reference; a `ResponseObject` with `Ref` marshals as `$ref` alone.
 
 ### Media types
 
