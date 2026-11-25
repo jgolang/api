@@ -214,8 +214,8 @@ func (docs *Docs) AddSecurityScheme(name string, scheme SecurityScheme) {
 // chooses; it only shapes the component as the option builds it, such as its
 // default description (the status text). An empty name, a nil option, and an
 // option that adds no response or more than one are ignored, without an error
-// or log: an API's DocRejections, which adds four responses, and DocErrors
-// over codes of several statuses register nothing. Adding a name again
+// or log: the api package's DocRejections and DocErrors over codes of
+// several statuses add several responses and register nothing. Adding a name again
 // replaces its response.
 func (docs *Docs) AddResponse(name string, response RouteOption) {
 	if docs == nil || name == "" || response == nil {

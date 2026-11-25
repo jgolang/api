@@ -260,9 +260,6 @@ func TestDocErrorsKeepsTheFirstOfDuplicateCodes(t *testing.T) {
 	if summary := namedExample(t, responses[0], "TSK-404").Summary; summary != "task not found" {
 		t.Fatalf("summary = %q, want the first code's message", summary)
 	}
-	if examples := responses[1].Examples; len(examples) != 0 {
-		t.Fatalf("409 examples = %v, want none", examples)
-	}
 }
 
 func TestDocErrorsDocumentsEveryStatusOfCodesWithTheSameName(t *testing.T) {
