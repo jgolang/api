@@ -249,14 +249,40 @@ func TestDocErrorsLeavesTheNullBodyOfNoneModeWithoutExample(t *testing.T) {
 func TestDocErrorsKeepsTheFirstOfDuplicateCodes(t *testing.T) {
 	responses := documentedErrors(api.New().DocErrors(docErrorsNotFound, docErrorsNotFound, docErrorsSameString))
 
-	if got := documentedStatuses(responses); !slices.Equal(got, []int{http.StatusNotFound}) {
-		t.Fatalf("statuses = %v, want [404]", got)
+	// docErrorsSameString is sent as 409, so its status is documented, but
+	// without the example its repeated name already has under 404.
+	if got := documentedStatuses(responses); !slices.Equal(got, []int{http.StatusNotFound, http.StatusConflict}) {
+		t.Fatalf("statuses = %v, want [404 409]", got)
 	}
 	if len(responses[0].Examples) != 1 {
 		t.Fatalf("examples = %v, want only TSK-404", responses[0].Examples)
 	}
 	if summary := namedExample(t, responses[0], "TSK-404").Summary; summary != "task not found" {
 		t.Fatalf("summary = %q, want the first code's message", summary)
+	}
+}
+
+func TestDocErrorsDocumentsEveryStatusOfCodesWithTheSameName(t *testing.T) {
+	// Both codes have an empty Str(), so both are named by the default
+	// error code, but WriteError sends each one with its own status.
+	notFound := codes.New("", "task not found").WithKind(codes.KindNotFound)
+	conflict := codes.New("", "task is locked").WithKind(codes.KindConflict)
+	instance := api.New()
+
+	responses := documentedErrors(instance.DocErrors(notFound, conflict))
+
+	var wireStatuses []int
+	for _, code := range []codes.Code{notFound, conflict} {
+		status, _, _ := writtenErrorBody(t, instance.Handler, errors.NewC(code, "internal detail"))
+		wireStatuses = append(wireStatuses, status)
+	}
+	if got := documentedStatuses(responses); !slices.Equal(got, wireStatuses) {
+		t.Fatalf("documented statuses = %v, wire statuses = %v", got, wireStatuses)
+	}
+	name := string(api.ResponseCodes.DefaultError)
+	namedExample(t, responseForStatus(t, responses, http.StatusNotFound), name)
+	if examples := responseForStatus(t, responses, http.StatusConflict).Examples; len(examples) != 0 {
+		t.Fatalf("409 examples = %v, want none: a repeated name keeps only its first example", examples)
 	}
 }
 

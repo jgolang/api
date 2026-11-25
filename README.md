@@ -364,7 +364,7 @@ api.Post(router, "/tasks", createTask,
 )
 ```
 
-`a.DocErrors(errorCodes...)` documents the errors `api.WriteError` sends for `jgolang/errors` codes, instead of a hand-written `a.DocError` per status. Each code goes to the status the instance gives its kind (a `api.WithKindStatus` override, else `api.StatusForKind`; 500 for a code without a kind), each status gets one response with the `DocError` schema, and each code adds a named example: the name is the code the response carries (the code's `Str()`, or the default code `WriteError` uses when `Str()` is empty), the summary its public message, and the value the body `WriteError` sends for an error with that code (no event ID, like `DocSuccessExample`; none in none mode, whose error body is JSON `null`). Responses are ordered by status, a repeated name keeps its first example, and the error hook is never called:
+`a.DocErrors(errorCodes...)` documents the errors `api.WriteError` sends for `jgolang/errors` codes, instead of a hand-written `a.DocError` per status. Each code goes to the status the instance gives its kind (a `api.WithKindStatus` override, else `api.StatusForKind`; 500 for a code without a kind), each status gets one response with the `DocError` schema, and each code adds a named example: the name is the code the response carries (the code's `Str()`, or the default code `WriteError` uses when `Str()` is empty), the summary its public message, and the value the body `WriteError` sends for an error with that code (no event ID, like `DocSuccessExample`; none in none mode, whose error body is JSON `null`). Responses are ordered by status, a repeated name keeps its first example (its status is still documented), and the error hook is never called:
 
 ```go
 var (
@@ -420,7 +420,7 @@ api.Post(router, "/tasks", createTask,
 )
 ```
 
-A response shared by many routes, such as a 404, can be written once under `components.responses`: register it with `docs.AddResponse(name, option)` and reference it with `doc.ResponseRef(status, name)`, written as `{"$ref": "#/components/responses/<name>"}`. The option is any response option that adds one response (`doc.ResponseSchema`, `doc.ResponseExamples`, `a.DocError`, `a.DocErrors` with codes of one status); the option's status is not the status the response is documented under, which each route chooses; it only shapes the component as the option builds it, such as its default description. A name that was never added is written as is, leaving a dangling `$ref`. See [Component responses](docs/openapi.md#component-responses):
+A response shared by many routes, such as a 404, can be written once under `components.responses`: register it with `docs.AddResponse(name, option)` and reference it with `doc.ResponseRef(status, name)`, written as `{"$ref": "#/components/responses/<name>"}`. The option is any response option that adds one response (`doc.ResponseSchema`, `doc.ResponseExamples`, `a.DocError`, `a.DocErrors` with codes of one status; `a.DocRejections()` and `a.DocErrors` over several statuses add several and are ignored); the option's status is not the status the response is documented under, which each route chooses; it only shapes the component as the option builds it, such as its default description. A name that was never added is written as is, leaving a dangling `$ref`. See [Component responses](docs/openapi.md#component-responses):
 
 ```go
 docs.AddResponse("TaskNotFound", a.DocError(http.StatusNotFound, "Task not found"))
