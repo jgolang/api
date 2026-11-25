@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -115,6 +116,9 @@ func (walker *schemaWalker) schemaFromReflectType(typ reflect.Type) *Schema {
 		schema.Nullable = true
 		return refToAllOf(schema)
 	}
+	if isBase64Slice(typ) {
+		return &Schema{Type: "string", Format: "byte"}
+	}
 	if walker.components != nil && typ.Kind() == reflect.Struct && typ.Name() != "" {
 		return walker.componentRef(typ)
 	}
@@ -163,6 +167,87 @@ func unsignedSchema(format string) *Schema {
 	return &Schema{Type: "integer", Format: format, Minimum: &minimum}
 }
 
+var (
+	jsonMarshalerType = reflect.TypeOf((*json.Marshaler)(nil)).Elem()
+	textMarshalerType = reflect.TypeOf((*encoding.TextMarshaler)(nil)).Elem()
+)
+
+// encodesItself reports whether typ or a pointer to it implements
+// json.Marshaler or encoding.TextMarshaler, which makes encoding/json ignore
+// its kind. A pointer's method set holds the value's, so checking the
+// pointer covers both.
+func encodesItself(typ reflect.Type) bool {
+	pointer := reflect.PointerTo(typ)
+	return pointer.Implements(jsonMarshalerType) || pointer.Implements(textMarshalerType)
+}
+
+// isBase64Slice reports whether encoding/json sends typ as a base64 string:
+// a byte slice whose element and slice types do not encode themselves.
+func isBase64Slice(typ reflect.Type) bool {
+	return typ.Kind() == reflect.Slice &&
+		typ.Elem().Kind() == reflect.Uint8 &&
+		!encodesItself(typ.Elem()) &&
+		!encodesItself(typ)
+}
+
+// isQuotedField reports whether encoding/json sends field as a JSON string
+// because of the json tag's string option. Like encoding/json, it looks
+// through one unnamed pointer and quotes only bool, integer and float kinds
+// that do not encode themselves.
+func isQuotedField(field reflect.StructField) bool {
+	options := strings.Split(field.Tag.Get("json"), ",")[1:]
+	if !slices.Contains(options, "string") {
+		return false
+	}
+	typ := field.Type
+	if typ.Name() == "" && typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	switch typ.Kind() {
+	case reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return !encodesItself(typ)
+	default:
+		return false
+	}
+}
+
+// quoteTagValues rewrites the typed enum and default values of a quoted
+// field as the strings encoding/json sends for them. A pointer's null enum
+// entry stays null.
+func quoteTagValues(schema *Schema, fieldType reflect.Type) {
+	typ := dereferenceType(fieldType)
+	for i, value := range schema.Enum {
+		if value != nil {
+			schema.Enum[i] = quotedValue(value, typ)
+		}
+	}
+	if schema.Default != nil {
+		schema.Default = quotedValue(schema.Default, typ)
+	}
+}
+
+// quotedValue encodes value as a value of typ, so a float32 keeps its
+// 32-bit spelling, and returns the JSON text as a string. A value that does
+// not encode is returned as it is.
+func quotedValue(value interface{}, typ reflect.Type) interface{} {
+	encoded, err := json.Marshal(reflect.ValueOf(value).Convert(typ).Interface())
+	if err != nil {
+		return value
+	}
+	return string(encoded)
+}
+
+// quoteExample keeps the example of a quoted field a string, as sent on the
+// wire, when the example tag parses as another JSON value such as 42.
+func quoteExample(schema *Schema, field reflect.StructField) {
+	if _, isString := schema.Example.(string); schema.Example != nil && !isString {
+		schema.Example = field.Tag.Get("example")
+	}
+}
+
 func (walker *schemaWalker) structSchema(typ reflect.Type) *Schema {
 	if walker.seen != nil {
 		if walker.seen[typ] {
@@ -196,9 +281,17 @@ func (walker *schemaWalker) structSchema(typ reflect.Type) *Schema {
 		if name == "" {
 			name = field.Name
 		}
+		quoted := isQuotedField(field)
 		fieldSchema := walker.schemaFromReflectType(field.Type)
+		if quoted {
+			fieldSchema = &Schema{Type: "string", Nullable: fieldSchema.Nullable}
+		}
 		applySchemaTags(fieldSchema, field)
 		walker.applyConstraintTags(fieldSchema, typ, field)
+		if quoted {
+			quoteTagValues(fieldSchema, field.Type)
+			quoteExample(fieldSchema, field)
+		}
 		schema.Properties[name] = refToAllOf(fieldSchema)
 		if isRequiredField(field, omitEmpty) {
 			schema.Required = append(schema.Required, name)
@@ -319,13 +412,22 @@ func (walker *schemaWalker) applyConstraintTags(schema *Schema, owner reflect.Ty
 		if tag.appliesTo != nil && !slices.Contains(tag.appliesTo, schema.Type) {
 			walker.tagErrors = append(walker.tagErrors, errors.NewC(codes.CfgInvalid,
 				"doc: field %s.%s has a %s tag, which applies only to %s fields, not %s",
-				owner, field.Name, tag.name, strings.Join(tag.appliesTo, " and "), field.Type))
+				owner, field.Name, tag.name, strings.Join(tag.appliesTo, " and "), describeFieldType(field)))
 		}
 	}
 	for _, contradiction := range tagContradictions(schema) {
 		walker.tagErrors = append(walker.tagErrors, errors.NewC(codes.CfgInvalid,
 			"doc: field %s.%s has %s", owner, field.Name, contradiction))
 	}
+}
+
+// describeFieldType names the field type for a wrong-type report. A quoted
+// field is sent as a string, so the json string option is named as the cause.
+func describeFieldType(field reflect.StructField) string {
+	if isQuotedField(field) {
+		return fmt.Sprintf("%s with the json string option", field.Type)
+	}
+	return field.Type.String()
 }
 
 // tagContradictions describes the limits of schema that no value can meet.

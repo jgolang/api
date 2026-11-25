@@ -42,6 +42,14 @@ type patternOnBoolFixture struct {
 	Done bool `json:"done" pattern:"^true$"`
 }
 
+type minimumOnQuotedFixture struct {
+	ExternalID uint `json:"external_id,string" minimum:"1"`
+}
+
+type maximumOnQuotedPointerFixture struct {
+	Ratio *float64 `json:"ratio,string" maximum:"1"`
+}
+
 type minimumAboveMaximumFixture struct {
 	Score float64 `json:"score" minimum:"10" maximum:"5"`
 }
@@ -80,6 +88,8 @@ func TestCheckSchemaTagsReportsTagsOnTheWrongTypeAndContradictions(t *testing.T)
 		{"maxLength on float", maxLengthOnFloatFixture{}, []string{"maxLengthOnFloatFixture", "Ratio", "maxLength", "string"}},
 		{"pattern on int pointer", patternOnIntPointerFixture{}, []string{"patternOnIntPointerFixture", "Count", "pattern", "string"}},
 		{"pattern on bool", patternOnBoolFixture{}, []string{"patternOnBoolFixture", "Done", "pattern", "string"}},
+		{"minimum on quoted uint", minimumOnQuotedFixture{}, []string{"minimumOnQuotedFixture", "ExternalID", "minimum", "number and integer", "string option"}},
+		{"maximum on quoted float pointer", maximumOnQuotedPointerFixture{}, []string{"maximumOnQuotedPointerFixture", "Ratio", "maximum", "number and integer", "string option"}},
 		{"minimum above maximum", minimumAboveMaximumFixture{}, []string{"minimumAboveMaximumFixture", "Score", "minimum 10", "maximum 5"}},
 		{"unsigned maximum below zero", unsignedMaximumBelowZeroFixture{}, []string{"unsignedMaximumBelowZeroFixture", "Count", "minimum 0", "maximum -1"}},
 		{"minLength above maxLength", minLengthAboveMaxLengthFixture{}, []string{"minLengthAboveMaxLengthFixture", "Name", "minLength 10", "maxLength 5"}},
@@ -122,6 +132,8 @@ type validTagCombinationsFixture struct {
 	Limit      int       `json:"limit" default:"10"`
 	OnlyMax    int       `json:"only_max" maximum:"-5"`
 	OnlyLength string    `json:"only_length" maxLength:"0"`
+	Rank       int       `json:"rank,string" enum:"1,2,3" default:"2"`
+	Flag       *bool     `json:"flag,string" enum:"true" default:"true"`
 }
 
 func TestCheckSchemaTagsAcceptsValidTagCombinations(t *testing.T) {

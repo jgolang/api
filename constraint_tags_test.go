@@ -30,6 +30,13 @@ type constraintTagsCapture struct {
 	// Count is unsigned with no tags, so the contracttest module validates
 	// the minimum 0 and int64 format the walker gives it.
 	Count uint32 `json:"count"`
+	// Attachment, ExternalID and Rank are sent by encoding/json as strings:
+	// base64 for the byte slice and quoted numbers for the string option.
+	// The request example sets them, because a nil byte slice is sent as
+	// null.
+	Attachment []byte `json:"attachment"`
+	ExternalID uint64 `json:"external_id,string" example:"42"`
+	Rank       int    `json:"rank,string" enum:"1,2,3" default:"2"`
 }
 
 func newConstraintTagsRoutes() *doc.Docs {
@@ -45,6 +52,9 @@ func newConstraintTagsRoutes() *doc.Docs {
 			Title:      "Write docs",
 			Slug:       "write-docs",
 			Estimate:   2.5,
+			Attachment: []byte("hello"),
+			ExternalID: 42,
+			Rank:       1,
 		}),
 		doc.Status(http.StatusCreated, constraintTagsCapture{}),
 	)
