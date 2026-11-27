@@ -547,7 +547,8 @@ Supported tags:
 - `format:"email"` sets the OpenAPI format.
 - `example:"..."` sets an example value. JSON literals such as `3`, `true`, or `{"x":1}` are parsed.
 - A `[]byte` field, or any slice of a byte kind, is documented as `{"type":"string","format":"byte"}`, because `encoding/json` sends it base64-encoded.
-- Neither rule applies to a type that implements `json.Marshaler` or `encoding.TextMarshaler` (or whose element does, for a byte slice), nor to a `string` field with the `string` option (it stays `type: string`), nor to a `[N]byte` array, which `encoding/json` sends as an array of numbers.
+- A slice field, a byte slice included, is documented as `nullable: true`, because `encoding/json` sends a nil slice as `null`. It is not when the field has `omitempty` (a nil slice is then left out) or `validate:"required"` (the field is then documented as always present, so send an empty slice, not nil). An array is never nullable.
+- None of these rules applies to a type that implements `json.Marshaler` or `encoding.TextMarshaler` (or, for the byte-slice rule, whose element does), nor to a `string` field with the `string` option (it stays `type: string`), nor to a `[N]byte` array, which `encoding/json` sends as an array of numbers.
 - `validate:"required"` marks a field as required even when it has `omitempty`. No other `validate` rule is read.
 
 Constraint tags write the matching OpenAPI keyword. They document the contract only: the library does not validate requests against them.

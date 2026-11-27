@@ -286,6 +286,9 @@ func (walker *schemaWalker) structSchema(typ reflect.Type) *Schema {
 		if quoted {
 			fieldSchema = &Schema{Type: "string", Nullable: fieldSchema.Nullable}
 		}
+		if sendsNilSliceAsNull(field, omitEmpty) {
+			fieldSchema.Nullable = true
+		}
 		applySchemaTags(fieldSchema, field)
 		walker.applyConstraintTags(fieldSchema, typ, field)
 		if quoted {
@@ -357,6 +360,18 @@ func hasValidateRule(tag string, rule string) bool {
 		}
 	}
 	return false
+}
+
+// sendsNilSliceAsNull reports whether encoding/json sends field as null when
+// it holds a nil slice: a slice field, base64 byte slices included, without
+// omitempty (a nil slice is then left out), without a validate:"required" tag
+// (the field is then documented as always present), and whose type does not
+// encode itself.
+func sendsNilSliceAsNull(field reflect.StructField, omitEmpty bool) bool {
+	return field.Type.Kind() == reflect.Slice &&
+		!omitEmpty &&
+		!hasValidateRule(field.Tag.Get("validate"), "required") &&
+		!encodesItself(field.Type)
 }
 
 func isNullable(typ reflect.Type) bool {

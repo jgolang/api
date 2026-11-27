@@ -56,7 +56,8 @@
           },
           "attachment": {
             "type": "string",
-            "format": "byte"
+            "format": "byte",
+            "nullable": true
           },
           "count": {
             "type": "integer",

@@ -176,7 +176,7 @@ func TestGenerateOpenAPILeavesOutMalformedConstraintTags(t *testing.T) {
 	}{
 		{"priority", `{"type":"integer","format":"int32"}`},
 		{"small", `{"type":"integer","format":"int32"}`},
-		{"tags", `{"type":"array","items":{"type":"string"}}`},
+		{"tags", `{"type":"array","items":{"type":"string"},"nullable":true}`},
 		{"nested", `{"$ref":"#/components/schemas/SchemaAddress"}`},
 		{"labels", `{"type":"object","additionalProperties":{"type":"string"}}`},
 		{"limit", `{"type":"integer","format":"int32"}`},
