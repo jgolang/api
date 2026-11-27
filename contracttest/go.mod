@@ -1,6 +1,6 @@
 module github.com/jgolang/api/contracttest
 
-go 1.26.2
+go 1.26.11
 
 require github.com/getkin/kin-openapi v0.153.0
 
