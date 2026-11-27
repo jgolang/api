@@ -85,8 +85,9 @@ type schemaWalker struct {
 	// anonymous struct must still expand inside a component it reaches.
 	seen map[reflect.Type]bool
 	// tagErrors holds, for CheckSchemaTags, the constraint tags left out
-	// because their value does not parse, and the tags written although
-	// they sit on the wrong type or contradict each other.
+	// because their value does not parse, the tags written although they
+	// sit on the wrong type or contradict each other, and the json string
+	// option on a string field.
 	tagErrors []error
 }
 
@@ -290,6 +291,7 @@ func (walker *schemaWalker) structSchema(typ reflect.Type) *Schema {
 			fieldSchema.Nullable = true
 		}
 		applySchemaTags(fieldSchema, field)
+		walker.checkStringOption(typ, field)
 		walker.applyConstraintTags(fieldSchema, typ, field)
 		if quoted {
 			quoteTagValues(fieldSchema, field.Type)
@@ -434,6 +436,27 @@ func (walker *schemaWalker) applyConstraintTags(schema *Schema, owner reflect.Ty
 		walker.tagErrors = append(walker.tagErrors, errors.NewC(codes.CfgInvalid,
 			"doc: field %s.%s has %s", owner, field.Name, contradiction))
 	}
+}
+
+// checkStringOption records, for CheckSchemaTags, a json string option on a
+// string field (or an unnamed pointer to one): encoding/json then sends the
+// value JSON-quoted inside a string ("\"active\""), which is almost always a
+// mistake. The schema is written as it is.
+func (walker *schemaWalker) checkStringOption(owner reflect.Type, field reflect.StructField) {
+	options := strings.Split(field.Tag.Get("json"), ",")[1:]
+	if !slices.Contains(options, "string") {
+		return
+	}
+	typ := field.Type
+	if typ.Name() == "" && typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.String || encodesItself(typ) {
+		return
+	}
+	walker.tagErrors = append(walker.tagErrors, errors.NewC(codes.CfgInvalid,
+		"doc: field %s.%s is a string with the json string option, which sends it double-quoted; remove the option",
+		owner, field.Name))
 }
 
 // describeFieldType names the field type for a wrong-type report. A quoted
