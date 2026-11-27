@@ -170,8 +170,9 @@ func GenerateOpenAPI(docs *Docs) OpenAPI {
 // compile. It also reports tags GenerateOpenAPI writes as they are although
 // they are mistakes: minimum or maximum on a field that is not a number or
 // integer, minLength, maxLength or pattern on a field that is not a string,
-// minimum greater than maximum, minLength greater than maxLength, and a
-// default that is not one of the enum values. It walks the same types as
+// minimum greater than maximum, minLength greater than maxLength, a default
+// that is not one of the enum values, and the json string option on a string
+// field, which encoding/json sends double-quoted. It walks the same types as
 // GenerateOpenAPI. Each error carries codes.CfgInvalid and names the Go type,
 // field and tags; several are joined with errors.Join. It returns nil when
 // every tag is valid or docs is nil, so a service can call it at startup or

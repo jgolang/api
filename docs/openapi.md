@@ -580,6 +580,7 @@ A tag whose value does not parse for its field, such as `enum:"1,two"` on an `in
 - `minimum` greater than `maximum`, including a `maximum` below the `minimum: 0` of an unsigned field;
 - `minLength` greater than `maxLength`;
 - a `default` that is not one of the `enum` values, compared as typed values, so `default:"1.0"` matches `enum:"1"` on a `float64`.
+- the `json:",string"` option on a `string` field (or an unnamed pointer to one), which `encoding/json` sends JSON-quoted inside a string (`"\"active\""`); the field is still documented as a plain `type: string`.
 
 A service calls it at startup or in a test:
 

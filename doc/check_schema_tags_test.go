@@ -184,3 +184,36 @@ func TestCheckSchemaTagsLeavesTheSpecUnchanged(t *testing.T) {
 		})
 	}
 }
+
+type statusCode string
+
+func (s statusCode) MarshalJSON() ([]byte, error) {
+	return []byte(`"ok"`), nil
+}
+
+func TestCheckSchemaTagsReportsTheStringOptionOnAStringField(t *testing.T) {
+	docs := New(API{Title: "bad", Version: "1"})
+	docs.Register("POST", "/items", Body(struct {
+		Status  string     `json:"status,string"`
+		Pointer *string    `json:"pointer,string"`
+		Count   int        `json:"count,string"`
+		Plain   string     `json:"plain"`
+		Custom  statusCode `json:"custom,string"`
+	}{}))
+
+	err := CheckSchemaTags(docs)
+
+	if err == nil {
+		t.Fatal("CheckSchemaTags() = nil, want the string option reported")
+	}
+	for _, field := range []string{".Status ", ".Pointer "} {
+		if !strings.Contains(err.Error(), field+"is a string with the json string option") {
+			t.Errorf("CheckSchemaTags() = %v, want %s reported", err, field)
+		}
+	}
+	for _, field := range []string{".Count ", ".Plain ", ".Custom "} {
+		if strings.Contains(err.Error(), field) {
+			t.Errorf("CheckSchemaTags() = %v, want %s not reported", err, field)
+		}
+	}
+}
