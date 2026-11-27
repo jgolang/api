@@ -76,15 +76,16 @@ func captureDefaultLogs(t *testing.T) *syncBuffer {
 	return logs
 }
 
-// receiveFromHandler returns what the handler sent on got. The handler
-// sends before it returns, and the response is complete only after that, so
-// an empty channel means the handler never ran.
+// receiveFromHandler returns what the handler sent on got, waiting for it:
+// a handler that flushes lets the client read the whole response before it
+// sends, so an empty channel right after the response does not mean the
+// handler never ran. Only a handler that sends nothing within the wait fails.
 func receiveFromHandler[T any](t *testing.T, got <-chan T) T {
 	t.Helper()
 	select {
 	case value := <-got:
 		return value
-	default:
+	case <-time.After(5 * time.Second):
 		t.Fatal("handler did not run")
 		var zero T
 		return zero
