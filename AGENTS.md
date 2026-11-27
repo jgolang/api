@@ -20,13 +20,23 @@
 
 ## Commands
 
+The checks CI runs on Go oldstable and stable (`.github/workflows/ci.yml`); run them before a change is done:
+
 ```sh
-go vet ./...                                                   # from CI: .github/workflows/ci.yml
-go test -race -cover ./...                                     # from CI: .github/workflows/ci.yml
-go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...         # from CI: .github/workflows/ci.yml
-go test ./...                                                  # from CI: .github/workflows/ci.yml
-go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 -test ./...   # from CI: .github/workflows/ci.yml
+test -z "$(gofmt -l .)"
+go vet ./...
+go test -race -cover ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
+(cd contracttest && go vet ./... && go test ./... && go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 -test ./...)
 ```
+
+After an intended change to a generated spec or a recorded response, refresh the goldens and review the diff: `go test -update .` and `go test -update ./doc` (`CONTRIBUTING.md`).
+
+## OpenAPI work
+
+- Validate any new spec construct (a keyword, a `null` example, a new schema shape) against kin-openapi in `contracttest` before approving a plan that relies on it; a construct the validator rejects wastes a build (workbench-jgolang#13).
+- A ticket that reads a schema tag says both that the value parses for the field type and that the keyword applies to that type (workbench-jgolang#16, as in #115).
+- Call out every golden spec change in the release notes (`CONTRIBUTING.md`).
 
 ## Inherited rules
 
