@@ -80,9 +80,9 @@ var jsonEncodingCases = []struct {
 	property string
 	want     string
 }{
-	{"bytes", `{"type":"string","format":"byte"}`},
-	{"blob", `{"type":"string","format":"byte"}`},
-	{"named_element", `{"type":"string","format":"byte"}`},
+	{"bytes", `{"type":"string","format":"byte","nullable":true}`},
+	{"blob", `{"type":"string","format":"byte","nullable":true}`},
+	{"named_element", `{"type":"string","format":"byte","nullable":true}`},
 	{"hex", `{"type":"array","items":{"type":"integer","format":"int32","minimum":0}}`},
 	{"bytes_pointer", `{"type":"string","format":"byte","nullable":true}`},
 	{"int", `{"type":"string"}`},
@@ -111,7 +111,7 @@ var jsonEncodingCases = []struct {
 	{"byte_array", `{"type":"array","items":{"type":"integer","format":"int32","minimum":0}}`},
 	{"pointer_hex", `{"type":"array","items":{"type":"integer","format":"int32","minimum":0}}`},
 	{"text_code", `{"type":"integer","format":"int32"}`},
-	{"self_bytes", `{"type":"array","items":{"type":"integer","format":"int32","minimum":0}}`},
+	{"self_bytes", `{"type":"array","items":{"type":"integer","format":"int32","minimum":0},"nullable":true}`},
 	{"example", `{"type":"string","example":"42"}`},
 	{"text_example", `{"type":"string","example":"seven"}`},
 }
@@ -158,5 +158,34 @@ func TestCheckSchemaTagsReportsAnOutOfRangeEnumOnAQuotedField(t *testing.T) {
 
 	if err == nil || !strings.Contains(err.Error(), "invalid enum tag") {
 		t.Fatalf("CheckSchemaTags() = %v, want an invalid enum tag error", err)
+	}
+}
+
+func TestSchemaFromTypeDocumentsANilSliceAsEncodingJSONSendsIt(t *testing.T) {
+	type fixture struct {
+		Plain    []string `json:"plain"`
+		Omitted  []string `json:"omitted,omitempty"`
+		Required []string `json:"required" validate:"required"`
+		Array    [2]int   `json:"array"`
+		Hex      hexBytes `json:"hex"`
+	}
+	properties := SchemaFromType(fixture{}).Properties
+	cases := []struct {
+		property string
+		want     string
+	}{
+		{"plain", `{"type":"array","items":{"type":"string"},"nullable":true}`},
+		{"omitted", `{"type":"array","items":{"type":"string"}}`},
+		{"required", `{"type":"array","items":{"type":"string"}}`},
+		{"array", `{"type":"array","items":{"type":"integer","format":"int32"}}`},
+		{"hex", `{"type":"array","items":{"type":"integer","format":"int32","minimum":0}}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.property, func(t *testing.T) {
+			if got := marshalSchema(t, properties[tc.property]); got != tc.want {
+				t.Fatalf("%s = %s, want %s", tc.property, got, tc.want)
+			}
+		})
 	}
 }
